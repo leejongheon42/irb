@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}가명처리 #{{ job.id }}{% endblock %}
+{% block content %}
+{% set cfg = job.config or {} %}
+{% set cols = cfg.get("columns", {}) %}
+{% set r = job.report %}
+<div class="topbar">
+  <div>
+    <div class="muted small">작업 #{{ job.id }} · {{ job.created_at|fmt }} · {{ job.creator.full_name }} · 인코딩 {{ job.encoding }} · SHA-256 <code>{{ job.input_sha256[:12] }}…</code></div>
+    <h1>{{ job.original_filename }}</h1>
+    <div class="actions">
+      {% if job.protocol %}<a class="badge b-primary" href="/protocols/{{ job.protocol.id }}">{{ job.protocol.protocol_no }}</a> {{ m.status_badge(job.protocol.status) }}{% else %}<span class="badge">과제 미연결</span>{% endif %}
+      <span class="badge">{{ "{:,}".format(job.row_count) }}행 × {{ job.analysis.column_count }}열</span>
+      {{ m.verdict_badge(r.verdict if r else None) }}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  <div class="card stat"><div class="label">직접 식별자</div><div class="value">{{ job.analysis.direct_identifiers|length }}</div></div>
+  <div class="card stat"><div class="label">준식별자</div><div class="value">{{ job.analysis.quasi_identifiers|length }}</div></div>
+  <div class="card stat"><div class="label">민감속성</div><div class="value">{{ job.analysis.sensitive_attributes|length }}</div></div>
+  <div class="card stat"><div class="label">자유기술</div><div class="value">{{ job.analysis.category_counts.get("free_text", 0) }}</div></div>
+</div>
+
+<form method="post" action="/deid/{{ job.id }}/process">
+  {{ csrf_input }}
+  <div class="card">
+    <h2>1. 컬럼별 탐지 결과 및 처리 기법 <span class="hint">자동 권고값이 선택되어 있습니다. 연구 목적에 맞게 조정하십시오.</span></h2>
+    <div class="table-wrap"><table class="col-config">
+      <tr><th>컬럼</th><th>탐지</th><th>근거 / 예시(마스킹)</th><th>처리 기법</th><th class="nowrap">준식별자</th><th class="nowrap">민감속성</th></tr>
+      {% for c in job.analysis.columns %}
+      {% set i = loop.index0 %}
+      {% set cc = cols.get(c.name, {"action": c.suggested_action, "params": {}}) %}
+      {% set pp = cc.get("params", {}) %}
+      <tr>
+        <td><strong>{{ c.name }}</strong><div class="small muted">결측 {{ (c.null_ratio * 100)|round(1) }}% · 고유값 {{ c.distinct_count }}</div></td>
+        <td>
+          <span class="badge {{ {'direct': 'b-danger', 'quasi': 'b-warn', 'sensitive': 'b-info', 'free_text': 'b-warn'}.get(c.category, '') }}">{{ c.category_label }}</span>
+          <div class="small">{{ c.detected_label }} <span class="muted">({{ (c.confidence * 100)|int }}%)</span></div>
+        </td>
+        <td class="small">{{ c.evidence|join(" · ") }}<div class="muted">{{ c.samples|join(", ") }}</div></td>
+        <td>
+          <select class="action-select" name="col_{{ i }}_action">
+            {% for key, label in actions.items() %}<option value="{{ key }}" {% if cc.action == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+          <div class="param" data-actions="date_shift"><input type="number" name="col_{{ i }}_max_days" value="{{ pp.get('max_days', policy.date_shift_max_days) }}" min="1"> <span class="hint">최대 이동일(±)</span></div>
+          <div class="param" data-actions="birth_to_age_band age_band"><input type="number" name="col_{{ i }}_width" value="{{ pp.get('width', policy.age_band_years) }}" min="1"> <span class="hint">구간(년)</span>
+            <input type="number" name="col_{{ i }}_top_code" value="{{ pp.get('top_code', policy.age_top_code) }}" min="1"> <span class="hint">상단코딩(세 이상)</span></div>
+          <div class="param" data-actions="address_generalize"><select name="col_{{ i }}_level"><option value="sigungu" {% if pp.get('level', policy.address_level) == 'sigungu' %}selected{% endif %}>시군구</option><option value="sido" {% if pp.get('level') == 'sido' %}selected{% endif %}>시도</option></select></div>
+          <div class="param" data-actions="date_generalize"><select name="col_{{ i }}_unit"><option value="year_month">연-월</option><option value="year" {% if pp.get('unit') == 'year' %}selected{% endif %}>연</option></select></div>
+          <div class="param" data-actions="numeric_round"><input type="number" step="any" name="col_{{ i }}_base" value="{{ pp.get('base', 1) }}"> <span class="hint">반올림 단위</span></div>
+          <div class="param" data-actions="top_bottom_code"><input type="number" step="any" name="col_{{ i }}_lower" value="{{ pp.get('lower', '') }}" placeholder="하한"> <input type="number" step="any" name="col_{{ i }}_upper" value="{{ pp.get('upper', '') }}" placeholder="상한"></div>
+          <div class="param" data-actions="pseudonymize_hmac serial"><input type="text" name="col_{{ i }}_prefix" value="{{ pp.get('prefix', 'P' if cc.action == 'pseudonymize_hmac' else 'S') }}" maxlength="4"> <span class="hint">접두어</span></div>
+        </td>
+        <td class="right"><input type="checkbox" name="qi" value="{{ c.name }}" {% if c.name in cfg.get("quasi_identifiers", []) %}checked{% endif %}></td>
+        <td class="right"><input type="checkbox" name="sa" value="{{ c.name }}" {% if c.name in cfg.get("sensitive_attributes", []) %}checked{% endif %}></td>
+      </tr>
+      {% endfor %}
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h2>2. 처리 옵션</h2>
+    <div class="form-row-3">
+      <div><label for="subject_column">대상자 식별 컬럼 <span class="hint">날짜 이동량을 대상자별로 일정하게 유지</span></label>
+        <select id="subject_column" name="subject_column"><option value="">(행 단위)</option>
+          {% for c in job.analysis.columns %}<option value="{{ c.name }}" {% if cfg.get('subject_column') == c.name %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
+      <div><label for="k_threshold">k-익명성 기준</label><input id="k_threshold" name="k_threshold" type="number" min="2" value="{{ cfg.get('k_threshold', policy.k_threshold) }}"></div>
+      <div><label for="reference_date">연령 계산 기준일</label><input id="reference_date" name="reference_date" type="date" value="{{ cfg.get('reference_date', today|string) }}"></div>
+    </div>
+    <label class="check"><input type="checkbox" name="suppress_below_k" {% if cfg.get('suppress_below_k') %}checked{% endif %}> k 미만 동질집합 레코드 삭제(레코드 삭제 기법)</label>
+    <p class="small muted">가명은 과제별 솔트가 적용된 키 기반 HMAC-SHA256으로 생성되어 과제 간 연결이 불가능합니다. 일련번호 매핑표(추가정보)는 별도 저장소에 분리 보관됩니다.</p>
+    <p><button class="btn-primary" type="submit" {% if not job.input_path %}disabled{% endif %}>가명처리 실행 및 적정성 평가</button></p>
+  </div>
+</form>
+
+{% if r %}
+<div class="card" id="result">
+  <h2>3. 처리 결과 및 적정성 자동 평가</h2>
+  <div class="verdict">
+    <div><div class="muted small">자동 판정</div><div class="big">{{ r.verdict }}</div></div>
+    <div><div class="muted small">출력</div><div>{{ "{:,}".format(r.output_rows) }}행 × {{ r.output_columns }}열 {% if r.suppressed_records %}<span class="badge b-warn">레코드 삭제 {{ r.suppressed_records }}</span>{% endif %}</div></div>
+    <div><div class="muted small">최소 k (처리 전 → 후)</div><div>{{ r.k_anonymity_raw.min_k if r.k_anonymity_raw.applicable else "-" }} → <strong>{{ r.k_anonymity.min_k if r.k_anonymity.applicable else "-" }}</strong></div></div>
+    <div><div class="muted small">텍스트 스크러빙</div><div>{{ r.text_scrubbed }}건</div></div>
+  </div>
+  {% for i in r.issues %}<div class="callout danger">{{ i }}</div>{% endfor %}
+  {% for w in r.warnings %}<div class="callout warn">{{ w }}</div>{% endfor %}
+  {% if r.residual_identifiers %}
+  <h3>잔존 식별정보</h3>
+  <ul>{% for x in r.residual_identifiers %}<li><strong>{{ x.column }}</strong>: {{ x.issue }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if r.k_anonymity.applicable %}
+  <h3>동질집합 크기 분포 <span class="hint">준식별자: {{ r.quasi_identifiers|join(", ") }}</span></h3>
+  <table>
+    <tr><th>동질집합 크기</th>{% for k in r.k_anonymity.distribution %}<th class="num">{{ k }}</th>{% endfor %}</tr>
+    <tr><td>레코드 수</td>{% for k, v in r.k_anonymity.distribution.items() %}<td class="num">{{ v }}</td>{% endfor %}</tr>
+  </table>
+  {% endif %}
+  <div class="actions">
+    <a class="btn" href="/deid/{{ job.id }}/report">적정성 검토 보고서</a>
+    <a class="btn" href="/deid/{{ job.id }}/download">결과 다운로드</a>
+    {% if job.protocol %}
+    <form method="post" action="/deid/{{ job.id }}/release" class="inline-form" data-confirm="{{ job.protocol.protocol_no }} 연구팀에 가명정보를 제공합니다. 진행하시겠습니까?">{{ csrf_input }}
+      <button class="btn-ok" type="submit" {% if r.verdict == "부적정" %}disabled{% endif %}>{{ "재제공" if job.status == "released" else "연구팀에 제공" }}</button></form>
+    {% endif %}
+    {% if job.input_path %}
+    <form method="post" action="/deid/{{ job.id }}/purge-input" class="inline-form" data-confirm="원본 파일을 영구 파기합니다. 이후 재처리가 불가능합니다.">{{ csrf_input }}<button class="btn-danger" type="submit">원본 파기</button></form>
+    {% else %}<span class="badge">원본 파기됨</span>{% endif %}
+  </div>
+  {% if job.released_at %}<p class="small muted">제공일시 {{ job.released_at|fmt }}</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

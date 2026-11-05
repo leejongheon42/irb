@@ -1,0 +1,99 @@
+"""감사 추적(Audit trail).
+
+모든 상태 변경·문서 열람·데이터 반출 이벤트를 기록하며, 각 행은 직전 행의 해시를 포함하는
+해시 체인으로 연결되어 사후 위변조 여부를 검증할 수 있다.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .models import AuditLog, User
+from .timeutil import now
+
+
+def _row_digest(prev_hash: str, entry: AuditLog) -> str:
+    payload = json.dumps(
+        {
+            "prev": prev_hash,
+            "ts": entry.timestamp.isoformat(),
+            "actor": entry.actor_id,
+            "action": entry.action,
+            "entity": [entry.entity_type, entry.entity_id],
+            "details": entry.details,
+            "ip": entry.ip_address,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def record(
+    db: Session,
+    actor: User | None,
+    action: str,
+    entity_type: str,
+    entity_id: int | None,
+    details: dict[str, Any] | None = None,
+    ip: str = "",
+) -> AuditLog:
+    last = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(1)).first()
+    prev_hash = last.row_hash if last else ""
+    entry = AuditLog(
+        timestamp=now(),
+        actor_id=actor.id if actor else None,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details or {},
+        ip_address=ip,
+        prev_hash=prev_hash,
+    )
+    entry.row_hash = _row_digest(prev_hash, entry)
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+def verify_chain(db: Session) -> tuple[bool, int | None]:
+    """해시 체인 검증. (정상 여부, 최초 불일치 행 id)"""
+    prev = ""
+    for entry in db.scalars(select(AuditLog).order_by(AuditLog.id)):
+        if entry.prev_hash != prev or _row_digest(prev, entry) != entry.row_hash:
+            return False, entry.id
+        prev = entry.row_hash
+    return True, None
+
+
+ACTION_LABELS = {
+    "login": "로그인",
+    "login_failed": "로그인 실패",
+    "protocol_create": "과제 생성",
+    "protocol_update": "과제 수정",
+    "document_upload": "서류 업로드",
+    "document_download": "서류 열람",
+    "submit": "심의 신청",
+    "prereview": "자동 사전검토",
+    "request_revision": "보완 요청",
+    "assign_reviewers": "심의위원 배정",
+    "review_submit": "심의의견 제출",
+    "decision": "심의 결정",
+    "start_amendment": "변경 신청 시작",
+    "status_change": "상태 변경",
+    "expire": "승인 만료",
+    "comment": "의견 등록",
+    "deid_upload": "가명처리 원본 등록",
+    "deid_process": "가명처리 수행",
+    "deid_release": "가명정보 제공",
+    "deid_download": "가명정보 다운로드",
+    "deid_delete_input": "원본 파일 파기",
+    "user_create": "사용자 생성",
+    "user_update": "사용자 수정",
+    "letter_view": "통지서 출력",
+}

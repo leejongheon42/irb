@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}연구과제{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1>연구과제</h1>
+  <form method="get" action="/protocols" class="actions">
+    <select name="status">
+      <option value="">전체 상태</option>
+      {% for st in S %}<option value="{{ st.value }}" {% if status == st.value %}selected{% endif %}>{{ st.label }}</option>{% endfor %}
+    </select>
+    <input type="text" name="q" value="{{ q }}" placeholder="제목·과제번호·연구자">
+    <button type="submit">검색</button>
+  </form>
+</div>
+<div class="card">
+  {% if items %}
+  <div class="table-wrap"><table>
+    <tr><th>과제번호</th><th>제목</th><th>연구책임자</th><th>상태</th><th>심의유형</th><th>위험도</th><th>승인 만료</th><th>수정일</th></tr>
+    {% for p in items %}
+    <tr>
+      <td class="nowrap">{{ p.protocol_no or "-" }}</td>
+      <td><a href="/protocols/{{ p.id }}">{{ p.title }}</a></td>
+      <td class="nowrap">{{ p.pi.full_name }}</td>
+      <td>{{ m.status_badge(p.status) }}</td>
+      <td>{{ m.review_badge(p.review_type) }}</td>
+      <td>{{ m.risk_badge(p.risk_level, p.risk_score) }}</td>
+      <td class="nowrap">{{ p.expires_at|fmt }}</td>
+      <td class="nowrap small muted">{{ p.updated_at|fmt }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">조건에 맞는 과제가 없습니다.</p>{% endif %}
+</div>
+{% endblock %}

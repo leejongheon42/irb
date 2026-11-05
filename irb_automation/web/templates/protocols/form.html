@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ "과제 수정" if protocol else "새 과제" }}{% endblock %}
+
+{% macro checks(name, catalog, selected) -%}
+<div class="checks">
+  {% for key, label in rs.options(catalog) %}
+  <label class="check"><input type="checkbox" name="{{ name }}" value="{{ key }}" {% if key in (selected or []) %}checked{% endif %}> {{ label }}</label>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro select(name, catalog, current) -%}
+<select name="{{ name }}" id="{{ name }}">
+  {% for key, label in rs.options(catalog) %}<option value="{{ key }}" {% if key == current %}selected{% endif %}>{{ label }}</option>{% endfor %}
+</select>
+{%- endmacro %}
+
+{% macro bool(name, label, current, hint="") -%}
+<label class="check"><input type="checkbox" name="{{ name }}" {% if current %}checked{% endif %}> {{ label }}{% if hint %} <span class="hint">{{ hint }}</span>{% endif %}</label>
+{%- endmacro %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>{{ "연구과제 수정" if protocol else "새 연구과제 작성" }}</h1>
+    <div class="sub">입력 내용은 저장 즉시 규칙 엔진으로 자동 사전점검됩니다. <strong>*</strong> 항목은 필수입니다.</div>
+  </div>
+  {% if protocol %}<a class="btn" href="/protocols/{{ protocol.id }}">취소</a>{% endif %}
+</div>
+
+{% if protocol and protocol.status == S.AMENDMENT %}
+<div class="callout warn">변경심의 작성 중입니다. 변경 사유와 변경 전·후 비교표를 '기타' 서류로 첨부하십시오.</div>
+{% endif %}
+
+<form method="post" action="{{ '/protocols/%d/edit'|format(protocol.id) if protocol else '/protocols/new' }}">
+  {{ csrf_input }}
+  <input type="hidden" name="_bools" value="1">
+  <input type="hidden" name="_lists" value="1">
+
+  <fieldset>
+    <legend>1. 기본 정보</legend>
+    <label for="title">연구 제목 *</label>
+    <input id="title" name="title" type="text" required maxlength="300" value="{{ v.title }}">
+    <div class="form-row">
+      <div><label for="department">소속 진료과/부서</label><input id="department" name="department" type="text" value="{{ v.department or user.department }}"></div>
+      <div><label for="funding_source">연구비 지원기관 <span class="hint">없으면 비워 두십시오</span></label><input id="funding_source" name="funding_source" type="text" value="{{ v.funding_source }}"></div>
+    </div>
+    <div class="form-row-3">
+      <div><label for="study_type">연구 유형 *</label>{{ select("study_type", "study_types", v.study_type) }}</div>
+      <div><label for="study_start">연구 시작 예정일</label><input id="study_start" name="study_start" type="date" value="{{ v.study_start or '' }}"></div>
+      <div><label for="study_end">연구 종료 예정일</label><input id="study_end" name="study_end" type="date" value="{{ v.study_end or '' }}"></div>
+    </div>
+    <label>공동연구자</label>
+    <div class="checks">
+      {% for r in researchers if (not protocol and r.id != user.id) or (protocol and r.id != protocol.pi_id) %}
+      <label class="check"><input type="checkbox" name="co_investigators" value="{{ r.id }}" {% if v.co_investigators is defined and r.id in (v.co_investigators or []) %}checked{% endif %}> {{ r.full_name }} <span class="hint">{{ r.department }}</span></label>
+      {% else %}<span class="muted small">등록된 다른 연구자가 없습니다.</span>{% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>2. 연구 내용</legend>
+    <label for="objectives">연구 목적 및 가설 *</label>
+    <textarea id="objectives" name="objectives">{{ v.objectives }}</textarea>
+    <label for="background">연구 배경</label>
+    <textarea id="background" name="background">{{ v.background }}</textarea>
+    <label for="methods">연구 방법 * <span class="hint">자료 추출 절차, 분석 방법, 통계 계획, 데이터 흐름</span></label>
+    <textarea id="methods" name="methods">{{ v.methods }}</textarea>
+    <label for="target_population">연구 대상자</label>
+    <textarea id="target_population" name="target_population">{{ v.target_population }}</textarea>
+    <div class="form-row">
+      <div><label for="inclusion_criteria">선정 기준 *</label><textarea id="inclusion_criteria" name="inclusion_criteria">{{ v.inclusion_criteria }}</textarea></div>
+      <div><label for="exclusion_criteria">제외 기준</label><textarea id="exclusion_criteria" name="exclusion_criteria">{{ v.exclusion_criteria }}</textarea></div>
+    </div>
+    <div class="form-row">
+      <div><label for="expected_subjects">예상 대상자 수 *</label><input id="expected_subjects" name="expected_subjects" type="number" min="0" value="{{ v.expected_subjects }}"></div>
+      <div><label for="sample_size_justification">대상자 수 산출 근거</label><input id="sample_size_justification" name="sample_size_justification" type="text" value="{{ v.sample_size_justification }}"></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>3. 활용 데이터</legend>
+    <label>데이터 출처</label>
+    {{ checks("data_sources", "data_sources", v.data_sources) }}
+    {{ bool("existing_data_only", "기존에 생성된 자료·문서만 이용 (후향적)", v.existing_data_only) }}
+    {{ bool("direct_contact", "연구대상자를 직접 대면·접촉 (설문/면담/추가 검사)", v.direct_contact) }}
+    <div class="form-row">
+      <div><label for="data_period_start">자료 대상 기간 시작 *</label><input id="data_period_start" name="data_period_start" type="date" value="{{ v.data_period_start or '' }}"></div>
+      <div><label for="data_period_end">자료 대상 기간 종료 *</label><input id="data_period_end" name="data_period_end" type="date" value="{{ v.data_period_end or '' }}"></div>
+    </div>
+    <label for="data_items">수집 변수 목록 * <span class="hint">한 줄에 하나씩. 연구 목적에 필요한 최소 항목만 기재(최소수집 원칙)</span></label>
+    <textarea id="data_items" name="data_items">{{ v.data_items }}</textarea>
+    <label>연구자에게 제공되는 식별자 <span class="hint">가명처리되어 제공되는 경우 선택하지 마십시오</span></label>
+    {{ checks("identifiers_collected", "identifiers", v.identifiers_collected) }}
+    <div data-show-when="identifiers_collected">
+      <label for="identifier_justification">식별자 수집 필요성</label>
+      <textarea id="identifier_justification" name="identifier_justification">{{ v.identifier_justification }}</textarea>
+    </div>
+    <label>민감정보 <span class="hint">개인정보 보호법 제23조. 일반 건강정보 외 특수 범주</span></label>
+    {{ checks("sensitive_categories", "sensitive_categories", v.sensitive_categories) }}
+    <label>취약한 연구대상자 포함 여부</label>
+    {{ checks("vulnerable_populations", "vulnerable_populations", v.vulnerable_populations) }}
+    <label>비정형 데이터</label>
+    {{ checks("unstructured_data", "unstructured_data", v.unstructured_data) }}
+    {{ bool("rare_disease", "희귀질환 대상 연구", v.rare_disease) }}
+  </fieldset>
+
+  <fieldset>
+    <legend>4. 개인정보 보호 및 데이터 관리</legend>
+    <label>개인정보 처리 수준 *</label>
+    <div class="checks">
+      {% for key, label in rs.options("deid_levels") %}
+      <label class="check"><input type="radio" name="deid_level" value="{{ key }}" {% if v.deid_level == key %}checked{% endif %}> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <div class="form-row">
+      <div data-show-when="deid_level=pseudonymized"><label for="deid_performed_by">가명처리 수행자</label>{{ select("deid_performed_by", "deid_performers", v.deid_performed_by) }}</div>
+      <div><label for="storage_location">분석·보관 장소</label>{{ select("storage_location", "storage_locations", v.storage_location) }}</div>
+    </div>
+    <label for="access_controls">안전조치 <span class="hint">접근권한, 암호화, 반출 통제, 접근기록 관리</span></label>
+    <textarea id="access_controls" name="access_controls">{{ v.access_controls }}</textarea>
+    {{ bool("external_transfer", "기관 외부로 자료 제공(반출)", v.external_transfer) }}
+    <div data-show-when="external_transfer"><label for="external_recipient">제공받는 기관</label><input id="external_recipient" name="external_recipient" type="text" value="{{ v.external_recipient }}"></div>
+    {{ bool("international_transfer", "국외 이전 포함", v.international_transfer) }}
+    {{ bool("data_linkage", "타 기관 데이터와 결합", v.data_linkage, "가명정보 결합은 결합전문기관 경유") }}
+    <div data-show-when="data_linkage"><label for="linkage_target">결합 대상</label><input id="linkage_target" name="linkage_target" type="text" value="{{ v.linkage_target }}"></div>
+    {{ bool("ai_ml_development", "AI/머신러닝 모델 개발", v.ai_ml_development) }}
+    {{ bool("commercial_use", "상업적 활용 계획", v.commercial_use) }}
+    <div class="form-row">
+      <div><label for="retention_years">보관기간(년) *</label><input id="retention_years" name="retention_years" type="number" min="0" value="{{ v.retention_years }}"></div>
+      <div><label for="destruction_method">파기 방법</label><input id="destruction_method" name="destruction_method" type="text" value="{{ v.destruction_method }}"></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>5. 연구대상자 동의</legend>
+    <div class="checks">
+      <label class="check"><input type="radio" name="consent_plan" value="obtain" {% if v.consent_plan == "obtain" %}checked{% endif %}> 서면동의 취득</label>
+      <label class="check"><input type="radio" name="consent_plan" value="waiver" {% if v.consent_plan != "obtain" %}checked{% endif %}> 동의 면제 신청</label>
+    </div>
+    <div data-show-when="consent_plan=waiver">
+      <div class="callout small">생명윤리법 제16조제3항: ① 동의 획득이 현실적으로 불가능하거나 연구 타당성에 심각한 영향 <strong>그리고</strong> ② 동의 거부 추정 사유가 없고 위험이 극히 낮은 경우</div>
+      <label>① 동의 획득이 불가능한 사유</label>
+      {{ checks("waiver_impracticable_reasons", "waiver_reasons", v.waiver_impracticable_reasons) }}
+      <label for="waiver_impracticable_detail">구체적 설명 <span class="hint">30자 이상</span></label>
+      <textarea id="waiver_impracticable_detail" name="waiver_impracticable_detail">{{ v.waiver_impracticable_detail }}</textarea>
+      {{ bool("waiver_no_presumed_refusal", "② 연구대상자가 동의를 거부할 것으로 추정할 만한 사유가 없음을 확인함", v.waiver_no_presumed_refusal) }}
+      <label for="waiver_minimal_risk_detail">위험이 극히 낮은 근거</label>
+      <textarea id="waiver_minimal_risk_detail" name="waiver_minimal_risk_detail">{{ v.waiver_minimal_risk_detail }}</textarea>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>6. 이해상충</legend>
+    {{ bool("conflict_of_interest", "연구와 관련된 이해상충(재정적 이해관계, 자문, 지분 등)이 있음", v.conflict_of_interest) }}
+    <div data-show-when="conflict_of_interest"><label for="coi_detail">이해상충 내용 및 관리 방안</label><textarea id="coi_detail" name="coi_detail">{{ v.coi_detail }}</textarea></div>
+  </fieldset>
+
+  <p class="actions"><button class="btn-primary" type="submit">저장하고 자동 사전점검</button></p>
+</form>
+{% endblock %}

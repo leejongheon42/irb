@@ -1,0 +1,124 @@
+{% macro status_badge(status) -%}
+{%- set cls = {
+  "draft": "", "submitted": "b-info", "revision_requested": "b-warn", "under_review": "b-primary",
+  "approved": "b-ok", "exempt": "b-ok", "amendment": "b-warn", "disapproved": "b-danger",
+  "suspended": "b-danger", "expired": "b-danger", "closed": ""
+}[status.value] -%}
+<span class="badge {{ cls }}">{{ status.label }}</span>
+{%- endmacro %}
+
+{% macro review_badge(rt) -%}
+{%- if rt -%}
+{%- set v = rt.value if rt.value is defined else rt -%}
+{%- set cls = {"exempt": "b-ok", "expedited": "b-info", "full": "b-warn"}[v] -%}
+<span class="badge {{ cls }}">{{ {"exempt": "심의면제", "expedited": "신속심의", "full": "정규심의"}[v] }}</span>
+{%- else -%}<span class="muted">-</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro risk_badge(level, score=None) -%}
+{%- if level -%}
+{%- set cls = {"low": "b-ok", "moderate": "b-warn", "high": "b-danger"}[level] -%}
+<span class="badge {{ cls }}">{{ {"low": "최소위험", "moderate": "경미", "high": "고위험"}[level] }}{% if score is not none %} {{ score }}점{% endif %}</span>
+{%- else -%}<span class="muted">-</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro severity_badge(sev) -%}
+{%- set cls = {"critical": "b-danger", "major": "b-warn", "minor": "b-info", "info": ""}[sev] -%}
+<span class="badge {{ cls }}">{{ {"critical": "필수 보완", "major": "보완 권고", "minor": "개선 제안", "info": "참고"}[sev] }}</span>
+{%- endmacro %}
+
+{% macro verdict_badge(v) -%}
+{%- set cls = {"적정": "b-ok", "조건부 적정": "b-warn", "부적정": "b-danger"}.get(v, "") -%}
+<span class="badge {{ cls }}">{{ v or "미처리" }}</span>
+{%- endmacro %}
+
+{% macro labels(rs, catalog, keys) -%}
+{%- if keys -%}{%- for k in keys -%}{{ rs.label(catalog, k) }}{% if not loop.last %}, {% endif %}{%- endfor -%}{%- else -%}<span class="muted">없음</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro yn(v) -%}{% if v %}<span class="badge b-warn">예</span>{% else %}<span class="muted">아니오</span>{% endif %}{%- endmacro %}
+
+{# 자동 사전검토 결과 전체 렌더링 #}
+{% macro prereview(result, rs, compact=False) %}
+<div class="verdict">
+  <div>
+    <div class="muted small">권고 심의유형</div>
+    <div class="big">{{ result.review_type_label }}</div>
+  </div>
+  <div>
+    <div class="muted small">연구대상자 위험도</div>
+    <div><meter min="0" max="100" low="20" high="45" optimum="0" value="{{ result.risk.score }}"></meter>
+      {{ risk_badge(result.risk.level, result.risk.score) }}</div>
+  </div>
+  <div>
+    <div class="muted small">검토 의견</div>
+    <div>
+      <span class="badge b-danger">필수 {{ result.summary.critical }}</span>
+      <span class="badge b-warn">권고 {{ result.summary.major }}</span>
+      <span class="badge b-info">제안 {{ result.summary.minor }}</span>
+      <span class="badge">참고 {{ result.summary.info }}</span>
+    </div>
+  </div>
+  <div>
+    {% if result.ready_for_review %}<span class="badge b-ok">제출 가능</span>{% else %}<span class="badge b-danger">필수 보완 필요</span>{% endif %}
+  </div>
+</div>
+<div class="callout small">{{ result.disclaimer }} <span class="muted">(규칙 {{ result.ruleset_version }})</span></div>
+
+<div class="grid grid-2">
+  <div>
+    <h3>심의유형 판단 근거</h3>
+    <ul>{% for r in result.classification.rationale %}<li>{{ r }}</li>{% endfor %}</ul>
+    <h3>심의면제 요건 <span class="hint">{{ result.classification.exemption.legal }}</span></h3>
+    <ul class="criteria">
+      {% for c in result.classification.exemption.criteria %}
+      <li class="{{ 'met' if c.met else 'unmet' }}">{{ c.label }}{% if c.detail %} <span class="muted small">— {{ c.detail }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div>
+    <h3>동의 면제 평가 <span class="hint">{{ result.consent.legal }}</span></h3>
+    <p><strong>{{ result.consent.status_label }}</strong></p>
+    {% if result.consent.conditions %}
+    <ul class="criteria">
+      {% for c in result.consent.conditions %}
+      <li class="{{ 'met' if c.met else 'unmet' }}">{{ c.label }}<br><span class="muted small">{{ c.detail }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% for n in result.consent.notes %}<p class="small muted">· {{ n }}</p>{% endfor %}
+  </div>
+</div>
+
+{% if not compact %}
+<h3>위험도 산출 내역</h3>
+{% if result.risk.factors %}
+<div class="table-wrap"><table>
+  <tr><th>요인</th><th>세부</th><th class="num">점수</th></tr>
+  {% for f in result.risk.factors %}<tr><td>{{ f.factor }}</td><td class="muted">{{ f.detail }}</td><td class="num">+{{ f.points }}</td></tr>{% endfor %}
+  <tr><th colspan="2">합계</th><th class="num">{{ result.risk.score }}</th></tr>
+</table></div>
+{% else %}<p class="muted">위험 가산 요인이 없습니다.</p>{% endif %}
+{% endif %}
+
+<h3>제출 서류 점검</h3>
+<div class="table-wrap"><table>
+  <tr><th>서류</th><th>요구 조건</th><th>제출</th></tr>
+  {% for c in result.checklist %}
+  <tr><td>{{ c.label }}</td><td class="muted small">{{ c.condition }}</td>
+    <td>{% if c.provided %}<span class="badge b-ok">제출됨</span>{% else %}<span class="badge b-danger">누락</span>{% endif %}</td></tr>
+  {% endfor %}
+</table></div>
+
+<h3>검토 의견 ({{ result.findings|length }})</h3>
+{% for f in result.findings %}
+<div class="finding {{ f.severity }}">
+  {{ severity_badge(f.severity) }} <strong>{{ f.message }}</strong>
+  {% if f.recommendation %}<div class="rec">→ {{ f.recommendation }}</div>{% endif %}
+  {% if f.legal %}<div class="legal">근거: {{ f.legal }}</div>{% endif %}
+</div>
+{% else %}<p class="muted">지적 사항이 없습니다.</p>{% endfor %}
+
+<h3>다음 단계</h3>
+<ul>{% for s in result.next_steps %}<li>{{ s }}</li>{% endfor %}</ul>
+{% endmacro %}

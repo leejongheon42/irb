@@ -1,0 +1,14 @@
+services:
+  irb:
+    build: .
+    env_file: .env
+    environment:
+      IRB_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8000:8000"   # 운영 시 원내 리버스 프록시(HTTPS) 뒤에 배치
+    volumes:
+      - irb-data:/data
+    restart: unless-stopped
+
+volumes:
+  irb-data:

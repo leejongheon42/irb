@@ -1,0 +1,65 @@
+{% extends "print/base.html" %}
+{% block title %}가명처리 적정성 검토 결과서 #{{ job.id }}{% endblock %}
+{% block title2 %}가명처리 적정성 검토 결과서{% endblock %}
+{% block body %}
+{% set r = job.report %}
+<div class="doc-no">작업 #{{ job.id }}<br>처리일시 {{ (r.processed_at or "")[:16].replace("T", " ") }}</div>
+<h1>가명처리 적정성 검토 결과서</h1>
+<div class="org">{{ settings.institution_name }} · 보건의료데이터 활용 가이드라인 절차 준용</div>
+
+<h2>1. 개요</h2>
+<table>
+  <tr><th>연계 IRB 과제</th><td>{% if job.protocol %}{{ job.protocol.protocol_no }} · {{ job.protocol.title }} ({{ job.protocol.status.label }}){% else %}미연결{% endif %}</td></tr>
+  <tr><th>연구책임자</th><td>{{ job.protocol.pi.full_name if job.protocol else "-" }}</td></tr>
+  <tr><th>원본 파일</th><td>{{ job.original_filename }} ({{ "{:,}".format(job.row_count) }}행 × {{ job.analysis.column_count }}열)<br><small>SHA-256 {{ job.input_sha256 }}</small></td></tr>
+  <tr><th>결과 파일</th><td>{{ "{:,}".format(r.output_rows or 0) }}행 × {{ r.output_columns }}열<br><small>SHA-256 {{ r.output_sha256 }}</small></td></tr>
+  <tr><th>처리자</th><td>{{ r.processed_by }}</td></tr>
+  <tr><th>제공</th><td>{% if job.released_at %}{{ job.released_at|fmt }} 연구팀 제공{% else %}미제공{% endif %}</td></tr>
+</table>
+
+<div class="result">적정성 자동 판정 : {{ r.verdict }}</div>
+
+<h2>2. 항목별 처리 내역</h2>
+<table class="grid">
+  <tr><th>컬럼</th><th>분류</th><th>처리 기법</th></tr>
+  {% for a in r.column_actions %}
+  {% set c = job.analysis.columns[loop.index0] %}
+  <tr><td>{{ a.column }}</td><td>{{ c.category_label }} · {{ c.detected_label }}</td><td>{{ a.description }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>3. 재식별 위험 평가</h2>
+<table>
+  <tr><th>준식별자</th><td>{{ r.quasi_identifiers|join(", ") or "지정 없음" }}</td></tr>
+  <tr><th>민감속성</th><td>{{ r.sensitive_attributes|join(", ") or "지정 없음" }}</td></tr>
+  <tr><th>k-익명성 (기준 k ≥ {{ r.policy.k_threshold }})</th><td>
+    {% if r.k_anonymity.applicable %}처리 전 최소 k = {{ r.k_anonymity_raw.min_k }} → 처리 후 최소 k = <strong>{{ r.k_anonymity.min_k }}</strong>,
+    동질집합 {{ r.k_anonymity.classes }}개, 기준 미만 레코드 {{ r.k_anonymity.records_below_k }}건({{ (r.k_anonymity.ratio_below_k * 100)|round(2) }}%)
+    {% else %}평가하지 않음{% endif %}</td></tr>
+  <tr><th>l-다양성 (기준 l ≥ {{ r.policy.l_threshold }})</th><td>{% for k, v in r.l_diversity.items() %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% else %}해당 없음{% endfor %}</td></tr>
+  <tr><th>레코드 삭제</th><td>{{ r.suppressed_records }}건</td></tr>
+  <tr><th>자유기술 스크러빙</th><td>{{ r.text_scrubbed }}건 치환</td></tr>
+  <tr><th>잔존 식별정보</th><td>{% for x in r.residual_identifiers %}{{ x.column }}: {{ x.issue }}<br>{% else %}<span class="ok">탐지되지 않음</span>{% endfor %}</td></tr>
+</table>
+{% if r.issues or r.warnings %}
+<h2>4. 지적 및 유의사항</h2>
+<ul>
+  {% for i in r.issues %}<li class="bad">{{ i }}</li>{% endfor %}
+  {% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<h2>{{ 5 if (r.issues or r.warnings) else 4 }}. 안전조치</h2>
+<ul>
+  <li>가명 생성: 과제별 솔트가 적용된 키 기반 HMAC-SHA256 (키는 처리 시스템 외부에 분리 보관)</li>
+  <li>추가정보(일련번호 매핑표): {{ "별도 저장소에 분리 보관" if job.mapping_path else "생성되지 않음" }}</li>
+  <li>원본 파일: {{ "보관 중 - 처리 완료 후 파기 필요" if job.input_path else "파기 완료" }}</li>
+  <li>처리·제공·다운로드 이력: 감사 로그(해시 체인) 기록</li>
+</ul>
+
+<div class="sign">
+  데이터심의위원회(또는 IRB) 적정성 검토 확인
+  <div class="who">검토자 ____________________ (인)</div>
+</div>
+<div class="note">본 결과서의 판정은 규칙 기반 자동 평가이며, 최종 적정성은 데이터심의위원회 또는 IRB가 확인합니다. 결과 공표 시 소규모 셀(5명 미만) 억제 등 추가 조치를 권고합니다.</div>
+{% endblock %}

@@ -1,0 +1,213 @@
+# =====================================================================
+#  IRB 자동 사전검토 기본 규칙 세트
+# ---------------------------------------------------------------------
+#  - 의료데이터(기존 자료·문서) 활용 연구를 중심으로 작성된 기본값이다.
+#  - 각 기관의 IRB 표준운영지침(SOP)에 맞게 반드시 검토·수정하여 사용한다.
+#  - 자동 분류 결과는 "권고"이며, 최종 판단은 IRB가 한다.
+#  - 법령 조문은 작성 시점 기준이며 개정 여부를 주기적으로 확인해야 한다.
+# =====================================================================
+version: "2026.11-default"
+
+legal_basis:
+  bioethics_15: "생명윤리법 제15조(인간대상연구의 심의)"
+  bioethics_15_2: "생명윤리법 제15조제2항 및 같은 법 시행규칙 제13조(기관위원회 심의 면제)"
+  bioethics_16_3: "생명윤리법 제16조제3항(서면동의 면제 요건)"
+  bioethics_18: "생명윤리법 제18조(개인정보의 제공)"
+  bioethics_3_5: "생명윤리법 제3조제5항(취약한 환경에 있는 개인·집단의 특별 보호)"
+  pipa_23: "개인정보 보호법 제23조(민감정보의 처리 제한)"
+  pipa_24: "개인정보 보호법 제24조(고유식별정보의 처리 제한)"
+  pipa_24_2: "개인정보 보호법 제24조의2(주민등록번호 처리의 제한)"
+  pipa_28_2: "개인정보 보호법 제28조의2(가명정보의 처리 등)"
+  pipa_28_3: "개인정보 보호법 제28조의3(가명정보의 결합 제한)"
+  pipa_28_4: "개인정보 보호법 제28조의4(가명정보에 대한 안전조치의무 등)"
+  pipa_28_5: "개인정보 보호법 제28조의5(가명정보 처리 시 금지의무 등)"
+  pipa_28_8: "개인정보 보호법 제28조의8(개인정보의 국외 이전)"
+  pipa_29: "개인정보 보호법 제29조(안전조치의무)"
+  medical_21: "의료법 제21조(기록 열람 등)"
+  guideline: "보건의료데이터 활용 가이드라인(보건복지부·개인정보보호위원회)"
+
+# 위험도 점수 구간 (이상 ~ 이하)
+risk_levels:
+  - {key: low, label: "최소위험", max: 19}
+  - {key: moderate, label: "최소위험 초과(경미)", max: 44}
+  - {key: high, label: "고위험", max: 1000}
+
+review_type:
+  # 이 점수를 초과하면 정규심의 권고
+  expedited_max_score: 44
+  # 심의면제 판단 옵션
+  exemption:
+    allow_pseudonymized: true          # 연구자가 식별정보에 접근하지 않는 가명정보 연구 면제 허용
+    excluded_sensitive: [genetic, biometric, hiv_std]
+    excluded_vulnerable: [children, pregnant, cognitively_impaired, prisoners, subordinates, emergency, terminally_ill, institutionalized]
+    exclude_international_transfer: true
+    exclude_data_linkage: true
+  # 아래 조합이 하나라도 해당하면 정규심의 권고
+  full_board_triggers:
+    identifiable_with_vulnerable: [children, cognitively_impaired, prisoners]
+    identifiable_with_sensitive: [genetic, hiv_std, mental_health, criminal]
+    identifiable_international_transfer: true
+    identifiable_commercial_use: true
+    direct_contact_with_vulnerable: true
+
+catalogs:
+  study_types:
+    retrospective_chart_review: "후향적 의무기록 조사"
+    cdw_analysis: "임상데이터웨어하우스(CDW) 분석"
+    registry: "레지스트리/코호트 데이터 분석"
+    imaging_ai: "의료영상 기반 AI 개발"
+    data_linkage: "기관 간 데이터 결합 연구"
+    prospective_observational: "전향적 관찰연구(자료수집)"
+    survey: "설문/면담 연구"
+    secondary_public: "공개 데이터 2차 분석"
+
+  data_sources:
+    emr: "전자의무기록(EMR)"
+    cdw: "임상데이터웨어하우스(CDW)"
+    pacs: "의료영상(PACS)"
+    lis: "검사결과(LIS)"
+    biobank: "인체유래물은행 연계정보"
+    registry: "질환 레지스트리"
+    nhis: "국민건강보험공단/심평원 자료"
+    public: "공개 데이터"
+    survey: "설문/면담"
+
+  identifiers:
+    name: {label: "성명", weight: 3}
+    rrn: {label: "주민등록번호", weight: 10, unique_id: true}
+    foreigner_no: {label: "외국인등록번호", weight: 10, unique_id: true}
+    passport: {label: "여권번호", weight: 8, unique_id: true}
+    driver_license: {label: "운전면허번호", weight: 8, unique_id: true}
+    mrn: {label: "병원등록번호(환자번호)", weight: 3}
+    phone: {label: "전화번호", weight: 3}
+    email: {label: "이메일", weight: 3}
+    address: {label: "상세주소", weight: 3}
+    birth_date: {label: "생년월일(일 단위)", weight: 2}
+    exact_dates: {label: "진료·입퇴원 일자(일 단위)", weight: 1}
+    photo: {label: "얼굴사진/식별가능 영상", weight: 5}
+    insurance_no: {label: "건강보험증번호", weight: 3}
+    account_no: {label: "계좌·카드번호", weight: 3}
+    device_id: {label: "기기식별번호/IP", weight: 2}
+
+  sensitive_categories:
+    genetic: {label: "유전정보", weight: 15, legal: pipa_23}
+    biometric: {label: "생체인식정보", weight: 10, legal: pipa_23}
+    mental_health: {label: "정신질환 정보", weight: 10, legal: pipa_23}
+    hiv_std: {label: "HIV/성매개감염병", weight: 15, legal: pipa_23}
+    substance: {label: "약물·알코올 의존", weight: 10, legal: pipa_23}
+    sexual_reproductive: {label: "성생활·생식(인공임신중절 등)", weight: 10, legal: pipa_23}
+    criminal: {label: "범죄경력", weight: 10, legal: pipa_23}
+    race_ethnicity: {label: "인종·민족", weight: 5, legal: pipa_23}
+
+  vulnerable_populations:
+    children: {label: "미성년자(만 19세 미만)", weight: 10}
+    pregnant: {label: "임산부·태아", weight: 5}
+    cognitively_impaired: {label: "의사결정능력 저하자", weight: 10}
+    prisoners: {label: "수용자", weight: 10}
+    subordinates: {label: "연구자와 고용·교육 관계(직원·학생)", weight: 5}
+    emergency: {label: "응급상황 환자", weight: 5}
+    terminally_ill: {label: "말기·중증 환자", weight: 5}
+    institutionalized: {label: "시설 거주자", weight: 5}
+
+  unstructured_data:
+    free_text: {label: "자유기술(경과기록·판독문 등)", weight: 8}
+    medical_images: {label: "의료영상(DICOM)", weight: 6}
+    biosignals: {label: "생체신호(ECG/EEG 등)", weight: 2}
+    audio_video: {label: "음성·동영상", weight: 8}
+
+  deid_levels:
+    anonymized: "익명정보(재식별 불가)"
+    pseudonymized: "가명정보(추가정보 없이 식별 불가)"
+    identifiable: "식별가능 정보"
+
+  deid_performers:
+    data_steward: "데이터관리자/CDW팀 (연구자는 가명정보만 수령)"
+    researcher: "연구자 직접 처리"
+    external: "외부 전문기관"
+
+  storage_locations:
+    internal_secure: "원내 분석전용 서버(폐쇄망)"
+    internal_pc: "원내 업무용 PC(암호화)"
+    safe_harbor: "안심활용센터/데이터 안심구역"
+    external_cloud: "외부 클라우드"
+    external_institution: "외부 기관"
+
+  waiver_reasons:
+    large_population: "대상자 수가 많아 개별 동의 획득이 현실적으로 불가능"
+    deceased_or_lost: "사망 또는 추적 불가 대상자가 다수 포함"
+    selection_bias: "동의 획득 시 선택편향으로 연구 타당성이 심각하게 훼손"
+    outdated_contact: "과거 자료로 연락처 정보가 부정확"
+    contact_increases_risk: "동의를 위한 연락 자체가 개인정보 노출 위험을 증가"
+
+  document_types:
+    application: "심의의뢰서"
+    protocol: "연구계획서"
+    cv: "연구책임자 이력서"
+    training_cert: "연구윤리 교육 이수증"
+    coi: "이해상충 공개서"
+    consent_form: "연구대상자 설명문 및 동의서"
+    waiver_request: "동의 면제 사유서"
+    exemption_request: "심의면제 확인 신청서"
+    crf: "증례기록서/자료수집 항목표"
+    deid_plan: "가명처리 계획서"
+    security_pledge: "개인정보 보호 및 보안 서약서"
+    transfer_agreement: "자료 제공(반출) 계약서"
+    linkage_plan: "데이터 결합 계획서"
+    budget: "연구비 예산서"
+    progress_report: "지속심의 경과보고서"
+    final_report: "종료보고서"
+    other: "기타"
+
+risk_weights:
+  identifiability:
+    anonymized: 0
+    pseudonymized: 8
+    identifiable: 25
+  identifier_cap: 20
+  direct_contact: 15
+  researcher_performs_deid: 5
+  external_transfer: 8
+  external_transfer_identifiable: 10
+  international_transfer: 12
+  data_linkage: 8
+  ai_ml_development: 4
+  commercial_use: 8
+  rare_disease: 6
+  long_retention_years: 10       # 보관기간이 이 값을 초과하면 가산
+  long_retention: 3
+  external_storage: 8
+  sample_size:
+    - {min: 100000, weight: 8}
+    - {min: 10000, weight: 4}
+  vulnerable_cap: 20
+  sensitive_cap: 30
+  unstructured_cap: 15
+
+# 필수 서류 규칙: when 의 조건을 모두 만족하면 필요. 조건명은 engine/checklist.py 참조.
+required_documents:
+  - {doc: application, when: [not_exempt]}
+  - {doc: exemption_request, when: [exempt]}
+  - {doc: protocol, when: []}
+  - {doc: cv, when: []}
+  - {doc: training_cert, when: []}
+  - {doc: coi, when: []}
+  - {doc: consent_form, when: [consent_obtain]}
+  - {doc: waiver_request, when: [consent_waiver, not_exempt]}
+  - {doc: crf, when: []}
+  - {doc: deid_plan, when: [not_anonymized]}
+  - {doc: security_pledge, when: [not_anonymized]}
+  - {doc: transfer_agreement, when: [external_transfer]}
+  - {doc: linkage_plan, when: [data_linkage]}
+  - {doc: budget, when: [funded]}
+  - {doc: progress_report, when: [kind_continuing]}
+  - {doc: final_report, when: [kind_final_report]}
+
+# 가명처리 도구 기본 정책
+deid_policy:
+  k_threshold: 5            # k-익명성 최소 기준
+  l_threshold: 2            # l-다양성 최소 기준(민감속성 지정 시)
+  max_risk_record_ratio: 0.05  # k 미만 레코드 허용 비율(초과 시 부적정)
+  age_band_years: 5
+  age_top_code: 90
+  date_shift_max_days: 30
+  address_level: sigungu    # sido | sigungu

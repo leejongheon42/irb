@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ kind.label }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="muted small">{{ p.protocol_no }} · 승인 유효기간 ~{{ p.expires_at|fmt }}</div><h1>{{ kind.label }} · {{ p.title }}</h1></div>
+  <a class="btn" href="/protocols/{{ p.id }}">취소</a>
+</div>
+<div class="card">
+  {% if kind.value == "continuing" %}
+  <div class="callout">승인 만료 전 지속심의를 받아야 연구를 계속할 수 있습니다. 경과보고서를 '지속심의 경과보고서' 서류로 첨부하십시오.</div>
+  {% else %}
+  <div class="callout">연구 종료 후 종료보고서를 제출하십시오. 자료 파기 여부와 결과 요약을 기재하고 '종료보고서' 서류를 첨부하십시오.</div>
+  {% endif %}
+  <form method="post" action="/protocols/{{ p.id }}/report/{{ kind.value }}">
+    {{ csrf_input }}
+    {% if kind.value == "continuing" %}
+      <label for="progress_summary">연구 진행 경과 요약 *</label>
+      <textarea id="progress_summary" name="progress_summary" required></textarea>
+      <label for="subjects_analyzed">현재까지 분석 대상자 수 <span class="hint">승인 대상자 수 {{ "{:,}".format(p.expected_subjects) }}명</span></label>
+      <input id="subjects_analyzed" name="subjects_analyzed" type="number" min="0">
+      <label for="publications">발표·출판 실적</label>
+      <textarea id="publications" name="publications"></textarea>
+    {% else %}
+      <label for="results_summary">연구 결과 요약 *</label>
+      <textarea id="results_summary" name="results_summary" required></textarea>
+      <label for="subjects_analyzed">최종 분석 대상자 수</label>
+      <input id="subjects_analyzed" name="subjects_analyzed" type="number" min="0">
+      <label for="publications">발표·출판 실적</label>
+      <textarea id="publications" name="publications"></textarea>
+      <label class="check"><input type="checkbox" name="data_destroyed"> 연구 자료(가명정보 포함)를 파기 완료함</label>
+      <div data-show-when="data_destroyed"><label for="destruction_date">파기일</label><input id="destruction_date" name="destruction_date" type="date"></div>
+    {% endif %}
+    <label for="deviations">연구계획 위반·이탈 사항 <span class="hint">없으면 비워 두십시오</span></label>
+    <textarea id="deviations" name="deviations"></textarea>
+    <label class="check"><input type="checkbox" name="data_breach"> 개인정보 유출·보안사고가 발생함</label>
+    <div data-show-when="data_breach"><label for="breach_detail">사고 내용 및 조치</label><textarea id="breach_detail" name="breach_detail"></textarea></div>
+    <p><button class="btn-primary" type="submit">제출</button></p>
+  </form>
+</div>
+{% endblock %}

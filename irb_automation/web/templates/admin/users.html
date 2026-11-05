@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}사용자 관리{% endblock %}
+{% block content %}
+<div class="topbar"><h1>사용자 관리</h1></div>
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>아이디</th><th>이름</th><th>부서</th><th>역할</th><th>교육 만료일</th><th>활성</th><th>비밀번호 재설정</th><th></th></tr>
+    {% for u in items %}{% set fid = "uf-%d"|format(u.id) %}
+    <tr>
+      <td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.department }}</td>
+      <td><select name="role" form="{{ fid }}">{% for r in roles %}<option value="{{ r.value }}" {% if u.role == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}</select></td>
+      <td><input type="date" name="training_expires_on" form="{{ fid }}" value="{{ u.training_expires_on or '' }}">
+        {% if u.training_expires_on and u.training_expires_on < today %}<span class="badge b-danger">만료</span>{% endif %}</td>
+      <td>{% if u.id == user.id %}<input type="hidden" name="is_active" value="on" form="{{ fid }}"><span class="muted small">본인</span>{% else %}<input type="checkbox" name="is_active" form="{{ fid }}" {% if u.is_active %}checked{% endif %}>{% endif %}</td>
+      <td><input type="password" name="password" form="{{ fid }}" autocomplete="new-password" placeholder="변경 시 입력"></td>
+      <td><form id="{{ fid }}" method="post" action="/admin/users/{{ u.id }}">{{ csrf_input }}<button class="btn-sm" type="submit">저장</button></form></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h2>사용자 추가</h2>
+  <form method="post" action="/admin/users">
+    {{ csrf_input }}
+    <div class="form-row-3">
+      <div><label for="username">아이디</label><input id="username" name="username" type="text" required></div>
+      <div><label for="full_name">이름</label><input id="full_name" name="full_name" type="text" required></div>
+      <div><label for="department">부서</label><input id="department" name="department" type="text"></div>
+      <div><label for="email">이메일</label><input id="email" name="email" type="email"></div>
+      <div><label for="role">역할</label><select id="role" name="role">{% for r in roles %}<option value="{{ r.value }}">{{ r.label }}</option>{% endfor %}</select></div>
+      <div><label for="training_expires_on">연구윤리 교육 만료일</label><input id="training_expires_on" name="training_expires_on" type="date"></div>
+      <div><label for="password">초기 비밀번호 <span class="hint">10자 이상, 영문·숫자·특수문자</span></label><input id="password" name="password" type="password" autocomplete="new-password" required></div>
+    </div>
+    <p><button class="btn-primary" type="submit">추가</button></p>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}알림{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1>알림</h1>
+  <form method="post" action="/notifications/read-all">{{ csrf_input }}<button type="submit">모두 읽음 처리</button></form>
+</div>
+<div class="card">
+  {% for n in items %}
+  <div class="comment">
+    {% if not n.is_read %}<span class="badge b-primary">새 알림</span> {% endif %}
+    <a href="/notifications/{{ n.id }}">{{ n.message }}</a>
+    <div class="meta">{{ n.created_at|fmt }}</div>
+  </div>
+  {% else %}<p class="muted">알림이 없습니다.</p>{% endfor %}
+</div>
+{% endblock %}

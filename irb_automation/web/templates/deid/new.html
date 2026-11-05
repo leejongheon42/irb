@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}가명처리 시작{% endblock %}
+{% block content %}
+<div class="topbar"><h1>가명처리 시작</h1></div>
+<div class="card">
+  <div class="callout">
+    원본 파일(CSV, UTF-8 또는 CP949)을 업로드하면 컬럼별 개인식별정보를 자동 탐지하고 가명처리 기법을 권고합니다.
+    화면에는 원본 값 대신 마스킹된 예시만 표시됩니다.
+  </div>
+  <form method="post" action="/deid/new" enctype="multipart/form-data">
+    {{ csrf_input }}
+    <label for="protocol_id">연결할 IRB 과제 <span class="hint">유효한 승인·면제 과제만 표시 · 연결해야 연구팀에 제공 가능</span></label>
+    <select id="protocol_id" name="protocol_id">
+      <option value="">(연결 안 함 - 시험 처리)</option>
+      {% for p in protocols %}<option value="{{ p.id }}" {% if selected == p.id %}selected{% endif %}>{{ p.protocol_no }} · {{ p.title|truncate(50) }} ({{ p.status.label }})</option>{% endfor %}
+    </select>
+    <label for="file">원본 데이터 파일 (CSV)</label>
+    <input id="file" name="file" type="file" accept=".csv,.txt,.tsv" required>
+    <p><button class="btn-primary" type="submit">업로드 및 자동 탐지</button></p>
+  </form>
+  <p class="small muted">데모용 합성 데이터: <code>python samples/generate_sample.py</code> 로 생성한 <code>samples/synthetic_patients.csv</code></p>
+</div>
+{% endblock %}

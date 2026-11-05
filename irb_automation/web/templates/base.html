@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}IRB 자동화{% endblock %} · {{ settings.institution_name }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{% import "_macros.html" as m %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">IRB 자동화 솔루션<small>{{ settings.irb_name }}</small></div>
+    <ul class="nav">
+      <li><a href="/">대시보드</a></li>
+      <li><a href="/protocols">연구과제</a></li>
+      {% if user.role in (Role.RESEARCHER, Role.ADMIN, Role.COORDINATOR) %}
+      <li><a href="/protocols/new">+ 새 과제 작성</a></li>
+      {% endif %}
+      <li><a href="/notifications">알림{% if unread_count %} <span class="badge b-danger">{{ unread_count }}</span>{% endif %}</a></li>
+      {% if user.role in (Role.DATA_STEWARD, Role.ADMIN) %}
+      <li class="section">데이터 제공</li>
+      <li><a href="/deid">가명처리 작업</a></li>
+      <li><a href="/deid/new">+ 가명처리 시작</a></li>
+      {% endif %}
+      {% if user.is_irb_staff %}
+      <li class="section">IRB 사무국</li>
+      <li><a href="/protocols?status=submitted">접수 대기</a></li>
+      <li><a href="/protocols?status=under_review">심의중</a></li>
+      <li><a href="/admin/audit">감사 로그</a></li>
+      <li><a href="/admin/rules">사전검토 규칙</a></li>
+      {% endif %}
+      {% if user.role == Role.ADMIN %}
+      <li><a href="/admin/users">사용자 관리</a></li>
+      {% endif %}
+      <li><a href="/docs">API 문서</a></li>
+    </ul>
+    <div class="me">
+      <strong>{{ user.full_name }}</strong><br>
+      <span class="small">{{ user.role.label }} · {{ user.department }}</span>
+      <form method="post" action="/logout">{{ csrf_input }}<button class="btn-ghost btn-sm" type="submit">로그아웃</button></form>
+    </div>
+  </aside>
+  <main class="main">
+    {% for f in flashes %}<div class="flash {{ f.category }}">{{ f.message }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

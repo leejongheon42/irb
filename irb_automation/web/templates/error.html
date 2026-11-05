@@ -1,0 +1,9 @@
+{% if user %}{% extends "base.html" %}{% else %}{% extends "bare.html" %}{% endif %}
+{% block title %}오류{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ code }} 오류</h1>
+  <p>{{ detail }}</p>
+  <p><a class="btn" href="/">대시보드로</a></p>
+</div>
+{% endblock %}

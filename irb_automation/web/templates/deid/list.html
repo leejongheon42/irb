@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}가명처리 작업{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>가명처리 작업</h1><div class="sub">IRB 승인 과제에 한해 가명처리 후 연구팀에 제공합니다. 모든 처리·제공·다운로드는 감사 로그에 기록됩니다.</div></div>
+  <a class="btn btn-primary" href="/deid/new">+ 가명처리 시작</a>
+</div>
+<div class="card">
+  {% if jobs %}
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>원본 파일</th><th>과제</th><th>행 수</th><th>상태</th><th>적정성</th><th>최소 k</th><th>생성</th></tr>
+    {% for j in jobs %}
+    <tr>
+      <td>{{ j.id }}</td><td><a href="/deid/{{ j.id }}">{{ j.original_filename }}</a></td>
+      <td>{{ j.protocol.protocol_no if j.protocol else "-" }}</td>
+      <td class="num">{{ "{:,}".format(j.row_count) }}</td>
+      <td>{{ {"analyzed": "분석완료", "processed": "처리완료", "released": "제공완료"}[j.status] }}</td>
+      <td>{{ m.verdict_badge(j.report.verdict if j.report else None) }}</td>
+      <td class="num">{{ j.report.k_anonymity.min_k if j.report and j.report.k_anonymity else "-" }}</td>
+      <td class="nowrap small">{{ j.created_at|fmt }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">작업이 없습니다.</p>{% endif %}
+</div>
+{% endblock %}

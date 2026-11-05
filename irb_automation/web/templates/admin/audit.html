@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}감사 로그{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>감사 로그</h1><div class="sub">최근 500건 · 해시 체인으로 위변조 여부를 검증합니다.</div></div>
+  <form method="get" action="/admin/audit" class="actions">
+    <select name="action"><option value="">전체 이벤트</option>{% for k, v in labels.items() %}<option value="{{ k }}" {% if action == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <button type="submit">필터</button>
+  </form>
+</div>
+{% if chain_ok %}<div class="callout ok">해시 체인 검증 정상 — 감사 로그가 변조되지 않았습니다.</div>
+{% else %}<div class="callout danger">해시 체인 불일치 — 감사로그 #{{ broken_id }} 이후 기록의 위변조가 의심됩니다.</div>{% endif %}
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>일시</th><th>사용자</th><th>이벤트</th><th>대상</th><th>세부</th><th>IP</th></tr>
+    {% for l in items %}
+    <tr>
+      <td>{{ l.id }}</td><td class="nowrap">{{ l.timestamp|fmt }}</td>
+      <td>{{ l.actor.full_name if l.actor else "시스템" }}</td>
+      <td>{{ labels.get(l.action, l.action) }}</td>
+      <td class="nowrap">{% if l.entity_type == "protocol" and l.entity_id %}<a href="/protocols/{{ l.entity_id }}">과제 #{{ l.entity_id }}</a>{% elif l.entity_type == "deid_job" and l.entity_id %}<a href="/deid/{{ l.entity_id }}">가명처리 #{{ l.entity_id }}</a>{% else %}{{ l.entity_type }} {{ l.entity_id or "" }}{% endif %}</td>
+      <td class="small"><code>{{ l.details|kjson }}</code></td>
+      <td class="small muted">{{ l.ip_address }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}

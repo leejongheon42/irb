@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}사전검토 규칙{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>자동 사전검토 규칙 세트</h1><div class="sub">버전 {{ ruleset.version }} · {{ ruleset.path }}</div></div>
+</div>
+<div class="callout">
+  규칙 세트는 YAML 파일로 관리되며, 기관 SOP에 맞게 수정한 뒤 저장하면 다음 사전검토부터 자동 반영됩니다(재시작 불필요).
+  다른 위치의 파일을 쓰려면 환경변수 <code>IRB_RULESET_PATH</code>를 지정하십시오. 각 사전검토 결과에는 적용된 규칙 버전(해시)이 기록됩니다.
+</div>
+<div class="grid grid-3">
+  <div class="card"><h2>위험도 구간</h2>
+    <table>{% for l in ruleset.risk_levels %}<tr><td>{{ l.label }}</td><td class="num">~{{ l.max }}점</td></tr>{% endfor %}</table>
+    <p class="small muted">정규심의 기준: {{ ruleset.review_policy.expedited_max_score }}점 초과</p></div>
+  <div class="card"><h2>심의면제 정책</h2>
+    {% set ex = ruleset.review_policy.exemption %}
+    <p>가명정보 면제 허용: <strong>{{ "예" if ex.allow_pseudonymized else "아니오" }}</strong></p>
+    <p class="small">면제 제외 민감정보: {{ ex.excluded_sensitive|map("string")|join(", ") }}</p>
+    <p class="small">면제 제외 취약군: {{ ex.excluded_vulnerable|length }}개 범주</p></div>
+  <div class="card"><h2>가명처리 정책</h2>
+    {% set d = ruleset.deid_policy %}
+    <p>k ≥ {{ d.k_threshold }}, l ≥ {{ d.l_threshold }}</p>
+    <p class="small">위험 레코드 허용 {{ (d.max_risk_record_ratio * 100)|round(1) }}% · 연령 {{ d.age_band_years }}세 구간 · 날짜 ±{{ d.date_shift_max_days }}일</p></div>
+</div>
+<div class="card"><h2>원문</h2><pre>{{ text }}</pre></div>
+{% endblock %}

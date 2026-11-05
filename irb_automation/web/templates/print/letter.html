@@ -1,0 +1,49 @@
+{% extends "print/base.html" %}
+{% block title %}심의결과 통지서 {{ d.letter_no }}{% endblock %}
+{% block title2 %}심의결과 통지서 · {{ d.letter_no }}{% endblock %}
+{% block body %}
+<div class="doc-no">문서번호 {{ d.letter_no }}<br>발행일 {{ d.decided_at|fmt }}</div>
+<h1>{% if d.decision.value == "exempt_confirm" %}심의면제 확인서{% elif d.decision.value == "acknowledge" %}종료보고 확인서{% else %}심의결과 통지서{% endif %}</h1>
+<div class="org">{{ settings.irb_name }}</div>
+
+<table>
+  <tr><th>과제번호</th><td>{{ p.protocol_no }} (v{{ sub.version }})</td></tr>
+  <tr><th>연구 제목</th><td>{{ sub.snapshot.title or p.title }}</td></tr>
+  <tr><th>연구책임자</th><td>{{ p.pi.full_name }} ({{ p.pi.department }})</td></tr>
+  {% if co %}<tr><th>공동연구자</th><td>{% for u in co %}{{ u.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>{% endif %}
+  <tr><th>심의 구분</th><td>{{ sub.kind.label }}</td></tr>
+  <tr><th>심의 유형</th><td>{{ d.review_type.label }}{% if d.meeting_date %} (위원회 회의일 {{ d.meeting_date|fmt }}){% endif %}</td></tr>
+  <tr><th>접수일</th><td>{{ sub.submitted_at|fmt }}</td></tr>
+</table>
+
+<div class="result">심의 결과 : {{ d.decision.label }}</div>
+
+<table>
+  {% if d.approval_start %}<tr><th>승인(확인)일</th><td>{{ d.approval_start|fmt }}</td></tr>{% endif %}
+  {% if d.approval_end %}<tr><th>유효기간 만료일</th><td>{{ d.approval_end|fmt }}{% if d.decision.value in ("approve", "approve_with_conditions") %} — 계속 연구 시 만료일 전 지속심의를 받아야 합니다.{% endif %}</td></tr>{% endif %}
+  {% if d.conditions %}<tr><th>{{ "시정 조건" if d.decision.value == "approve_with_conditions" else "보완·결정 사유" }}</th><td class="pre">{{ d.conditions }}</td></tr>{% endif %}
+  {% if d.comments %}<tr><th>위원회 의견</th><td class="pre">{{ d.comments }}</td></tr>{% endif %}
+  {% if sub.snapshot %}
+  <tr><th>승인 범위(자료)</th><td>자료 대상 기간 {{ sub.snapshot.data_period_start or "-" }} ~ {{ sub.snapshot.data_period_end or "-" }},
+    대상자 {{ "{:,}".format(sub.snapshot.expected_subjects or 0) }}명, 처리 수준 {{ rs.label("deid_levels", sub.snapshot.deid_level or "") }}</td></tr>
+  <tr><th>동의</th><td>{% if sub.snapshot.consent_plan == "obtain" %}서면동의 취득{% else %}서면동의 면제 승인(생명윤리법 제16조제3항){% endif %}</td></tr>
+  {% endif %}
+</table>
+
+{% if d.decision.value in ("approve", "approve_with_conditions", "exempt_confirm") %}
+<h2>연구자 준수사항</h2>
+<ul>
+  <li>승인된 연구계획서의 범위 내에서만 자료를 이용하며, 변경 시 사전에 변경심의를 받아야 합니다.</li>
+  <li>가명정보는 재식별을 시도해서는 안 되며, 재식별 가능성이 발생하면 즉시 처리를 중지하고 회수·파기하여야 합니다(개인정보 보호법 제28조의5).</li>
+  <li>자료는 승인된 장소에서만 분석하고, 승인 없이 외부로 반출하거나 제3자에게 제공할 수 없습니다.</li>
+  <li>연구계획 위반, 개인정보 유출 등 사고 발생 시 지체 없이 IRB에 보고하여야 합니다.</li>
+  <li>연구 종료 시 종료보고서를 제출하고, 승인된 방법으로 자료를 파기하여야 합니다.</li>
+</ul>
+{% endif %}
+
+<div class="sign">
+  {{ d.decided_at.strftime("%Y년 %m월 %d일") }}
+  <div class="who">{{ settings.irb_name }} 위원장 <span class="stamp">직인</span></div>
+  <div class="note">결정 처리자: {{ d.decider.full_name }} ({{ d.decider.role.label }}) · 본 문서는 IRB 자동화 시스템에서 발행되었으며 감사 로그로 진위를 확인할 수 있습니다.</div>
+</div>
+{% endblock %}
