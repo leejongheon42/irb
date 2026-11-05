@@ -46,6 +46,11 @@ async def create_user(request: Request, user: User = Depends(admin_only), db: Se
             email=str(form.get("email", "")).strip(),
             role=Role(str(form.get("role", "researcher"))),
             training_expires_on=parse_date(str(form.get("training_expires_on", ""))),
+            is_committee_member=form.get("is_committee_member") == "on",
+            is_external_member=form.get("is_external_member") == "on",
+            is_lay_member=form.get("is_lay_member") == "on",
+            gender=str(form.get("gender", "")) if form.get("gender") in ("M", "F") else "",
+            term_end=parse_date(str(form.get("term_end", ""))),
         )
         db.add(u)
         db.flush()
@@ -74,6 +79,20 @@ async def update_user(request: Request, uid: int, user: User = Depends(admin_onl
     if training != u.training_expires_on:
         changes["training_expires_on"] = str(training)
         u.training_expires_on = training
+    if "_committee" in form:
+        for attr in ("is_committee_member", "is_external_member", "is_lay_member"):
+            val = form.get(attr) == "on"
+            if getattr(u, attr) != val:
+                changes[attr] = val
+                setattr(u, attr, val)
+        gender = str(form.get("gender", ""))
+        if gender in ("", "M", "F") and gender != u.gender:
+            changes["gender"] = gender
+            u.gender = gender
+        term_end = parse_date(str(form.get("term_end", "")))
+        if term_end != u.term_end:
+            changes["term_end"] = str(term_end)
+            u.term_end = term_end
     new_pw = str(form.get("password", ""))
     if new_pw:
         problems = password_problems(new_pw)

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
+
+log = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -59,7 +63,54 @@ def SessionLocal() -> Session:
 def init_db() -> None:
     from . import models  # noqa: F401  (모델 등록)
 
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    added = migrate_columns(engine)
+    if added:
+        log.info("added columns: %s", ", ".join(added))
+
+
+def migrate_columns(engine: Engine) -> list[str]:
+    """기존 DB에 없는 컬럼을 추가한다(업그레이드 시 경량 마이그레이션).
+
+    새 테이블은 create_all이 만들고, 기존 테이블에 추가된 컬럼만 ALTER TABLE로 보충한다.
+    컬럼 삭제·타입 변경은 지원하지 않으므로 그런 변경은 별도 마이그레이션 도구를 사용한다.
+    """
+    insp = inspect(engine)
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                ddl_type = col.type.compile(dialect=engine.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl_type}'))
+                default = _python_default(col)
+                if default is not None:
+                    conn.execute(text(f'UPDATE "{table.name}" SET "{col.name}" = :v'), {"v": default})
+                added.append(f"{table.name}.{col.name}")
+    return added
+
+
+def _python_default(col) -> object | None:
+    d = col.default
+    if d is None:
+        return None
+    if getattr(d, "is_scalar", False):
+        value = d.arg
+        return value.value if hasattr(value, "value") else value
+    if getattr(d, "is_callable", False):
+        try:
+            value = d.arg(None)
+        except TypeError:
+            return None
+        if isinstance(value, (list, dict)):
+            return json.dumps(value)
+        return value
+    return None
 
 
 def get_db() -> Iterator[Session]:

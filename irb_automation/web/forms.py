@@ -13,12 +13,14 @@ TEXT_FIELDS = (
     "data_items", "identifier_justification", "deid_level", "deid_performed_by", "storage_location",
     "access_controls", "external_recipient", "linkage_target", "destruction_method", "consent_plan",
     "waiver_impracticable_detail", "waiver_minimal_risk_detail", "coi_detail",
+    "review_model", "participating_sites", "external_irb",
 )
 INT_FIELDS = ("expected_subjects", "retention_years")
 DATE_FIELDS = ("study_start", "study_end", "data_period_start", "data_period_end")
 BOOL_FIELDS = (
     "existing_data_only", "direct_contact", "rare_disease", "external_transfer", "international_transfer",
     "data_linkage", "ai_ml_development", "commercial_use", "waiver_no_presumed_refusal", "conflict_of_interest",
+    "multicenter",
 )
 LIST_FIELDS = (
     "data_sources", "identifiers_collected", "sensitive_categories", "vulnerable_populations",

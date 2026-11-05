@@ -98,12 +98,15 @@
     <tr><td>레코드 수</td>{% for k, v in r.k_anonymity.distribution.items() %}<td class="num">{{ v }}</td>{% endfor %}</tr>
   </table>
   {% endif %}
+  <p>DRB 적정성 검토: <span class="badge {{ {'approved': 'b-ok', 'rejected': 'b-danger'}.get(job.drb_status, 'b-info') }}">{{ {"approved": "적정 승인", "rejected": "부적정"}.get(job.drb_status, "검토 대기") }}</span>
+    {% if job.drb_reviewer %}<span class="small muted">{{ job.drb_reviewer.full_name }} · {{ job.drb_reviewed_at|fmt }} {{ job.drb_comment }}</span>{% endif %}
+    {% if job.drb_status != "approved" %}<span class="small muted">— 처리자와 분리된 위원이 <a href="/drb">적정성 검토</a>에서 승인해야 제공할 수 있습니다.</span>{% endif %}</p>
   <div class="actions">
     <a class="btn" href="/deid/{{ job.id }}/report">적정성 검토 보고서</a>
     <a class="btn" href="/deid/{{ job.id }}/download">결과 다운로드</a>
     {% if job.protocol %}
     <form method="post" action="/deid/{{ job.id }}/release" class="inline-form" data-confirm="{{ job.protocol.protocol_no }} 연구팀에 가명정보를 제공합니다. 진행하시겠습니까?">{{ csrf_input }}
-      <button class="btn-ok" type="submit" {% if r.verdict == "부적정" %}disabled{% endif %}>{{ "재제공" if job.status == "released" else "연구팀에 제공" }}</button></form>
+      <button class="btn-ok" type="submit" {% if r.verdict == "부적정" or job.drb_status != "approved" %}disabled{% endif %}>{{ "재제공" if job.status == "released" else "연구팀에 제공" }}</button></form>
     {% endif %}
     {% if job.input_path %}
     <form method="post" action="/deid/{{ job.id }}/purge-input" class="inline-form" data-confirm="원본 파일을 영구 파기합니다. 이후 재처리가 불가능합니다.">{{ csrf_input }}<button class="btn-danger" type="submit">원본 파기</button></form>

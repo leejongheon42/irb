@@ -25,6 +25,8 @@ CONDITIONS: dict[str, Condition] = {
     "kind_initial": lambda f, rt: f.submission_kind in ("initial", "resubmission", "amendment"),
     "kind_continuing": lambda f, rt: f.submission_kind == "continuing",
     "kind_final_report": lambda f, rt: f.submission_kind == "final_report",
+    "review_external": lambda f, rt: f.review_model == "external",
+    "multicenter_lead": lambda f, rt: f.multicenter and f.review_model == "lead",
 }
 
 CONDITION_LABELS: dict[str, str] = {
@@ -42,6 +44,8 @@ CONDITION_LABELS: dict[str, str] = {
     "kind_initial": "신규·변경",
     "kind_continuing": "지속심의",
     "kind_final_report": "종료보고",
+    "review_external": "타기관 IRB 심의 인정",
+    "multicenter_lead": "다기관 대표 IRB",
 }
 
 # 지속심의/종료보고 시에는 경과·종료 보고서 외 서류를 다시 요구하지 않는다.

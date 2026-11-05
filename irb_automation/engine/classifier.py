@@ -140,6 +140,13 @@ def classify(facts: ProtocolFacts, risk: RiskResult, rs: Ruleset) -> dict[str, A
         if unmet:
             rationale.append("면제 미충족: " + "; ".join(unmet))
 
+    if facts.review_model == "external" and kind not in ("continuing", "final_report"):
+        rationale.append(
+            f"타기관 IRB({facts.external_irb or '미기재'}) 승인 결과 인정 검토 - 본원 고유 사항(local context) 확인 필요"
+        )
+    elif facts.review_model == "lead" and facts.multicenter:
+        rationale.append("본원이 대표 IRB로서 참여기관 전체를 심의 - 기관별 고유 사항 수렴 필요")
+
     return {
         "review_type": review_type,
         "exemption": exemption,

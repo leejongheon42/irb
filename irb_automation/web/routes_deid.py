@@ -17,13 +17,17 @@ from ..deid import pipeline
 from ..deid.detector import analyze_table
 from ..deid.transforms import ACTIONS
 from ..engine.ruleset import get_ruleset
+from ..governance import records
 from ..models import DeidJob, Protocol, Role, User
 from ..notifications import notify
 from ..timeutil import now
+from ..workflow import service as wf
 from .deps import client_ip, current_user, flash, render, require_roles, verify_csrf
 
 router = APIRouter()
 steward = require_roles(Role.DATA_STEWARD)
+DRB_ROLES = (Role.REVIEWER, Role.CHAIR, Role.COORDINATOR)
+drb_member = require_roles(*DRB_ROLES)
 
 
 def _job(db: Session, jid: int) -> DeidJob:
@@ -79,6 +83,7 @@ async def deid_upload(request: Request, user: User = Depends(steward), db: Sessi
         encoding=enc,
         row_count=len(rows),
         analysis=analysis,
+        purpose=str(form.get("purpose", "")).strip()[:300],
     )
     db.add(job)
     db.flush()
@@ -156,6 +161,7 @@ async def deid_process(request: Request, jid: int, user: User = Depends(steward)
     job.status = "processed"
     job.released_to = None
     job.released_at = None
+    records.reset_drb(job)  # 재처리 시 적정성 검토를 다시 받아야 함
     audit.record(db, user, "deid_process", "deid_job", job.id,
                  {"verdict": result.report["verdict"], "output_rows": result.report["output_rows"],
                   "k_min": result.report["k_anonymity"].get("min_k")}, client_ip(request))
@@ -175,7 +181,7 @@ def col_index(job: DeidJob, name: str) -> int:
 @router.get("/deid/{jid}/report")
 def deid_report(request: Request, jid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     job = _job(db, jid)
-    _check_download(job, user)
+    _check_download(job, user, report_only=True)
     return render(request, "print/deid_report.html", db, user, job=job, actions=ACTIONS)
 
 
@@ -191,6 +197,10 @@ def deid_release(request: Request, jid: int, user: User = Depends(steward), db: 
         flash(request, f"과제 {p.protocol_no}의 IRB 승인이 유효하지 않아 제공할 수 없습니다.", "error")
     elif job.report.get("verdict") == "부적정":
         flash(request, "적정성 판정이 '부적정'인 데이터는 제공할 수 없습니다. 처리 기준을 조정하십시오.", "error")
+    elif job.drb_status != "approved":
+        flash(request, "데이터심의위원회(DRB)의 적정성 검토 승인이 필요합니다.", "error")
+    elif gate := records.transfer_gate(db, p):
+        flash(request, gate, "error")
     else:
         job.status = "released"
         job.released_to = p.pi_id
@@ -204,8 +214,10 @@ def deid_release(request: Request, jid: int, user: User = Depends(steward), db: 
     return RedirectResponse(f"/deid/{jid}", status_code=303)
 
 
-def _check_download(job: DeidJob, user: User) -> None:
+def _check_download(job: DeidJob, user: User, report_only: bool = False) -> None:
     if user.role in (Role.DATA_STEWARD, Role.ADMIN):
+        return
+    if report_only and user.role in DRB_ROLES:
         return
     p = job.protocol
     if job.status != "released" or p is None or user.id not in p.member_ids():
@@ -246,3 +258,24 @@ def _quote(s: str) -> str:
     from urllib.parse import quote
 
     return quote(s)
+
+
+# --------------------------------------------------------------------- DRB 적정성 검토
+@router.get("/drb")
+def drb_queue(request: Request, user: User = Depends(drb_member), db: Session = Depends(get_db)):
+    jobs = db.scalars(select(DeidJob).where(DeidJob.status.in_(["processed", "released"])).order_by(DeidJob.id.desc())).all()
+    return render(request, "deid/drb.html", db, user, jobs=jobs)
+
+
+@router.post("/deid/{jid}/drb", dependencies=[Depends(verify_csrf)])
+async def drb_decide(request: Request, jid: int, user: User = Depends(drb_member), db: Session = Depends(get_db)):
+    job = _job(db, jid)
+    form = await request.form()
+    try:
+        records.drb_review(db, user, job, form.get("decision") == "approve", str(form.get("comment", "")), client_ip(request))
+    except wf.WorkflowError as e:
+        flash(request, str(e), "error")
+        return RedirectResponse("/drb", status_code=303)
+    db.commit()
+    flash(request, f"가명처리 #{job.id} 적정성 검토를 등록했습니다.", "success")
+    return RedirectResponse("/drb", status_code=303)

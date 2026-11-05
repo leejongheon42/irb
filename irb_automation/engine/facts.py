@@ -57,6 +57,10 @@ PROTOCOL_FIELDS: tuple[str, ...] = (
     "waiver_minimal_risk_detail",
     "conflict_of_interest",
     "coi_detail",
+    "multicenter",
+    "review_model",
+    "participating_sites",
+    "external_irb",
 )
 
 
@@ -108,12 +112,17 @@ class ProtocolFacts:
     waiver_minimal_risk_detail: str = ""
     conflict_of_interest: bool = False
     coi_detail: str = ""
+    multicenter: bool = False
+    review_model: str = "local"
+    participating_sites: str = ""
+    external_irb: str = ""
 
     # 제출 맥락
     submission_kind: str = "initial"
     previous_review_type: str | None = None
     uploaded_doc_types: set[str] = field(default_factory=set)
     pi_training_expires_on: date | None = None
+    team_training: list[dict[str, Any]] = field(default_factory=list)  # [{name, expires_on}]
     protocol_expires_at: date | None = None
     report: dict[str, Any] = field(default_factory=dict)
     reference_date: date = field(default_factory=date.today)

@@ -14,6 +14,9 @@ legal_basis:
   bioethics_16_3: "생명윤리법 제16조제3항(서면동의 면제 요건)"
   bioethics_18: "생명윤리법 제18조(개인정보의 제공)"
   bioethics_3_5: "생명윤리법 제3조제5항(취약한 환경에 있는 개인·집단의 특별 보호)"
+  bioethics_11: "생명윤리법 제11조(기관위원회의 구성 및 운영 등)"
+  bioethics_12: "생명윤리법 제12조(공동 기관위원회 등)"
+  bioethics_14: "생명윤리법 제14조(기관위원회의 평가 및 인증)"
   pipa_23: "개인정보 보호법 제23조(민감정보의 처리 제한)"
   pipa_24: "개인정보 보호법 제24조(고유식별정보의 처리 제한)"
   pipa_24_2: "개인정보 보호법 제24조의2(주민등록번호 처리의 제한)"
@@ -156,7 +159,32 @@ catalogs:
     budget: "연구비 예산서"
     progress_report: "지속심의 경과보고서"
     final_report: "종료보고서"
+    external_irb_approval: "타기관(대표) IRB 승인서"
+    site_list: "참여기관 목록 및 기관별 승인 현황"
+    amendment_table: "변경 대비표"
+    destruction_certificate: "자료 파기 확인서"
     other: "기타"
+
+  review_models:
+    local: "본원 IRB 단독 심의"
+    lead: "본원이 대표(주관) IRB로 다기관 심의"
+    external: "타기관(대표) IRB 심의 결과 인정"
+
+  agreement_types:
+    data_provision: "자료 제공 계약(본원 → 외부)"
+    data_use: "자료 이용 계약(외부 → 본원)"
+    collaboration: "공동연구 협약"
+    linkage: "가명정보 결합 신청·계약"
+    consignment: "개인정보 처리 위탁 계약"
+
+  agreement_terms:
+    no_redistribution: "제3자 재제공 금지"
+    purpose_limited: "승인 목적 외 이용 금지"
+    no_reidentification: "재식별 시도 금지"
+    security_measures: "안전성 확보조치 의무"
+    destruction: "기간 만료 시 파기 및 확인서 제출"
+    breach_notice: "유출 시 즉시 통지"
+    publication_review: "결과 공표 전 소규모 셀 검토"
 
 risk_weights:
   identifiability:
@@ -201,6 +229,8 @@ required_documents:
   - {doc: budget, when: [funded]}
   - {doc: progress_report, when: [kind_continuing]}
   - {doc: final_report, when: [kind_final_report]}
+  - {doc: external_irb_approval, when: [review_external]}
+  - {doc: site_list, when: [multicenter_lead]}
 
 # 가명처리 도구 기본 정책
 deid_policy:
@@ -211,3 +241,35 @@ deid_policy:
   age_top_code: 90
   date_shift_max_days: 30
   address_level: sigungu    # sido | sigungu
+
+# 기관위원회 회의 운영 정책 (생명윤리법 제11조 및 기관 SOP)
+committee:
+  min_members: 5                 # 위원장 포함 최소 위원 수
+  require_both_genders: true     # 하나의 성으로만 구성 불가
+  min_lay_members: 1             # 사회적·윤리적 타당성 평가 위원
+  min_external_members: 1        # 기관 비종사자
+  quorum: majority_of_members    # 재적위원 과반수 출석
+  approval: majority_of_present  # 출석위원 과반수 찬성
+  require_lay_present: true      # 기관 SOP: 비과학계 위원 출석 필수
+  require_external_present: false
+
+# IRB 승인 전 대상자 수 사전 조회(feasibility) 정책
+feasibility_policy:
+  min_cell: 10          # 이 값 미만은 "<10"으로 표시
+  rounding: 10          # 결과를 이 단위로 반올림
+  daily_limit: 50       # 사용자별 일일 조회 한도(차분 공격 완화)
+
+# 분석 결과 반출 심사(airlock) 정책
+output_check:
+  min_cell: 5           # 집계표의 최소 셀 크기(이 값 미만 셀은 억제)
+  allow_zero: true      # 0 셀 허용 여부
+  max_rows_aggregate: 1000   # 이 행 수를 넘으면 개인 단위 자료 의심
+  suppression_label: "<5"
+
+# 자료 파기 관리
+destruction_policy:
+  reminder_days: [60, 30, 7]
+
+# 계약 만료 알림
+agreement_policy:
+  reminder_days: [60, 30]

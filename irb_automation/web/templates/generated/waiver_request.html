@@ -1,0 +1,18 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+{% include "generated/_overview.html" %}
+<p>생명윤리법 제16조제3항에 따라 아래와 같이 연구대상자 서면동의 면제를 신청합니다.</p>
+<h2>① 동의를 받는 것이 현실적으로 불가능하거나 연구의 타당성에 심각한 영향을 미치는 사유</h2>
+<ul>{% for r in p.waiver_impracticable_reasons %}<li>{{ rs.label("waiver_reasons", r) }}</li>{% else %}<li>(미기재)</li>{% endfor %}</ul>
+<p class="pre">{{ p.waiver_impracticable_detail or "(구체적 설명 미기재)" }}</p>
+<h2>② 동의 거부를 추정할 사유가 없고 위험이 극히 낮은 근거</h2>
+<p>동의 거부 추정 사유: {{ "없음을 확인함" if p.waiver_no_presumed_refusal else "(확인 미기재)" }}</p>
+<p class="pre">{{ p.waiver_minimal_risk_detail or "-" }}</p>
+<table>
+  <tr><th>개인정보 처리 수준</th><td>{{ rs.label("deid_levels", p.deid_level) }}</td></tr>
+  <tr><th>연구대상자 직접 접촉</th><td>{{ "있음" if p.direct_contact else "없음" }}</td></tr>
+  <tr><th>자동 평가 결과</th><td>{{ result.consent.status_label }}</td></tr>
+</table>
+{% for n in result.consent.notes %}<p><small>· {{ n }}</small></p>{% endfor %}
+<div class="sign">{{ today.strftime("%Y년 %m월 %d일") }}<div class="who">연구책임자 {{ pi.full_name }} (서명)</div></div>
+{% endblock %}

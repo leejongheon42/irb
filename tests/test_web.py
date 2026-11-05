@@ -10,7 +10,7 @@ from sqlalchemy import select
 from irb_automation.database import SessionLocal
 from irb_automation.models import DeidJob, Protocol, ProtocolStatus
 
-from .conftest import csrf, login
+from .conftest import PASSWORD, csrf, login
 from .test_deid import HEADERS, make_rows
 
 
@@ -69,7 +69,20 @@ def test_end_to_end_review_over_http(app):
         assert "허용되지 않는 파일" in bad.text
 
         r = c.post(f"/protocols/{pid}/submit", data={"csrf_token": t}, follow_redirects=True)
+        assert "연구자 서약에 동의해야" in r.text
+        r = c.post(f"/protocols/{pid}/submit", data={"csrf_token": t, "attest": "on", "password": "wrong"},
+                   follow_redirects=True)
+        assert "비밀번호가 올바르지 않습니다" in r.text
+        r = c.post(f"/protocols/{pid}/submit", data={"csrf_token": t, "attest": "on", "password": PASSWORD},
+                   follow_redirects=True)
         assert "신규심의 신청이 접수되었습니다" in r.text
+        with SessionLocal() as db:
+            from irb_automation import esign
+            from irb_automation.models import Signature
+
+            sig = db.scalars(select(Signature)).one()
+            sub = db.get(Protocol, pid).submissions[0]
+            assert sig.meaning == "연구책임자 제출 서약" and esign.verify(sig, sub.snapshot)
         with SessionLocal() as db:
             p = db.get(Protocol, pid)
             assert p.status == ProtocolStatus.SUBMITTED and p.review_type.value == "exempt"
@@ -155,6 +168,19 @@ def test_deid_flow_and_release_gate(app, settings):
             wf.decide(db, coord, p, DecisionType.EXEMPT_CONFIRM)
             db.commit()
 
+        r = c.post(f"/deid/{jid}/release", data={"csrf_token": t}, follow_redirects=True)
+        assert "적정성 검토 승인이 필요합니다" in r.text
+
+        # DRB: 처리자와 분리된 위원이 적정성 승인
+        login(c, "reviewer1")
+        t2 = csrf(c)
+        assert "검토 대기" in c.get("/drb").text
+        r = c.post(f"/deid/{jid}/drb", data={"csrf_token": t2, "decision": "approve"}, follow_redirects=True)
+        assert "적정성 검토를 등록했습니다" in r.text
+        assert c.get(f"/deid/{jid}/report").status_code == 200
+
+        login(c, "steward")
+        t = csrf(c)
         r = c.post(f"/deid/{jid}/release", data={"csrf_token": t}, follow_redirects=True)
         assert "연구팀에 가명정보를 제공했습니다" in r.text
         assert c.get(f"/deid/{jid}/report").status_code == 200

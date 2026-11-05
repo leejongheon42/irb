@@ -27,6 +27,7 @@
     });
   });
   activateTab((location.hash || "").replace("#", ""));
+  window.addEventListener("hashchange", function () { activateTab((location.hash || "").replace("#", "")); });
 
   // 조건부 표시: data-show-when="field=value" 또는 "field" (체크박스 체크 시)
   function evaluateConditions() {

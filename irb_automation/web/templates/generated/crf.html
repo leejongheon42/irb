@@ -1,0 +1,11 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+{% include "generated/_overview.html" %}
+<h2>자료수집 항목표</h2>
+<p>자료 대상 기간: {{ p.data_period_start|fmt }} ~ {{ p.data_period_end|fmt }} · 예상 대상자 {{ "{:,}".format(p.expected_subjects) }}명</p>
+<table class="grid">
+  <tr><th>No.</th><th>항목</th><th>분류</th><th>제공 형태</th></tr>
+  {% for name, dtype, cat, how in items %}<tr><td class="num">{{ loop.index }}</td><td>{{ name }}</td><td>{{ cat }}</td><td>{{ how }}</td></tr>{% else %}<tr><td colspan="4">수집 항목 미기재</td></tr>{% endfor %}
+</table>
+<p><small>연구 목적 달성에 필요한 최소한의 항목만 수집합니다(최소수집 원칙).</small></p>
+{% endblock %}

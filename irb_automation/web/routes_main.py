@@ -6,14 +6,17 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit
 from ..database import get_db
 from ..models import (
     DeidJob,
+    DestructionRecord,
+    Meeting,
     Notification,
+    OutputRequest,
     Protocol,
     ProtocolStatus,
     ReviewAssignment,
@@ -121,6 +124,20 @@ def dashboard(request: Request, user: User = Depends(current_user), db: Session 
         ctx["released"] = db.scalars(
             select(DeidJob).where(DeidJob.released_to == user.id).order_by(DeidJob.released_at.desc())
         ).all()
+
+    if user.role in (Role.REVIEWER, Role.CHAIR, Role.COORDINATOR, Role.ADMIN):
+        ctx["upcoming_meetings"] = db.scalars(
+            select(Meeting).where(Meeting.status != "closed").order_by(Meeting.scheduled_at).limit(3)
+        ).all()
+        ctx["drb_pending"] = db.scalar(
+            select(func.count(DeidJob.id)).where(DeidJob.drb_status == "pending", DeidJob.status.in_(["processed", "released"]))
+        ) or 0
+    if user.role in (Role.DATA_STEWARD, Role.ADMIN):
+        ctx["outputs_pending"] = db.scalar(select(func.count(OutputRequest.id)).where(OutputRequest.status == "submitted")) or 0
+    ctx["destruction_due"] = [
+        r for r in db.scalars(select(DestructionRecord).where(DestructionRecord.destroyed_at.is_(None)))
+        if (user.id in r.protocol.member_ids() or user.is_irb_staff) and (r.due_date - t).days <= 60
+    ]
 
     ctx["notifications"] = db.scalars(
         select(Notification).where(Notification.user_id == user.id).order_by(Notification.id.desc()).limit(8)

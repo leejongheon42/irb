@@ -11,15 +11,21 @@ from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import audit
+from .. import audit, esign
 from ..config import get_settings
 from ..database import get_db
+from ..documents import GENERATABLE, generate_and_attach
+from ..documents import render as render_document
 from ..engine.ai_review import run_ai_review
 from ..engine.facts import ProtocolFacts
+from ..engine.ruleset import get_ruleset
 from ..models import (
+    Agreement,
     Decision,
     DecisionType,
+    DestructionRecord,
     Document,
+    OutputRequest,
     Protocol,
     ProtocolStatus,
     Recommendation,
@@ -31,6 +37,7 @@ from ..models import (
 )
 from ..timeutil import parse_date
 from ..workflow import service as wf
+from ..workflow.diff import diff_snapshots, previous_snapshot
 from .deps import client_ip, current_user, flash, render, verify_csrf
 from .forms import parse_protocol_form
 
@@ -111,9 +118,28 @@ def detail(request: Request, pid: int, user: User = Depends(current_user), db: S
         logs = db.scalars(
             select(AuditLog).where(AuditLog.entity_type == "protocol", AuditLog.entity_id == p.id).order_by(AuditLog.id.desc())
         ).all()
+    diff = None
+    if sub and sub.kind.value in ("resubmission", "amendment"):
+        prev = previous_snapshot(p, sub)
+        diff = diff_snapshots(prev, sub.snapshot, get_ruleset()) if prev else None
+    revision_items = wf.open_revision_items(db, p) if p.status == S.REVISION_REQUESTED else []
+    last_revision_items = []
+    if sub and sub.kind.value == "resubmission":
+        prev_sub = next((s for s in reversed(p.submissions) if s.id != sub.id and s.outcome == "revision_requested"), None)
+        last_revision_items = wf.revision_items_for(db, prev_sub.id) if prev_sub else []
+    signatures = []
+    for s_ in p.submissions:
+        signatures += esign.signatures_for(db, "submission", s_.id)
+        if s_.decision:
+            signatures += esign.signatures_for(db, "decision", s_.decision.id)
     return render(
         request, "protocols/detail.html", db, user,
         p=p, sub=sub, preview=preview, my_assignment=my_assignment,
+        diff=diff, revision_items=revision_items, last_revision_items=last_revision_items,
+        signatures=signatures, generatable=GENERATABLE,
+        agreements=[a for a in db.scalars(select(Agreement).where(Agreement.protocol_id == p.id))],
+        outputs=db.scalars(select(OutputRequest).where(OutputRequest.protocol_id == p.id).order_by(OutputRequest.id.desc())).all(),
+        destruction=db.scalars(select(DestructionRecord).where(DestructionRecord.protocol_id == p.id)).first(),
         co_names=[u for u in co_names if u], reviewers=_users(db, Role.REVIEWER, Role.CHAIR),
         is_member=wf.is_member(user, p), logs=logs,
         DecisionType=DecisionType, ReviewType=ReviewType, Recommendation=Recommendation,
@@ -208,11 +234,17 @@ def precheck(request: Request, pid: int, user: User = Depends(current_user), db:
 
 
 @router.post("/protocols/{pid}/submit", dependencies=[Depends(verify_csrf)])
-def submit(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def submit(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
+    form = await request.form()
+    if form.get("attest") != "on":
+        flash(request, "연구자 서약에 동의해야 제출할 수 있습니다.", "error")
+        return _back(pid, "#precheck")
     try:
         sub = wf.submit(db, user, p, client_ip(request))
-    except wf.WorkflowError as e:
+        esign.sign(db, user, str(form.get("password", "")), "연구책임자 제출 서약", "submission", sub.id,
+                   sub.snapshot, client_ip(request))
+    except (wf.WorkflowError, esign.SignatureError) as e:
         db.rollback()
         flash(request, str(e), "error")
         return _back(pid, "#precheck")
@@ -286,8 +318,18 @@ async def report_submit(request: Request, pid: int, kind: str, user: User = Depe
 async def request_revision(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
     form = await request.form()
+    items: list[tuple[str, str]] = []
+    sub = p.current_submission
+    findings = {f["code"]: f for f in (sub.latest_prereview.result["findings"] if sub and sub.latest_prereview else [])}
+    for code in form.getlist("finding"):
+        f = findings.get(str(code))
+        if f:
+            items.append((f["code"], f["message"] + (f" → {f['recommendation']}" if f["recommendation"] else "")))
+    for line in str(form.get("custom_items", "")).splitlines():
+        if line.strip():
+            items.append(("", line.strip()))
     try:
-        wf.request_revision(db, user, p, str(form.get("message", "")), client_ip(request))
+        wf.request_revision(db, user, p, str(form.get("message", "")), client_ip(request), items=items)
     except wf.WorkflowError as e:
         flash(request, str(e), "error")
         return _back(pid)
@@ -352,6 +394,7 @@ async def decide(request: Request, pid: int, user: User = Depends(current_user),
             str(form.get("conditions", "")), str(form.get("comments", "")),
             parse_date(str(form.get("meeting_date", ""))), client_ip(request),
         )
+        esign.record_signature(db, user, "심의결과 확정", "decision", d.id, decision_payload(d), client_ip(request))
     except (wf.WorkflowError, ValueError) as e:
         db.rollback()
         flash(request, str(e), "error")
@@ -415,4 +458,75 @@ def letter(request: Request, did: int, user: User = Depends(current_user), db: S
     audit.record(db, user, "letter_view", "protocol", p.id, {"letter_no": d.letter_no}, client_ip(request))
     db.commit()
     co = [db.get(User, uid) for uid in p.co_investigators or []]
-    return render(request, "print/letter.html", db, user, p=p, d=d, sub=d.submission, co=[u for u in co if u])
+    sigs = esign.signatures_for(db, "submission", d.submission_id) + esign.signatures_for(db, "decision", d.id)
+    return render(request, "print/letter.html", db, user, p=p, d=d, sub=d.submission, co=[u for u in co if u], sigs=sigs)
+
+
+def decision_payload(d: Decision) -> dict:
+    return {
+        "letter_no": d.letter_no, "decision": d.decision.value, "review_type": d.review_type.value,
+        "conditions": d.conditions, "comments": d.comments,
+        "approval_start": str(d.approval_start), "approval_end": str(d.approval_end),
+        "snapshot": d.submission.snapshot,
+    }
+
+
+# --------------------------------------------------------------------- 보완 답변
+@router.post("/protocols/{pid}/revision-responses", dependencies=[Depends(verify_csrf)])
+async def revision_responses(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = _get(db, user, pid)
+    form = await request.form()
+    responses = {int(k[5:]): str(v) for k, v in form.items() if k.startswith("resp_") and k[5:].isdigit()}
+    try:
+        n = wf.respond_revision_items(db, user, p, responses, client_ip(request))
+    except wf.WorkflowError as e:
+        flash(request, str(e), "error")
+        return _back(pid)
+    db.commit()
+    flash(request, f"보완 답변 {n}건을 저장했습니다. 내용을 수정한 뒤 재제출하십시오.", "success")
+    return _back(pid)
+
+
+# --------------------------------------------------------------------- 서류 자동 작성
+@router.get("/protocols/{pid}/generate/{doc_type}")
+def preview_generated(request: Request, pid: int, doc_type: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = _get(db, user, pid)
+    if doc_type not in GENERATABLE:
+        raise HTTPException(404)
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(render_document(db, p, doc_type))
+
+
+@router.post("/protocols/{pid}/generate/{doc_type}", dependencies=[Depends(verify_csrf)])
+def attach_generated(request: Request, pid: int, doc_type: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = _get(db, user, pid)
+    if doc_type not in GENERATABLE:
+        raise HTTPException(404)
+    if not (p.is_editable or user.is_irb_staff):
+        flash(request, "작성중·보완요청·변경작성 상태에서만 서류를 첨부할 수 있습니다.", "error")
+        return _back(pid, "#documents")
+    try:
+        doc = generate_and_attach(db, user, p, doc_type, client_ip(request))
+    except wf.WorkflowError as e:
+        flash(request, str(e), "error")
+        return _back(pid, "#documents")
+    db.commit()
+    flash(request, f"'{doc.filename}'을(를) 자동 작성하여 첨부했습니다. 내용을 확인하십시오.", "success")
+    return _back(pid, "#documents")
+
+
+# --------------------------------------------------------------------- 변경 대비표
+@router.get("/submissions/{sid}/diff")
+def submission_diff(request: Request, sid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..models import Submission
+
+    sub = db.get(Submission, sid)
+    if sub is None:
+        raise HTTPException(404)
+    p = _get(db, user, sub.protocol_id)
+    prev = previous_snapshot(p, sub)
+    changes = diff_snapshots(prev, sub.snapshot, get_ruleset()) if prev else []
+    return render(request, "print/diff.html", db, user, p=p, sub=sub, changes=changes, has_prev=prev is not None,
+                  items=wf.revision_items_for(db, next((s.id for s in reversed(p.submissions)
+                                                       if s.id < sub.id and s.outcome == "revision_requested"), 0)))

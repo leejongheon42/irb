@@ -1,0 +1,10 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+{% include "generated/_overview.html" %}
+<h2>참여기관 목록</h2>
+<table class="grid">
+  <tr><th>No.</th><th>기관 정보(기관명 · 연구책임자 · 제공 자료 범위)</th><th>기관 IRB 승인/위임 현황</th></tr>
+  {% for line in p.participating_sites.splitlines() if line.strip() %}<tr><td class="num">{{ loop.index }}</td><td>{{ line }}</td><td></td></tr>{% else %}<tr><td colspan="3">미기재</td></tr>{% endfor %}
+</table>
+<p>심의 방식: {{ rs.label("review_models", p.review_model) }}</p>
+{% endblock %}

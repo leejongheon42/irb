@@ -84,6 +84,16 @@ def generate_findings(
               f"연구책임자의 연구윤리 교육 이수가 만료되었습니다({facts.pi_training_expires_on.isoformat()}).",
               "교육 재이수 후 이수증을 첨부하십시오.")
 
+    expired_team = [t["name"] for t in facts.team_training if t.get("expires_on") and t["expires_on"] < today]
+    missing_team = [t["name"] for t in facts.team_training if not t.get("expires_on")]
+    if expired_team:
+        c.add("major", "TEAM_TRAINING_EXPIRED",
+              "공동연구자 연구윤리 교육 이수 만료: " + ", ".join(expired_team),
+              "교육 재이수 후 이수증을 첨부하거나 연구진에서 제외하십시오.")
+    if missing_team:
+        c.add("minor", "TEAM_TRAINING_UNKNOWN",
+              "공동연구자 교육 이수 정보 미등록: " + ", ".join(missing_team))
+
     if kind in ("continuing", "final_report"):
         _report_findings(c, facts, today)
         return _sorted(c.items)
@@ -276,6 +286,25 @@ def generate_findings(
     if facts.funding_source.strip() and facts.commercial_use and not facts.conflict_of_interest:
         c.add("minor", "COI_CHECK", "연구비 지원과 상업적 활용이 있으나 이해상충이 '없음'으로 신고되었습니다.",
               "이해상충 여부를 재확인하십시오.")
+
+    # ---------------------------------------------------------------- 다기관/위임심의
+    if facts.multicenter and not facts.participating_sites.strip():
+        c.add("major", "SITES_MISSING", "다기관 연구이나 참여기관이 기재되지 않았습니다.",
+              "참여기관과 기관별 연구책임자, 각 기관의 데이터 제공 범위를 기재하십시오.",
+              field="participating_sites")
+    if facts.review_model == "external":
+        if not facts.external_irb.strip():
+            c.add("major", "EXTERNAL_IRB_MISSING", "심의 결과를 인정할 타기관(대표) IRB가 기재되지 않았습니다.",
+                  field="external_irb")
+        c.add("info", "RELIANCE",
+              "타기관 IRB 심의 결과 인정(위임심의) 신청입니다.",
+              "대표 IRB 승인서·승인 계획서 버전 일치 여부와 본원 고유 사항(자료 반출 범위, 보안, 기관 규정)을 확인하십시오.",
+              legal="bioethics_12")
+    if facts.multicenter and facts.data_linkage:
+        c.add("info", "MULTICENTER_LINKAGE",
+              "다기관 자료를 결합하는 연구입니다.",
+              "기관별 가명처리 기준을 통일하고 결합키 생성·결합 장소(결합전문기관)를 명시하십시오.",
+              legal="pipa_28_3")
 
     if facts.submission_kind == "amendment":
         c.add("info", "AMENDMENT", "변경심의 신청입니다. 변경 전후 비교표를 확인하십시오.")

@@ -44,6 +44,7 @@
 <div class="sign">
   {{ d.decided_at.strftime("%Y년 %m월 %d일") }}
   <div class="who">{{ settings.irb_name }} 위원장 <span class="stamp">직인</span></div>
+  {% if sigs %}<div class="note">전자서명: {% for sg in sigs %}{{ sg.user.full_name }}({{ sg.meaning }}, {{ sg.signed_at|fmt }}, SHA-256 {{ sg.content_hash[:16] }}…){% if not loop.last %} / {% endif %}{% endfor %}</div>{% endif %}
   <div class="note">결정 처리자: {{ d.decider.full_name }} ({{ d.decider.role.label }}) · 본 문서는 IRB 자동화 시스템에서 발행되었으며 감사 로그로 진위를 확인할 수 있습니다.</div>
 </div>
 {% endblock %}

@@ -1,0 +1,21 @@
+{% extends "print/base.html" %}
+{% block title %}변경 대비표 {{ p.protocol_no }}{% endblock %}
+{% block title2 %}변경 대비표{% endblock %}
+{% block body %}
+<div class="doc-no">{{ p.protocol_no }} · {{ sub.kind.label }} v{{ sub.version }}<br>제출 {{ sub.submitted_at|fmt }}</div>
+<h1>변경 대비표</h1>
+<div class="org">{{ settings.irb_name }}</div>
+<table><tr><th>연구 제목</th><td>{{ sub.snapshot.title }}</td></tr><tr><th>연구책임자</th><td>{{ p.pi.full_name }}</td></tr></table>
+{% if not has_prev %}<p>비교할 이전 제출본이 없습니다.</p>{% else %}
+<table class="grid">
+  <tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr>
+  {% for c in changes %}<tr><td>{{ c.label }}{% if c.material %} ★{% endif %}</td><td class="pre">{{ c.before }}</td><td class="pre">{{ c.after }}</td></tr>{% else %}<tr><td colspan="3">계획서 내용 변경 없음</td></tr>{% endfor %}
+</table>
+<p><small>★ 위험도·심의유형에 영향을 줄 수 있는 핵심 항목</small></p>
+{% endif %}
+{% if items %}
+<h2>보완 요청 항목별 답변</h2>
+<table class="grid"><tr><th>요청</th><th>답변</th></tr>
+{% for it in items %}<tr><td>{{ it.seq }}. {{ it.request_text }}</td><td class="pre">{{ it.response_text or "(미답변)" }}</td></tr>{% endfor %}</table>
+{% endif %}
+{% endblock %}

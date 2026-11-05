@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}자료 파기 관리{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>연구 자료 파기 관리</h1><div class="sub">종료된 과제는 보관기간에 따라 파기 기한이 자동 설정되고, 기한 60·30·7일 전과 경과 시 알림이 발송됩니다.</div></div></div>
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>과제</th><th>연구책임자</th><th>파기 기한</th><th>상태</th><th>파기 방법 / 확인서</th><th>파기 확인 등록</th></tr>
+    {% for r in items %}{% set dl = r.due_date|days_left %}
+    <tr><td><a href="/protocols/{{ r.protocol.id }}#data">{{ r.protocol.protocol_no }}</a><div class="small muted">{{ r.protocol.title|truncate(30) }}</div></td>
+      <td>{{ r.protocol.pi.full_name }}</td>
+      <td class="nowrap">{{ r.due_date|fmt }}{% if not r.destroyed_at %} <span class="badge {{ 'b-danger' if dl < 0 else ('b-warn' if dl <= 60 else '') }}">{{ "경과" if dl < 0 else "D-" ~ dl }}</span>{% endif %}</td>
+      <td>{% if r.destroyed_at %}<span class="badge b-ok">파기 {{ r.destroyed_at|fmt }}</span>{% else %}<span class="badge b-warn">미파기</span>{% endif %}</td>
+      <td class="small">{{ r.method }}{% if r.certificate_path %} <a href="/governance/destruction/{{ r.id }}/certificate">확인서</a>{% endif %}{% if r.certifier %}<div class="muted">{{ r.certifier.full_name }}</div>{% endif %}</td>
+      <td>{% if not r.destroyed_at %}
+        <form method="post" action="/governance/destruction/{{ r.id }}" enctype="multipart/form-data">{{ csrf_input }}
+          <input type="date" name="destroyed_at" value="{{ today }}">
+          <input type="text" name="method" placeholder="파기 방법(예: 분석서버 영구삭제)" required>
+          <input type="file" name="file">
+          <button class="btn-sm" type="submit">등록</button></form>
+      {% endif %}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">파기 대상이 없습니다.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

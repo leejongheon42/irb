@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}검색{% endblock %}
+{% block content %}
+<div class="topbar"><h1>검색: {{ q }}</h1>
+  <form method="get" action="/search" class="actions"><input type="text" name="q" value="{{ q }}"><button type="submit">검색</button></form></div>
+{% if q|length < 2 %}<div class="card muted">2자 이상 입력하십시오.</div>{% else %}
+<div class="card"><h2>연구과제 ({{ protocols|length }})</h2>
+  {% for p in protocols %}<p><a href="/protocols/{{ p.id }}">{{ p.protocol_no or "(미부여)" }} {{ p.title }}</a> {{ m.status_badge(p.status) }} <span class="muted small">{{ p.pi.full_name }}</span></p>{% else %}<p class="muted">없음</p>{% endfor %}</div>
+{% if jobs %}<div class="card"><h2>가명처리 작업</h2>{% for j in jobs %}<p><a href="/deid/{{ j.id }}">#{{ j.id }} {{ j.original_filename }}</a></p>{% endfor %}</div>{% endif %}
+{% if agreements %}<div class="card"><h2>계약</h2>{% for a in agreements %}<p>{{ a.counterparty }} · {{ a.title }} · {{ a.end_date|fmt }}</p>{% endfor %}</div>{% endif %}
+{% endif %}
+{% endblock %}

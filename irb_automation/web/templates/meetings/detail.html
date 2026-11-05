@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mm %}
+{% block title %}{{ m.label }} 회의{% endblock %}
+{% block content %}
+{% set is_staff = user.role in (Role.COORDINATOR, Role.CHAIR, Role.ADMIN) %}
+<div class="topbar">
+  <div><h1>{{ m.label }} 기관생명윤리위원회</h1><div class="sub">{{ m.scheduled_at|fmt }} · {{ m.location }} ·
+    {{ {"scheduled": "예정", "in_progress": "진행중", "closed": "종료"}[m.status] }}</div></div>
+  <div class="actions">
+    {% if is_staff and m.status != "closed" %}<form method="post" action="/meetings/{{ m.id }}/agenda" class="inline-form">{{ csrf_input }}<button type="submit">안건 다시 불러오기</button></form>{% endif %}
+    <a class="btn" href="/meetings/{{ m.id }}/minutes">회의록 출력</a>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>출석 <span class="hint">재적 {{ base_quorum.total }}명 · 의사정족수 {{ base_quorum.required }}명</span></h2>
+    <form method="post" action="/meetings/{{ m.id }}/attendance">
+      {{ csrf_input }}
+      <div class="checks">
+        {% for u in members %}
+        <label class="check"><input type="checkbox" name="present" value="{{ u.id }}" {% if u.id in m.present_ids %}checked{% endif %} {% if not is_staff or m.status == "closed" %}disabled{% endif %}>
+          {{ u.full_name }} <span class="hint">{{ u.role.label }}{% if u.is_external_member %}·외부{% endif %}{% if u.is_lay_member %}·비과학{% endif %}</span></label>
+        {% endfor %}
+      </div>
+      {% if is_staff and m.status != "closed" %}<p><button type="submit">출석 저장</button></p>{% endif %}
+    </form>
+    {% if base_quorum.ok %}<div class="callout ok">의사정족수 충족 (출석 {{ base_quorum.present }}명)</div>
+    {% else %}<div class="callout danger">{{ base_quorum.reasons|join(" / ") }}</div>{% endif %}
+  </div>
+  <div class="card">
+    <h2>안건 요약</h2>
+    <p>심의 안건 {{ m.items|selectattr("item_type", "equalto", "review")|list|length }}건 · 보고 안건 {{ m.items|selectattr("item_type", "equalto", "report")|list|length }}건</p>
+    {% if is_staff and m.status != "closed" %}
+    <form method="post" action="/meetings/{{ m.id }}/close" data-confirm="회의를 종료합니다. 이후 출석·안건을 변경할 수 없습니다.">
+      {{ csrf_input }}
+      <label for="notes">기타 논의사항(회의록 기재)</label><textarea id="notes" name="notes">{{ m.notes }}</textarea>
+      <p><button class="btn-ok" type="submit">회의 종료</button></p>
+    </form>
+    {% else %}<p class="pre-wrap">{{ m.notes }}</p>{% endif %}
+  </div>
+</div>
+
+<h2>심의 안건</h2>
+{% for it in m.items if it.item_type == "review" %}
+{% set sub = it.submission %}{% set p = sub.protocol %}{% set q = quorum[it.id] %}
+<div class="card" id="item-{{ it.id }}">
+  <h3 class="mt0">{{ loop.index }}. [{{ sub.kind.label }}] {{ p.protocol_no }} {{ p.title }}</h3>
+  <p class="small">연구책임자 {{ p.pi.full_name }} · {{ mm.risk_badge(sub.latest_prereview.risk_level if sub.latest_prereview else None, sub.latest_prereview.risk_score if sub.latest_prereview else None) }}
+    · <a href="/protocols/{{ p.id }}#review">과제 열기</a></p>
+  {% if sub.latest_prereview %}<p class="small muted">자동 사전검토: {{ sub.latest_prereview.result.classification.rationale|join(" / ") }}</p>{% endif %}
+  {% if sub.assignments %}
+  <table><tr><th>심의위원</th><th>의견</th><th>내용</th></tr>
+    {% for a in sub.assignments %}<tr><td>{{ a.reviewer.full_name }}{{ " (주심)" if a.is_primary }}</td><td>{{ a.recommendation.label if a.recommendation else ("이해상충" if a.coi_declared else "미제출") }}</td><td class="small pre-wrap">{{ a.comments }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  {% if it.decision %}
+    <div class="callout ok">의결: <strong>{{ it.decision.decision.label }}</strong> — 표결 {% for k, v in it.votes.items() if v %}{{ vote_labels[k] }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
+      · <a href="/decisions/{{ it.decision.id }}/letter">통지서 {{ it.decision.letter_no }}</a></div>
+  {% elif is_staff and m.status != "closed" %}
+    {% if not q.ok %}<div class="callout danger">의결 정족수 미충족: {{ q.reasons|join(" / ") }}</div>{% endif %}
+    <form method="post" action="/meetings/items/{{ it.id }}/vote">
+      {{ csrf_input }}
+      <label>이해상충 회피 위원 <span class="hint">연구팀 소속 위원은 자동 회피</span></label>
+      <div class="checks">{% for u in members %}<label class="check"><input type="checkbox" name="recused" value="{{ u.id }}" {% if u.id in it.recused_ids %}checked{% endif %}> {{ u.full_name }}</label>{% endfor %}</div>
+      <label>표결 <span class="hint">의결 참여 {{ q.present }}명 · 과반 {{ q.present // 2 + 1 }}표 필요</span></label>
+      <div class="vote-grid">{% for k in vote_keys %}<label>{{ vote_labels[k] }}<input type="number" min="0" name="v_{{ k }}" value="0"></label>{% endfor %}</div>
+      <label for="disc{{ it.id }}">논의 요지(회의록)</label><textarea id="disc{{ it.id }}" name="discussion"></textarea>
+      <div class="form-row">
+        <div><label for="cond{{ it.id }}">시정 조건 / 보완 사유</label><textarea id="cond{{ it.id }}" name="conditions"></textarea></div>
+        <div><label for="com{{ it.id }}">위원회 의견</label><textarea id="com{{ it.id }}" name="comments"></textarea></div>
+      </div>
+      <div class="actions"><button class="btn-ok" type="submit">의결 확정</button></div>
+    </form>
+    <form method="post" action="/meetings/items/{{ it.id }}/remove" class="inline-form">{{ csrf_input }}<button class="btn-sm btn-danger" type="submit">안건 제외</button></form>
+  {% else %}<p class="muted">미의결</p>{% endif %}
+</div>
+{% else %}<div class="card muted">심의 안건이 없습니다.</div>{% endfor %}
+
+<h2>보고 안건 <span class="hint">신속심의·심의면제·종료보고 결과</span></h2>
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>과제번호</th><th>제목</th><th>구분</th><th>유형</th><th>결정</th><th>결정일</th></tr>
+    {% for it in m.items if it.item_type == "report" %}
+    <tr><td>{{ it.submission.protocol.protocol_no }}</td><td>{{ it.submission.protocol.title }}</td><td>{{ it.submission.kind.label }}</td>
+      <td>{{ it.decision.review_type.label if it.decision else "" }}</td><td>{{ it.decision.decision.label if it.decision else "" }}</td><td>{{ it.decision.decided_at|fmt if it.decision else "" }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">보고 안건이 없습니다.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

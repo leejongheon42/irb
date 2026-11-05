@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}반출 심사 #{{ req.id }}{% endblock %}
+{% block content %}
+{% set c = req.check %}
+<div class="topbar"><div><div class="muted small">{{ req.protocol.protocol_no }} · 요청 {{ req.requester.full_name }} · {{ req.requested_at|fmt }} · SHA-256 <code>{{ req.sha256[:12] }}…</code></div>
+  <h1>{{ req.filename }}</h1><div class="actions"><span class="badge">{{ labels[req.status] }}</span></div></div>
+  {% if downloadable %}<a class="btn btn-primary" href="/outputs/{{ req.id }}/download">승인본 다운로드</a>{% endif %}
+</div>
+<div class="card">
+  <h2>자동점검 결과 <span class="hint">{{ c.rows }}행 × {{ c.columns }}열 · 집계 컬럼: {{ c.count_columns|join(", ") or "없음" }}</span></h2>
+  {% for i in c.issues %}<div class="callout danger">{{ i }}</div>{% endfor %}
+  {% for w in c.warnings %}<div class="callout warn">{{ w }}</div>{% endfor %}
+  {% if not c.issues and not c.warnings %}<div class="callout ok">지적 사항 없음</div>{% endif %}
+  {% if c.small_cells %}
+  <h3>최소 셀({{ c.min_cell }}) 미만 셀</h3>
+  <table><tr><th>행</th><th>컬럼</th><th>값</th></tr>
+    {% for s in c.small_cells[:50] %}<tr><td>{{ s.row }}</td><td>{{ s.column }}</td><td class="num">{{ s.value }}</td></tr>{% endfor %}</table>
+  {% if c.small_cell_count > 50 %}<p class="muted small">외 {{ c.small_cell_count - 50 }}개</p>{% endif %}
+  {% endif %}
+  <p class="small muted">{% if req.suppressed_path %}소규모 셀을 억제한 자동 억제본이 준비되어 있습니다.{% else %}자동 억제본 없음{% endif %}</p>
+  {% if req.description %}<p><strong>용도:</strong> {{ req.description }}</p>{% endif %}
+</div>
+{% if req.status == "submitted" and user.role in (Role.DATA_STEWARD, Role.ADMIN) %}
+<div class="card">
+  <h2>심사</h2>
+  <form method="post" action="/outputs/{{ req.id }}/review">
+    {{ csrf_input }}
+    <label for="comment">의견 <span class="hint">반려 시 필수</span></label><textarea id="comment" name="comment"></textarea>
+    <div class="actions">
+      <button class="btn-ok" type="submit" name="action" value="approve" {% if c.issues %}disabled{% endif %}>원본 승인</button>
+      <button class="btn-primary" type="submit" name="action" value="approve_suppressed" {% if not req.suppressed_path %}disabled{% endif %}>억제본 승인</button>
+      <button class="btn-danger" type="submit" name="action" value="reject">반려</button>
+    </div>
+  </form>
+</div>
+{% elif req.reviewed_at %}
+<div class="card"><h2>심사 결과</h2><p>{{ labels[req.status] }} · {{ req.reviewer.full_name }} · {{ req.reviewed_at|fmt }}</p><p class="pre-wrap">{{ req.review_comment }}</p></div>
+{% endif %}
+{% endblock %}

@@ -14,6 +14,8 @@
       <option value="">(연결 안 함 - 시험 처리)</option>
       {% for p in protocols %}<option value="{{ p.id }}" {% if selected == p.id %}selected{% endif %}>{{ p.protocol_no }} · {{ p.title|truncate(50) }} ({{ p.status.label }})</option>{% endfor %}
     </select>
+    <label for="purpose">처리 목적 <span class="hint">가명정보 처리기록 대장에 기재</span></label>
+    <input id="purpose" name="purpose" type="text" placeholder="예: IRB 승인 과제 분석용 데이터 제공">
     <label for="file">원본 데이터 파일 (CSV)</label>
     <input id="file" name="file" type="file" accept=".csv,.txt,.tsv" required>
     <p><button class="btn-primary" type="submit">업로드 및 자동 탐지</button></p>

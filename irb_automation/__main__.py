@@ -43,9 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     with SessionLocal() as db:
         if args.cmd == "init-db":
             if args.demo:
-                from .seed import DEMO_PASSWORD, seed_demo
+                from .seed import DEMO_PASSWORD, seed_demo, seed_rich_demo
 
                 users = seed_demo(db)
+                db.commit()
+                seed_rich_demo(db)
                 db.commit()
                 print("데모 데이터 생성 완료. 공통 비밀번호:", DEMO_PASSWORD)
                 for u in users.values():

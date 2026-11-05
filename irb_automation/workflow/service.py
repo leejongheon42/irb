@@ -27,6 +27,7 @@ from ..models import (
     Recommendation,
     ReviewAssignment,
     ReviewType,
+    RevisionItem,
     Role,
     Submission,
     SubmissionKind,
@@ -147,6 +148,11 @@ def build_facts(
         previous_review_type=previous,
         uploaded_doc_types={d.doc_type for d in protocol.documents},
         pi_training_expires_on=pi.training_expires_on if pi else None,
+        team_training=[
+            {"name": u.full_name, "expires_on": u.training_expires_on}
+            for u in (db.get(User, int(uid)) for uid in protocol.co_investigators or [])
+            if u is not None
+        ],
         protocol_expires_at=protocol.expires_at,
         report=report or {},
     )
@@ -193,6 +199,9 @@ def _run_and_store_prereview(db: Session, submission: Submission, facts: Protoco
 def submit(db: Session, user: User, protocol: Protocol, ip: str = "") -> Submission:
     require_member(user, protocol)
     kind = next_submission_kind(protocol)
+    unanswered = [i for i in open_revision_items(db, protocol) if not i.response_text.strip()]
+    if protocol.status == S.REVISION_REQUESTED and unanswered:
+        raise WorkflowError(f"보완 요청 {len(unanswered)}개 항목에 대한 답변을 먼저 작성하십시오.")
     facts = build_facts(db, protocol, kind.value)
     result = run_prereview(facts)
     if not result["ready_for_review"]:
@@ -278,20 +287,94 @@ def _approval_status_before(protocol: Protocol, current: str) -> str | None:
 
 
 # ---------------------------------------------------------------------- 사무국
-def request_revision(db: Session, user: User, protocol: Protocol, message: str, ip: str = "") -> None:
+def request_revision(
+    db: Session,
+    user: User,
+    protocol: Protocol,
+    message: str,
+    ip: str = "",
+    items: list[tuple[str, str]] | None = None,
+) -> list[RevisionItem]:
+    """보완 요청. items=[(검토의견 코드, 요청 내용), ...] 는 항목별 답변 대상이 된다."""
     require_staff(user)
     sub = protocol.current_submission
     if protocol.status not in (S.SUBMITTED, S.UNDER_REVIEW) or sub is None:
         raise WorkflowError("접수 또는 심의중인 신청건만 보완 요청할 수 있습니다.")
     if sub.kind in (SubmissionKind.CONTINUING, SubmissionKind.FINAL_REPORT):
         raise WorkflowError("지속심의/종료보고는 '보완 후 재심의' 결정으로 처리하십시오.")
-    if not message.strip():
-        raise WorkflowError("보완 요청 사유를 입력하십시오.")
+    items = [(code, text.strip()) for code, text in (items or []) if text and text.strip()]
+    if not message.strip() and not items:
+        raise WorkflowError("보완 요청 사유 또는 항목을 입력하십시오.")
     protocol.status = S.REVISION_REQUESTED
+    _close_submission(sub, "revision_requested")
+    created = _add_revision_items(db, user, protocol, sub, items)
+    summary = message.strip() or f"{len(created)}개 항목 보완 요청"
+    db.add(Comment(protocol_id=protocol.id, author_id=user.id, body=f"[보완요청] {summary}"))
+    audit.record(db, user, "request_revision", "protocol", protocol.id,
+                 {"message": message.strip(), "items": len(created)}, ip)
+    notify(db, protocol.member_ids(), f"{protocol.protocol_no} 보완 요청: {summary[:80]}", f"/protocols/{protocol.id}")
+    return created
+
+
+def _close_submission(sub: Submission, outcome: str) -> None:
     sub.closed = True
-    db.add(Comment(protocol_id=protocol.id, author_id=user.id, body=f"[보완요청] {message.strip()}"))
-    audit.record(db, user, "request_revision", "protocol", protocol.id, {"message": message.strip()}, ip)
-    notify(db, protocol.member_ids(), f"{protocol.protocol_no} 보완 요청: {message.strip()[:80]}", f"/protocols/{protocol.id}")
+    sub.closed_at = now()
+    sub.outcome = outcome
+
+
+def _add_revision_items(
+    db: Session, user: User, protocol: Protocol, sub: Submission, items: list[tuple[str, str]]
+) -> list[RevisionItem]:
+    created = []
+    for seq, (code, text) in enumerate(items, start=1):
+        item = RevisionItem(protocol_id=protocol.id, submission_id=sub.id, seq=seq, finding_code=code,
+                            request_text=text, created_by=user.id)
+        db.add(item)
+        created.append(item)
+    db.flush()
+    return created
+
+
+def open_revision_items(db: Session, protocol: Protocol) -> list[RevisionItem]:
+    """가장 최근 보완 요청의 항목(답변 대상)."""
+    latest = db.scalars(
+        select(RevisionItem.submission_id).where(RevisionItem.protocol_id == protocol.id)
+        .order_by(RevisionItem.id.desc()).limit(1)
+    ).first()
+    if latest is None:
+        return []
+    return list(db.scalars(
+        select(RevisionItem).where(RevisionItem.submission_id == latest).order_by(RevisionItem.seq)
+    ))
+
+
+def revision_items_for(db: Session, submission_id: int) -> list[RevisionItem]:
+    return list(db.scalars(
+        select(RevisionItem).where(RevisionItem.submission_id == submission_id).order_by(RevisionItem.seq)
+    ))
+
+
+def respond_revision_items(
+    db: Session, user: User, protocol: Protocol, responses: dict[int, str], ip: str = ""
+) -> int:
+    require_member(user, protocol)
+    if protocol.status != S.REVISION_REQUESTED:
+        raise WorkflowError("보완요청 상태에서만 답변할 수 있습니다.")
+    items = {i.id: i for i in open_revision_items(db, protocol)}
+    changed = 0
+    for iid, text in responses.items():
+        item = items.get(iid)
+        if item is None:
+            continue
+        text = text.strip()
+        if text != item.response_text:
+            item.response_text = text
+            item.responded_at = now() if text else None
+            item.status = "answered" if text else "open"
+            changed += 1
+    if changed:
+        audit.record(db, user, "revision_response", "protocol", protocol.id, {"answered": changed}, ip)
+    return changed
 
 
 def assign_reviewers(
@@ -474,6 +557,9 @@ def decide(
             protocol.status = S.DISAPPROVED
     elif decision == DecisionType.ACKNOWLEDGE:
         protocol.status = S.CLOSED
+        from ..governance.records import closed_protocol_hook
+
+        closed_protocol_hook(db, protocol, sub.report)
     elif decision == DecisionType.SUSPEND:
         protocol.status = S.SUSPENDED
 
@@ -492,7 +578,7 @@ def decide(
         approval_end=end,
     )
     db.add(d)
-    sub.closed = True
+    _close_submission(sub, "decided")
     db.flush()
     audit.record(
         db, user, "decision", "protocol", protocol.id,
@@ -584,6 +670,9 @@ def run_scheduler(db: Session) -> dict[str, int]:
         .join(Submission)
         .where(ReviewAssignment.submitted_at.is_(None), ReviewAssignment.due_date < t, Submission.closed.is_(False))
     ).all()
+    from ..governance.records import governance_reminders
+
+    stats.update(governance_reminders(db))
     for a in overdue:
         stats["overdue_notices"] += notify(
             db, [a.reviewer_id],

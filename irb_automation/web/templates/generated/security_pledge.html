@@ -1,0 +1,17 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+<p>과제 「{{ p.title }}」의 연구진은 연구 자료(가명정보 포함)를 이용함에 있어 다음 사항을 준수할 것을 서약합니다.</p>
+<ol>
+  <li>제공받은 자료는 승인된 연구 목적 범위 내에서만 이용하고, 목적 외 이용 또는 제3자 제공을 하지 않습니다.</li>
+  <li>자료는 승인된 장소({{ rs.label("storage_locations", p.storage_location) }})에서만 분석하며 무단 복제·반출하지 않습니다.</li>
+  <li>어떠한 경우에도 특정 개인을 알아보기 위한 재식별을 시도하지 않으며, 재식별 가능성을 인지하면 즉시 보고합니다.</li>
+  <li>분석 결과를 반출·공표할 때에는 반출 심사를 거치고 소규모 셀 억제 등 공개 기준을 준수합니다.</li>
+  <li>연구 종료 또는 보관기간({{ p.retention_years }}년) 만료 시 자료를 복구 불가능한 방법으로 파기하고 확인서를 제출합니다.</li>
+  <li>위반 시 관련 법령(생명윤리법, 개인정보 보호법)과 기관 규정에 따른 책임을 집니다.</li>
+</ol>
+<table class="grid">
+  <tr><th>역할</th><th>성명</th><th>소속</th><th>서명</th></tr>
+  {% for u in team %}<tr><td>{{ "연구책임자" if loop.first else "공동연구자" }}</td><td>{{ u.full_name }}</td><td>{{ u.department }}</td><td></td></tr>{% endfor %}
+</table>
+<div class="sign">{{ today.strftime("%Y년 %m월 %d일") }}</div>
+{% endblock %}

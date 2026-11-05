@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}가명정보 처리기록 대장{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>가명정보 처리기록 대장</h1><div class="sub">개인정보 보호법 제28조의4제2항에 따른 처리 기록(처리 목적·항목·제공받는 자 등)을 가명처리 작업에서 자동 작성합니다.</div></div>
+  <div class="actions"><form method="get" action="/governance/ledger" class="actions"><input type="number" name="year" value="{{ year or '' }}" placeholder="연도" min="2000" max="2100"><button type="submit">조회</button></form>
+    <a class="btn" href="/governance/ledger?fmt=csv{% if year %}&year={{ year }}{% endif %}">CSV 내보내기</a></div></div>
+<div class="card"><div class="table-wrap"><table>
+  <tr>{% for k, l in columns %}<th>{{ l }}</th>{% endfor %}</tr>
+  {% for r in rows %}<tr>{% for k, l in columns %}<td class="small">{{ r[k] }}</td>{% endfor %}</tr>{% else %}<tr><td colspan="{{ columns|length }}" class="muted">기록이 없습니다.</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

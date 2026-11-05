@@ -157,6 +157,17 @@
     <div data-show-when="conflict_of_interest"><label for="coi_detail">이해상충 내용 및 관리 방안</label><textarea id="coi_detail" name="coi_detail">{{ v.coi_detail }}</textarea></div>
   </fieldset>
 
+  <fieldset>
+    <legend>7. 다기관 연구 및 심의 방식</legend>
+    {{ bool("multicenter", "다기관 공동연구", v.multicenter) }}
+    <div class="form-row">
+      <div><label for="review_model">심의 방식</label>{{ select("review_model", "review_models", v.review_model) }}</div>
+      <div data-show-when="review_model=external"><label for="external_irb">대표(심의) IRB</label><input id="external_irb" name="external_irb" type="text" value="{{ v.external_irb }}"></div>
+    </div>
+    <div data-show-when="multicenter"><label for="participating_sites">참여기관 <span class="hint">기관명 · 기관 연구책임자 · 제공 자료 범위 (한 줄에 한 기관)</span></label>
+      <textarea id="participating_sites" name="participating_sites">{{ v.participating_sites }}</textarea></div>
+  </fieldset>
+
   <p class="actions"><button class="btn-primary" type="submit">저장하고 자동 사전점검</button></p>
 </form>
 {% endblock %}

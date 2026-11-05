@@ -15,7 +15,15 @@ from . import __version__
 from .api.routes import router as api_router
 from .config import get_settings
 from .database import SessionLocal, init_db
-from .web import routes_admin, routes_deid, routes_main, routes_protocols
+from .web import (
+    routes_admin,
+    routes_deid,
+    routes_governance,
+    routes_main,
+    routes_meetings,
+    routes_protocols,
+    routes_reports,
+)
 from .web.deps import LoginRequired, current_user_optional, render
 
 log = logging.getLogger("irb")
@@ -86,6 +94,9 @@ def create_app() -> FastAPI:
     app.include_router(routes_protocols.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)
+    app.include_router(routes_meetings.router)
+    app.include_router(routes_governance.router)
+    app.include_router(routes_reports.router)
     app.include_router(api_router)
 
     @app.exception_handler(LoginRequired)

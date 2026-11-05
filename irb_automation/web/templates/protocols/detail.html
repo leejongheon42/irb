@@ -16,11 +16,7 @@
     {% if is_member %}
       {% if p.is_editable %}
         <a class="btn" href="/protocols/{{ p.id }}/edit">수정</a>
-        <form method="post" action="/protocols/{{ p.id }}/submit" class="inline-form" data-confirm="제출 후에는 IRB 결정 전까지 수정할 수 없습니다. 제출하시겠습니까?">{{ csrf_input }}
-          <button class="btn-primary" type="submit" {% if preview and not preview.ready_for_review %}disabled title="필수 보완 사항을 먼저 해결하십시오"{% endif %}>
-            {% if p.status == S.AMENDMENT or (p.status == S.REVISION_REQUESTED and p.approved_at) %}변경심의 제출{% elif p.status == S.REVISION_REQUESTED %}보완 재제출{% else %}심의 제출{% endif %}
-          </button>
-        </form>
+        <a class="btn btn-primary" href="#precheck">{% if p.status == S.AMENDMENT or (p.status == S.REVISION_REQUESTED and p.approved_at) %}변경심의 제출{% elif p.status == S.REVISION_REQUESTED %}보완 재제출{% else %}심의 제출{% endif %}</a>
       {% endif %}
       {% if p.status == S.AMENDMENT %}
         <form method="post" action="/protocols/{{ p.id }}/amend/cancel" class="inline-form" data-confirm="변경 내용을 버리고 승인된 내용으로 되돌립니다.">{{ csrf_input }}<button type="submit">변경 취소</button></form>
@@ -42,11 +38,30 @@
   <div class="callout danger">승인 유효기간이 만료되었습니다. 연구(자료 이용)를 중단하고 지속심의 또는 종료보고를 제출하십시오.</div>
 {% endif %}
 
+{% if revision_items %}
+<div class="card">
+  <h2>보완 요청 항목별 답변 <span class="hint">모든 항목에 답변해야 재제출할 수 있습니다</span></h2>
+  <form method="post" action="/protocols/{{ p.id }}/revision-responses">
+    {{ csrf_input }}
+    {% for it in revision_items %}
+    <div class="item-card">
+      <strong>{{ it.seq }}. {{ it.request_text }}</strong> {% if it.finding_code %}<span class="badge">{{ it.finding_code }}</span>{% endif %}
+      {% if is_member %}
+      <textarea name="resp_{{ it.id }}" placeholder="수정한 내용과 위치(예: 연구계획서 4.2절)를 기재하십시오">{{ it.response_text }}</textarea>
+      {% else %}<div class="pre-wrap muted">{{ it.response_text or "(미답변)" }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% if is_member %}<p><button type="submit">답변 저장</button></p>{% endif %}
+  </form>
+</div>
+{% endif %}
+
 <div class="tabs">
   <a href="#overview" data-tab="overview">개요</a>
   <a href="#precheck" data-tab="precheck">자동 사전검토</a>
   <a href="#documents" data-tab="documents">서류 ({{ p.documents|length }})</a>
   <a href="#review" data-tab="review">심의</a>
+  <a href="#data" data-tab="data">데이터 관리</a>
   <a href="#comments" data-tab="comments">의견 ({{ p.comments|length }})</a>
   {% if logs %}<a href="#history" data-tab="history">이력</a>{% endif %}
 </div>
@@ -98,6 +113,24 @@
     {% if preview %}
       <h2>실시간 자동 사전점검 <span class="hint">저장된 내용 기준 · 제출 전 점검</span></h2>
       {{ m.prereview(preview, rs) }}
+      {% if is_member %}
+      <div class="sign-box" id="submit">
+        <h3 class="mt0">전자서명 제출</h3>
+        {% if preview.ready_for_review %}
+        <form method="post" action="/protocols/{{ p.id }}/submit" data-confirm="제출 후에는 IRB 결정 전까지 수정할 수 없습니다. 제출하시겠습니까?">
+          {{ csrf_input }}
+          <label class="check"><input type="checkbox" name="attest" required>
+            본인은 연구책임자(또는 공동연구자)로서 위 내용이 사실임을 확인하며, 승인된 계획서에 따라 연구를 수행하고
+            관련 법령(생명윤리법, 개인정보 보호법)과 기관 규정을 준수할 것을 서약합니다.</label>
+          <div class="form-row">
+            <div><label for="sign_pw">본인 확인 비밀번호</label><input id="sign_pw" name="password" type="password" autocomplete="current-password" required></div>
+            <div><label>&nbsp;</label><button class="btn-primary" type="submit">서명하고 제출</button></div>
+          </div>
+          <p class="small muted">서명 시점의 과제 내용 해시(SHA-256)가 서명 기록으로 보관되어 사후 변경 여부를 검증할 수 있습니다.</p>
+        </form>
+        {% else %}<p class="muted">필수 보완 사항을 해결하면 제출할 수 있습니다.</p>{% endif %}
+      </div>
+      {% endif %}
     {% elif sub and sub.latest_prereview %}
       {% set pr = sub.latest_prereview %}
       <h2>자동 사전검토 결과 <span class="hint">{{ sub.kind.label }} · {{ pr.created_at|fmt }} 제출 시점</span></h2>
@@ -140,6 +173,17 @@
       {% endfor %}
     </table></div>
     {% else %}<p class="muted">첨부된 서류가 없습니다.</p>{% endif %}
+    {% if (is_member and p.is_editable) or user.is_irb_staff %}
+    <h3>서류 자동 작성 <span class="hint">입력한 과제 내용으로 서식을 채워 첨부합니다</span></h3>
+    <div class="actions">
+      {% for dt in generatable if dt != "amendment_table" or p.status == S.AMENDMENT %}
+      {% if dt != "site_list" or p.multicenter %}
+      <span><a class="btn btn-sm" href="/protocols/{{ p.id }}/generate/{{ dt }}" target="_blank" rel="noopener">{{ rs.label("document_types", dt) }} 미리보기</a>
+      <form method="post" action="/protocols/{{ p.id }}/generate/{{ dt }}" class="inline-form">{{ csrf_input }}<button class="btn-sm" type="submit">첨부</button></form></span>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if is_member or user.is_irb_staff %}
     <h3>서류 업로드</h3>
     <form method="post" action="/protocols/{{ p.id }}/documents" enctype="multipart/form-data" class="form-row">
@@ -155,6 +199,27 @@
 
 {# ------------------------------------------------------------------ 심의 #}
 <section class="tab-panel" id="tab-review">
+  {% if diff is not none %}
+  <div class="card">
+    <h2>변경 대비표 <span class="hint">{{ sub.kind.label }} v{{ sub.version }} · 직전 제출본 대비</span>
+      <a class="btn btn-sm" href="/submissions/{{ sub.id }}/diff">출력</a></h2>
+    {% if diff %}
+    <div class="table-wrap"><table>
+      <tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr>
+      {% for c in diff %}<tr class="{{ 'material' if c.material else '' }}"><td>{{ c.label }}{% if c.material %} <span class="badge b-warn">핵심</span>{% endif %}</td>
+        <td class="pre-wrap diff-before small">{{ c.before }}</td><td class="pre-wrap diff-after small">{{ c.after }}</td></tr>{% endfor %}
+    </table></div>
+    {% else %}<p class="muted">계획서 내용 변경 없음(서류만 보완).</p>{% endif %}
+  </div>
+  {% endif %}
+  {% if last_revision_items and (user.is_irb_staff or my_assignment) %}
+  <div class="card">
+    <h2>보완 요청에 대한 연구자 답변</h2>
+    {% for it in last_revision_items %}
+    <div class="item-card"><strong>{{ it.seq }}. {{ it.request_text }}</strong><div class="pre-wrap">→ {{ it.response_text or "(미답변)" }}</div></div>
+    {% endfor %}
+  </div>
+  {% endif %}
   <div class="card">
     <h2>심의 신청 이력</h2>
     {% if p.submissions %}
@@ -238,10 +303,18 @@
         <p><button class="btn-primary" type="submit">배정</button></p>
       </form>
       {% if sub.kind.value in ("initial", "resubmission", "amendment") %}
-      <h3>보완 요청</h3>
+      <h3>보완 요청 <span class="hint">선택한 항목마다 연구자가 답변합니다</span></h3>
       <form method="post" action="/protocols/{{ p.id }}/revision">
         {{ csrf_input }}
-        <textarea name="message" placeholder="연구자에게 전달할 보완 요청 사항"></textarea>
+        {% if sub.latest_prereview %}
+        {% for f in sub.latest_prereview.result.findings if f.severity != "info" %}
+        <label class="check"><input type="checkbox" name="finding" value="{{ f.code }}" {% if f.severity in ("critical", "major") %}checked{% endif %}> {{ m.severity_badge(f.severity) }} {{ f.message }}</label>
+        {% endfor %}
+        {% endif %}
+        <label for="custom_items">추가 요청 항목 <span class="hint">한 줄에 한 항목</span></label>
+        <textarea id="custom_items" name="custom_items"></textarea>
+        <label for="rev_msg">요약 메시지(선택)</label>
+        <input id="rev_msg" name="message" type="text">
         <p><button type="submit">보완 요청</button></p>
       </form>
       {% endif %}
@@ -267,6 +340,31 @@
 </section>
 
 {# ------------------------------------------------------------------ 의견 #}
+<section class="tab-panel" id="tab-data">
+  <div class="card">
+    <h2>자료 제공 계약</h2>
+    {% for a in agreements %}
+    <p>{{ rs.label("agreement_types", a.agreement_type) }} · {{ a.counterparty }} · {{ a.start_date|fmt }} ~ {{ a.end_date|fmt }}
+      {% if a.is_effective %}<span class="badge b-ok">유효</span>{% else %}<span class="badge b-danger">{{ "해지" if a.status == "terminated" else "만료/미발효" }}</span>{% endif %}</p>
+    {% else %}<p class="muted">등록된 계약이 없습니다.{% if p.external_transfer %} <strong>외부 제공 과제는 계약 등록 후 자료를 제공할 수 있습니다.</strong>{% endif %}</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>결과 반출 심사</h2>
+    {% for o in outputs %}
+    <p><a href="/outputs/{{ o.id }}">{{ o.filename }}</a> · {{ o.requested_at|fmt }} · <span class="badge">{{ {"submitted": "심사중", "approved": "승인", "approved_suppressed": "억제본 승인", "rejected": "반려"}[o.status] }}</span></p>
+    {% else %}<p class="muted">반출 요청이 없습니다.</p>{% endfor %}
+    {% if is_member and p.is_active_approval %}<a class="btn btn-sm" href="/outputs">반출 심사 요청</a>{% endif %}
+  </div>
+  <div class="card">
+    <h2>자료 파기</h2>
+    {% if destruction %}
+    <p>파기 기한 {{ destruction.due_date|fmt }} ·
+      {% if destruction.destroyed_at %}<span class="badge b-ok">파기 완료 {{ destruction.destroyed_at|fmt }}</span>{% else %}<span class="badge b-warn">미파기</span>{% endif %}
+      <a class="btn btn-sm" href="/governance/destruction">파기 관리</a></p>
+    {% else %}<p class="muted">연구 종료 시 보관기간({{ p.retention_years }}년)에 따라 파기 기한이 자동 설정됩니다.</p>{% endif %}
+  </div>
+</section>
+
 <section class="tab-panel" id="tab-comments">
   <div class="card">
     <h2>IRB ↔ 연구자 의견 교환</h2>
@@ -285,6 +383,14 @@
 {% if logs %}
 <section class="tab-panel" id="tab-history">
   <div class="card">
+    {% if signatures %}
+    <h2>전자서명</h2>
+    <div class="table-wrap"><table>
+      <tr><th>일시</th><th>서명자</th><th>의미</th><th>대상</th><th>내용 해시</th></tr>
+      {% for sg in signatures %}<tr><td class="nowrap">{{ sg.signed_at|fmt }}</td><td>{{ sg.user.full_name }}</td><td>{{ sg.meaning }}</td>
+        <td>{{ sg.entity_type }} #{{ sg.entity_id }}</td><td><code class="small">{{ sg.content_hash[:16] }}…</code></td></tr>{% endfor %}
+    </table></div>
+    {% endif %}
     <h2>감사 이력</h2>
     <ul class="timeline">
       {% for l in logs %}

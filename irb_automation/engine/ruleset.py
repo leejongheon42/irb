@@ -70,6 +70,9 @@ class Ruleset:
     def deid_policy(self) -> dict[str, Any]:
         return self.data.get("deid_policy", {})
 
+    def policy(self, name: str) -> dict[str, Any]:
+        return self.data.get(name, {}) or {}
+
 
 def load_ruleset(path: Path) -> Ruleset:
     raw = path.read_bytes()

@@ -1,0 +1,14 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+{% include "generated/_overview.html" %}
+<h2>심의면제 요건 자가 점검 ({{ result.classification.exemption.legal }})</h2>
+<table class="grid">
+  <tr><th>요건</th><th>해당</th></tr>
+  {% for c in result.classification.exemption.criteria %}<tr><td>{{ c.label }}{% if c.detail %}<br><small>{{ c.detail }}</small>{% endif %}</td><td class="{{ 'ok' if c.met else 'bad' }}">{{ "예" if c.met else "아니오" }}</td></tr>{% endfor %}
+</table>
+<h2>면제 신청 사유</h2>
+<p class="pre">본 연구는 {{ p.data_period_start|fmt }} ~ {{ p.data_period_end|fmt }} 기간에 이미 생성된 {% for k in p.data_sources %}{{ rs.label("data_sources", k) }}{% if not loop.last %}, {% endif %}{% endfor %} 자료를 이용하는 연구로서, 연구대상자를 직접 대면하거나 추가로 자료를 수집하지 않습니다.
+연구자는 {{ rs.label("deid_levels", p.deid_level) }}만을 제공받으며{% if p.deid_level == "pseudonymized" %}, 가명처리는 {{ rs.label("deid_performers", p.deid_performed_by) }}가 수행하고 추가정보(매핑정보)는 연구자와 분리하여 보관합니다{% endif %}.
+따라서 개인식별정보를 수집·기록하지 아니하는 연구로서 심의면제 확인을 신청합니다.</p>
+<div class="sign">{{ today.strftime("%Y년 %m월 %d일") }}<div class="who">연구책임자 {{ pi.full_name }} (서명)</div></div>
+{% endblock %}

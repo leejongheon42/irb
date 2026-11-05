@@ -7,26 +7,40 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-{% import "_macros.html" as m %}
 <div class="layout">
   <aside class="sidebar">
     <div class="brand">IRB 자동화 솔루션<small>{{ settings.irb_name }}</small></div>
+    <form method="get" action="/search" class="nav-search"><input type="text" name="q" placeholder="과제·계약 검색" aria-label="검색"></form>
     <ul class="nav">
       <li><a href="/">대시보드</a></li>
       <li><a href="/protocols">연구과제</a></li>
       {% if user.role in (Role.RESEARCHER, Role.ADMIN, Role.COORDINATOR) %}
       <li><a href="/protocols/new">+ 새 과제 작성</a></li>
       {% endif %}
+      <li><a href="/feasibility">대상자 수 사전 조회</a></li>
       <li><a href="/notifications">알림{% if unread_count %} <span class="badge b-danger">{{ unread_count }}</span>{% endif %}</a></li>
+      <li class="section">데이터 활용</li>
+      <li><a href="/outputs">결과 반출 심사</a></li>
+      <li><a href="/governance/destruction">자료 파기 관리</a></li>
       {% if user.role in (Role.DATA_STEWARD, Role.ADMIN) %}
-      <li class="section">데이터 제공</li>
       <li><a href="/deid">가명처리 작업</a></li>
       <li><a href="/deid/new">+ 가명처리 시작</a></li>
+      {% endif %}
+      {% if user.role in (Role.DATA_STEWARD, Role.ADMIN) or user.is_irb_staff %}
+      <li><a href="/governance/agreements">자료 제공 계약</a></li>
+      <li><a href="/governance/ledger">가명정보 처리기록 대장</a></li>
+      {% endif %}
+      {% if user.role in (Role.REVIEWER, Role.CHAIR, Role.COORDINATOR) or user.role == Role.ADMIN %}
+      <li class="section">위원회</li>
+      <li><a href="/meetings">위원회 회의</a></li>
+      <li><a href="/drb">가명처리 적정성 검토</a></li>
       {% endif %}
       {% if user.is_irb_staff %}
       <li class="section">IRB 사무국</li>
       <li><a href="/protocols?status=submitted">접수 대기</a></li>
       <li><a href="/protocols?status=under_review">심의중</a></li>
+      <li><a href="/reports/kpi">성과지표</a></li>
+      <li><a href="/reports/annual">연간 운영실적</a></li>
       <li><a href="/admin/audit">감사 로그</a></li>
       <li><a href="/admin/rules">사전검토 규칙</a></li>
       {% endif %}

@@ -1,0 +1,34 @@
+{% extends "print/base.html" %}
+{% block title %}{{ r.year }}년 기관위원회 운영실적{% endblock %}
+{% block title2 %}{{ r.year }}년 운영실적 보고서{% endblock %}
+{% block body %}
+<div class="doc-no">작성일 {{ today|fmt }}</div>
+<h1>기관위원회 운영실적 보고서</h1>
+<div class="org">{{ settings.irb_name }} · {{ r.year }}년 1월 1일 ~ 12월 31일</div>
+<p><small>국가생명윤리정책원 평가·인증 연차보고 및 자체 점검용 기초자료 (생명윤리법 제14조)</small></p>
+<h2>1. 위원회 구성</h2>
+<table class="grid"><tr><th>요건</th><th>현황</th><th>충족</th></tr>
+  {% for c in r.composition.checks %}<tr><td>{{ c.label }}</td><td>{{ c.detail }}</td><td class="{{ 'ok' if c.ok else 'bad' }}">{{ "충족" if c.ok else "미충족" }}</td></tr>{% endfor %}</table>
+<h2>2. 회의 개최</h2>
+<p>정기회의 {{ r.meeting_count }}회 개최</p>
+<table class="grid"><tr><th>회차</th><th>일시</th><th>심의 안건</th><th>보고 안건</th></tr>
+  {% for mt in r.meetings %}<tr><td>{{ mt.label }}</td><td>{{ mt.scheduled_at|fmt }}</td><td class="num">{{ mt.items|selectattr("item_type", "equalto", "review")|list|length }}</td><td class="num">{{ mt.items|selectattr("item_type", "equalto", "report")|list|length }}</td></tr>{% else %}<tr><td colspan="4">없음</td></tr>{% endfor %}</table>
+<h2>3. 심의 실적</h2>
+<table class="grid">
+  <tr><th>구분</th><th class="num">건수</th></tr>
+  <tr><td>전체 결정</td><td class="num">{{ r.decisions_total }}</td></tr>
+  {% for k, v in r.by_review_type.items() %}<tr><td>신규·재심의 - {{ k }}</td><td class="num">{{ v }}</td></tr>{% endfor %}
+  {% for k, v in r.initial_decisions.items() %}<tr><td>신규·재심의 결과 - {{ k }}</td><td class="num">{{ v }}</td></tr>{% endfor %}
+  <tr><td>변경심의</td><td class="num">{{ r.amendments }}</td></tr>
+  <tr><td>지속심의</td><td class="num">{{ r.continuing }}</td></tr>
+  <tr><td>종료보고</td><td class="num">{{ r.final_reports }}</td></tr>
+  <tr><td>연구계획 위반·이탈 보고</td><td class="num">{{ r.deviations }}</td></tr>
+  <tr><td>개인정보 유출·보안사고 보고</td><td class="num">{{ r.breaches }}</td></tr>
+  <tr><td>연말 기준 승인 유효 과제</td><td class="num">{{ r.active_protocols }}</td></tr>
+</table>
+<h2>4. 처리 기간(신규 심의, 중앙값)</h2>
+<table class="grid"><tr><th>유형</th><th>전체</th><th>IRB 측</th><th>연구자 측</th></tr>
+  {% for rt, label in [("exempt", "심의면제"), ("expedited", "신속심의"), ("full", "정규심의")] %}{% set t = r.kpi.turnaround[rt] %}
+  <tr><td>{{ label }}</td><td>{{ t.total.median if t.total.n else "-" }}일</td><td>{{ t.irb.median if t.irb.n else "-" }}일</td><td>{{ t.researcher.median if t.researcher.n else "-" }}일</td></tr>{% endfor %}</table>
+<div class="note">본 보고서는 시스템 기록으로 자동 집계되었습니다. 표준운영지침(SOP) 변경사항은 별도로 기재하십시오.</div>
+{% endblock %}

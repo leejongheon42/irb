@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}가명처리 적정성 검토{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>가명처리 적정성 검토 (데이터심의위원회)</h1><div class="sub">처리자와 분리된 위원이 자동 평가 결과와 결과서를 확인해 적정 여부를 확정합니다. 승인된 결과만 연구팀에 제공됩니다.</div></div></div>
+{% for j in jobs %}
+<div class="card">
+  <h3 class="mt0">#{{ j.id }} {{ j.original_filename }} {{ m.verdict_badge(j.report.verdict if j.report else None) }}
+    <span class="badge {{ {'approved': 'b-ok', 'rejected': 'b-danger'}.get(j.drb_status, 'b-info') }}">{{ {"approved": "적정 승인", "rejected": "부적정"}.get(j.drb_status, "검토 대기") }}</span></h3>
+  <p class="small">과제 {{ j.protocol.protocol_no if j.protocol else "미연결" }} · 처리자 {{ j.creator.full_name }} · {{ (j.report.processed_at or "")[:16].replace("T", " ") }}
+    · 최소 k {{ j.report.k_anonymity.min_k if j.report.k_anonymity.applicable else "-" }} · <a href="/deid/{{ j.id }}/report">적정성 검토 결과서</a></p>
+  {% for i in j.report.issues %}<div class="callout danger small">{{ i }}</div>{% endfor %}
+  {% for w in j.report.warnings %}<div class="callout warn small">{{ w }}</div>{% endfor %}
+  {% if j.drb_status == "pending" %}
+    {% if j.created_by == user.id %}<p class="muted">본인이 처리한 작업은 검토할 수 없습니다.</p>{% else %}
+    <form method="post" action="/deid/{{ j.id }}/drb">{{ csrf_input }}
+      <input type="text" name="comment" placeholder="검토 의견(부적정 시 필수)">
+      <div class="actions"><button class="btn-ok" type="submit" name="decision" value="approve" {% if j.report.verdict == "부적정" %}disabled{% endif %}>적정</button>
+        <button class="btn-danger" type="submit" name="decision" value="reject">부적정</button></div></form>{% endif %}
+  {% else %}<p class="small">검토 {{ j.drb_reviewer.full_name if j.drb_reviewer else "" }} · {{ j.drb_reviewed_at|fmt }} · {{ j.drb_comment }}</p>{% endif %}
+</div>
+{% else %}<div class="card muted">검토할 가명처리 결과가 없습니다.</div>{% endfor %}
+{% endblock %}

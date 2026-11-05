@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}대상자 수 사전 조회{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>대상자 수 사전 조회 (Feasibility)</h1>
+  <div class="sub">IRB 제출 전 연구 설계를 위해 조건에 맞는 환자 수를 집계값으로만 제공합니다. 소규모 결과는 억제되고, 모든 조회는 기록됩니다. 데이터 출처: {{ source }}</div></div></div>
+<div class="grid grid-2">
+  <div class="card">
+    <form method="post" action="/feasibility">
+      {{ csrf_input }}
+      <label for="dx_codes">진단코드(KCD/ICD) <span class="hint">접두어 일치, 공백·쉼표로 구분 예: E11 N18</span></label>
+      <input id="dx_codes" name="dx_codes" type="text" value="{{ form.get('dx_codes', '') }}" required>
+      <div class="form-row">
+        <div><label for="sex">성별</label><select id="sex" name="sex"><option value="">전체</option><option value="M" {% if form.get('sex') == 'M' %}selected{% endif %}>남</option><option value="F" {% if form.get('sex') == 'F' %}selected{% endif %}>여</option></select></div>
+        <div><label>연령(진단 시점)</label><div class="form-row"><input type="number" name="age_min" min="0" max="120" placeholder="최소" value="{{ form.get('age_min', '') }}"><input type="number" name="age_max" min="0" max="120" placeholder="최대" value="{{ form.get('age_max', '') }}"></div></div>
+        <div><label for="date_from">진단 기간 시작</label><input id="date_from" name="date_from" type="date" value="{{ form.get('date_from', '') }}"></div>
+        <div><label for="date_to">진단 기간 종료</label><input id="date_to" name="date_to" type="date" value="{{ form.get('date_to', '') }}"></div>
+      </div>
+      <p><button class="btn-primary" type="submit">조회</button></p>
+    </form>
+  </div>
+  <div class="card">
+    <h2>결과</h2>
+    {% if result %}
+      <div class="result-big">{{ result.display }}명</div>
+      <p class="small muted">최소 {{ result.policy.min_cell }}명 미만은 억제, {{ result.policy.rounding }}명 단위 반올림 · 오늘 남은 조회 {{ result.remaining }}회</p>
+      <div class="callout small">이 결과는 설계 참고용 집계값입니다. 개인 단위 자료는 IRB 승인 후 가명처리를 거쳐 제공됩니다.</div>
+      <a class="btn" href="/protocols/new">이 조건으로 과제 작성 시작</a>
+    {% else %}<p class="muted">조건을 입력하고 조회하십시오.</p>{% endif %}
+  </div>
+</div>
+<div class="card">
+  <h2>나의 조회 기록</h2>
+  <table><tr><th>일시</th><th>조건</th><th>결과</th></tr>
+    {% for h in history %}<tr><td class="nowrap">{{ h.created_at|fmt }}</td><td class="small">{{ h.criteria.dx_codes|join(", ") }}{% if h.criteria.sex %} · {{ h.criteria.sex }}{% endif %}{% if h.criteria.age_min is not none or h.criteria.age_max is not none %} · {{ h.criteria.age_min if h.criteria.age_min is not none else "" }}~{{ h.criteria.age_max if h.criteria.age_max is not none else "" }}세{% endif %}{% if h.criteria.date_from or h.criteria.date_to %} · {{ h.criteria.date_from or "" }}~{{ h.criteria.date_to or "" }}{% endif %}</td><td>{{ h.result_display }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">기록 없음</td></tr>{% endfor %}</table>
+</div>
+{% endblock %}

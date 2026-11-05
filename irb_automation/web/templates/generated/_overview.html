@@ -1,0 +1,8 @@
+<table>
+  <tr><th>연구 제목</th><td>{{ p.title }}</td></tr>
+  <tr><th>연구책임자</th><td>{{ pi.full_name }} ({{ pi.department }}) · 교육 이수 만료 {{ pi.training_expires_on|fmt }}</td></tr>
+  <tr><th>공동연구자</th><td>{% for u in co %}{{ u.full_name }}({{ u.department }}){% if not loop.last %}, {% endif %}{% else %}없음{% endfor %}</td></tr>
+  <tr><th>연구 유형</th><td>{{ rs.label("study_types", p.study_type) }}</td></tr>
+  <tr><th>연구 기간</th><td>{{ p.study_start|fmt }} ~ {{ p.study_end|fmt }}</td></tr>
+  <tr><th>연구비 지원</th><td>{{ p.funding_source or "없음" }}</td></tr>
+</table>

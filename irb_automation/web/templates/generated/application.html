@@ -1,0 +1,33 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+<h2>1. 과제 개요</h2>
+{% include "generated/_overview.html" %}
+<h2>2. 연구 내용</h2>
+<table>
+  <tr><th>연구 목적</th><td class="pre">{{ p.objectives }}</td></tr>
+  <tr><th>연구 방법</th><td class="pre">{{ p.methods }}</td></tr>
+  <tr><th>연구 대상자</th><td class="pre">{{ p.target_population }}</td></tr>
+  <tr><th>선정 / 제외 기준</th><td class="pre">{{ p.inclusion_criteria }}{% if p.exclusion_criteria %}
+
+[제외] {{ p.exclusion_criteria }}{% endif %}</td></tr>
+  <tr><th>예상 대상자 수</th><td>{{ "{:,}".format(p.expected_subjects) }}명 — {{ p.sample_size_justification }}</td></tr>
+</table>
+<h2>3. 자료 및 개인정보 보호</h2>
+<table>
+  <tr><th>데이터 출처 / 기간</th><td>{% for k in p.data_sources %}{{ rs.label("data_sources", k) }}{% if not loop.last %}, {% endif %}{% endfor %} / {{ p.data_period_start|fmt }} ~ {{ p.data_period_end|fmt }}</td></tr>
+  <tr><th>처리 수준</th><td>{{ rs.label("deid_levels", p.deid_level) }}</td></tr>
+  <tr><th>보관 장소 / 안전조치</th><td>{{ rs.label("storage_locations", p.storage_location) }}<div class="pre">{{ p.access_controls }}</div></td></tr>
+  <tr><th>외부 반출 / 국외 이전 / 결합</th><td>{{ "예 (" ~ p.external_recipient ~ ")" if p.external_transfer else "아니오" }} / {{ "예" if p.international_transfer else "아니오" }} / {{ "예 (" ~ p.linkage_target ~ ")" if p.data_linkage else "아니오" }}</td></tr>
+  <tr><th>보관기간 / 파기</th><td>{{ p.retention_years }}년 · {{ p.destruction_method }}</td></tr>
+  <tr><th>동의</th><td>{{ "서면동의 취득" if p.consent_plan == "obtain" else "서면동의 면제 신청(별도 사유서)" }}</td></tr>
+  <tr><th>이해상충</th><td>{{ "있음 - " ~ p.coi_detail if p.conflict_of_interest else "없음" }}</td></tr>
+  <tr><th>심의 방식</th><td>{{ rs.label("review_models", p.review_model) }}{% if p.multicenter %} · 다기관{% endif %}</td></tr>
+</table>
+<h2>4. 자동 사전검토 요약</h2>
+<table>
+  <tr><th>권고 심의유형</th><td>{{ result.review_type_label }}</td></tr>
+  <tr><th>위험도</th><td>{{ result.risk.level_label }} ({{ result.risk.score }}점)</td></tr>
+</table>
+<div class="sign">위와 같이 기관생명윤리위원회의 심의를 의뢰합니다.<br>{{ today.strftime("%Y년 %m월 %d일") }}
+  <div class="who">연구책임자 {{ pi.full_name }} (서명)</div></div>
+{% endblock %}

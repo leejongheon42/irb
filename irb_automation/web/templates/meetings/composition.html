@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}위원 구성 요건{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>위원회 구성 요건 점검</h1><div class="sub">{{ c.legal }} · 규칙 세트 committee 섹션 기준</div></div></div>
+<div class="card">
+  <ul class="criteria">{% for ck in c.checks %}<li class="{{ 'met' if ck.ok else 'unmet' }}"><strong>{{ ck.label }}</strong> <span class="muted small">— {{ ck.detail }}</span></li>{% endfor %}</ul>
+</div>
+<div class="card">
+  <h2>위원 명부</h2>
+  <div class="table-wrap"><table>
+    <tr><th>성명</th><th>소속</th><th>역할</th><th>성별</th><th>외부위원</th><th>사회적·윤리적 위원</th><th>임기</th><th>교육 만료</th></tr>
+    {% for u in c.members %}
+    <tr><td>{{ u.full_name }}</td><td>{{ u.department }}</td><td>{{ u.role.label }}</td><td>{{ {"M": "남", "F": "여"}.get(u.gender, "-") }}</td>
+      <td>{{ "예" if u.is_external_member else "" }}</td><td>{{ "예" if u.is_lay_member else "" }}</td>
+      <td>{{ u.term_end|fmt }}</td><td>{{ u.training_expires_on|fmt }}</td></tr>
+    {% else %}<tr><td colspan="8" class="muted">위원으로 지정된 사용자가 없습니다(사용자 관리에서 '위원' 지정).</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

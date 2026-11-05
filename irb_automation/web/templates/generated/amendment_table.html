@@ -1,0 +1,12 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+{% include "generated/_overview.html" %}
+<h2>변경 대비표 (승인본 v{{ base_version or "-" }} → 변경본)</h2>
+<table class="grid">
+  <tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr>
+  {% for c in changes %}<tr><td>{{ c.label }}{% if c.material %} ★{% endif %}</td><td class="pre">{{ c.before }}</td><td class="pre">{{ c.after }}</td></tr>{% else %}<tr><td colspan="3">변경 사항 없음</td></tr>{% endfor %}
+</table>
+<p><small>★ 위험도·심의유형에 영향을 줄 수 있는 핵심 변경</small></p>
+<h2>변경 사유</h2>
+<p>(연구책임자가 기재)</p>
+{% endblock %}

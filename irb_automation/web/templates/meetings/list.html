@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}위원회 회의{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>위원회 회의</h1><div class="sub">정규심의 안건과 신속·면제 결과 보고 안건을 자동 구성하고, 정족수 확인·표결·회의록 작성까지 처리합니다.</div></div>
+  <a class="btn" href="/meetings/composition">위원 구성 요건 점검</a>
+</div>
+{% if not composition.ok %}<div class="callout warn">위원회 구성 요건 미충족 항목이 있습니다. <a href="/meetings/composition">확인하기</a></div>{% endif %}
+{% if user.role in (Role.COORDINATOR, Role.CHAIR, Role.ADMIN) %}
+<div class="card">
+  <h2>회의 생성</h2>
+  <form method="post" action="/meetings" class="form-row-3">
+    {{ csrf_input }}
+    <div><label for="scheduled_at">일시</label><input id="scheduled_at" name="scheduled_at" type="datetime-local" required></div>
+    <div><label for="location">장소</label><input id="location" name="location" type="text" placeholder="본관 3층 회의실 / 화상"></div>
+    <div><label>&nbsp;</label><button class="btn-primary" type="submit">생성 및 안건 자동 구성</button></div>
+  </form>
+</div>
+{% endif %}
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>회차</th><th>일시</th><th>장소</th><th>심의 안건</th><th>보고 안건</th><th>상태</th><th></th></tr>
+    {% for mt in items %}
+    <tr><td>{{ mt.label }}</td><td class="nowrap">{{ mt.scheduled_at|fmt }}</td><td>{{ mt.location }}</td>
+      <td class="num">{{ mt.items|selectattr("item_type", "equalto", "review")|list|length }}</td>
+      <td class="num">{{ mt.items|selectattr("item_type", "equalto", "report")|list|length }}</td>
+      <td><span class="badge {{ {'scheduled': 'b-info', 'in_progress': 'b-warn', 'closed': 'b-ok'}[mt.status] }}">{{ {"scheduled": "예정", "in_progress": "진행중", "closed": "종료"}[mt.status] }}</span></td>
+      <td><a class="btn btn-sm" href="/meetings/{{ mt.id }}">열기</a> <a class="btn btn-sm" href="/meetings/{{ mt.id }}/minutes">회의록</a></td></tr>
+    {% else %}<tr><td colspan="7" class="muted">회의가 없습니다.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endblock %}

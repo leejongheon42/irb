@@ -142,6 +142,23 @@
 </div>
 {% endif %}
 
+{% if (upcoming_meetings is defined and upcoming_meetings) or (drb_pending is defined and drb_pending) or (outputs_pending is defined and outputs_pending) or destruction_due %}
+<div class="grid grid-3">
+  {% if upcoming_meetings is defined %}
+  <div class="card"><h2>예정된 위원회 회의</h2>
+    {% for mt in upcoming_meetings %}<p><a href="/meetings/{{ mt.id }}">{{ mt.label }} · {{ mt.scheduled_at|fmt }}</a> <span class="muted small">안건 {{ mt.items|length }}건</span></p>{% else %}<p class="muted">없음</p>{% endfor %}
+    <p class="small"><a href="/drb">가명처리 적정성 검토 대기 {{ drb_pending }}건</a></p></div>
+  {% endif %}
+  {% if outputs_pending is defined %}
+  <div class="card"><h2>반출 심사 대기</h2><div class="result-big">{{ outputs_pending }}</div><a href="/outputs">심사하기</a></div>
+  {% endif %}
+  {% if destruction_due %}
+  <div class="card"><h2>자료 파기 기한 임박</h2>
+    {% for r in destruction_due %}<p><a href="/governance/destruction">{{ r.protocol.protocol_no }}</a> 기한 {{ r.due_date|fmt }}</p>{% endfor %}</div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
   <h2>최근 알림</h2>
   {% for n in notifications %}
