@@ -29,6 +29,10 @@ def seed_extensions(db, demo: bool = False) -> None:
         from .doctemplates.samples import seed_doctemplates
 
         seed_doctemplates(db)
+        db.commit()
+        from .pipeline.service import seed_pipeline
+
+        seed_pipeline(db)
     db.commit()
 
 

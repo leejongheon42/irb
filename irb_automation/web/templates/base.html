@@ -16,6 +16,7 @@
       <li><a href="/protocols">연구과제</a></li>
       {% if user.role in (Role.RESEARCHER, Role.ADMIN, Role.COORDINATOR) %}
       <li><a href="/protocols/new">+ 새 과제 작성</a></li>
+      <li><a href="/protocols/import">계획서 가져오기(AI 인식)</a></li>
       {% endif %}
       <li><a href="/feasibility">대상자 수 사전 조회</a></li>
       <li class="section">자료·지식</li>
@@ -53,6 +54,7 @@
       <li><a href="/admin/forms">기관 양식 관리</a></li>
       <li><a href="/admin/templates">기관 서식(DOCX·HWPX)</a></li>
       <li><a href="/admin/knowledge">지식 관리</a></li>
+      <li><a href="/admin/ai">AI·문서 자동화</a></li>
       {% endif %}
       {% if user.role == Role.ADMIN %}
       <li><a href="/admin/users">사용자 관리</a></li>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% import "pipeline/_macros.html" as pm %}
+{% block title %}문서 분석 · {{ p.title }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/pipeline.css">
+<div class="topbar">
+  <div><div class="muted small">{{ p.protocol_no or "과제 #" ~ p.id }}</div><h1>문서 분석 · {{ p.title }}</h1></div>
+  <div class="actions">
+    {% if can_run %}<form method="post" action="/protocols/{{ p.id }}/pipeline" class="inline-form">{{ csrf_input }}<button type="submit" class="btn-primary">재분석</button></form>{% endif %}
+    <a class="btn" href="/protocols/{{ p.id }}">과제로 돌아가기</a>
+  </div>
+</div>
+
+{% if latest %}
+<div class="card">
+  <h2 class="mt0">추출 제안 <span class="small muted">— 분석 #{{ latest.id }} · {{ latest.input_name }}</span></h2>
+  {% if can_apply %}
+  <form method="post" action="/protocols/{{ p.id }}/pipeline/{{ latest.id }}/apply">
+    {{ csrf_input }}
+    {{ pm.field_table(rows, show_current=True) }}
+    <div class="actions">
+      <label class="check"><input type="radio" name="mode" value="fill" checked> 빈 칸만 채우기</label>
+      <label class="check"><input type="radio" name="mode" value="overwrite"> 선택 항목 덮어쓰기</label>
+      <button type="submit" class="btn-primary">과제에 반영</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="small muted">작성중·보완·변경작성 상태에서 연구진만 반영할 수 있습니다.</p>
+  {{ pm.field_table(rows, show_current=True, checkable=False) }}
+  {% endif %}
+</div>
+{% else %}
+<div class="callout small">아직 정보가 추출된 분석 결과가 없습니다. 연구계획서를 첨부하거나 재분석을 실행하십시오.</div>
+{% endif %}
+
+<div class="card">
+  <h2 class="mt0">분석 이력</h2>
+  {% if runs %}
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>종류</th><th>문서</th><th>상태</th><th>요약</th><th>일시</th></tr>
+    {% for r in runs %}
+    <tr><td><a href="/pipeline/{{ r.id }}">{{ r.id }}</a></td><td class="nowrap">{{ kind_labels.get(r.kind, r.kind) }}</td><td>{{ r.input_name }}</td>
+      <td>{{ pm.status(r.status, status_labels) }}</td>
+      <td class="small">{% set s = r.summary or {} %}{% if s.classified %}{{ rs.label("document_types", s.classified) }} · {% endif %}항목 {{ s.fields or 0 }}{% if s.issues %} · <span class="badge b-warn">불일치 {{ s.issues }}</span>{% endif %}{% if s.pii %} · <span class="badge b-danger">개인정보</span>{% endif %}</td>
+      <td class="nowrap small">{{ r.created_at|fmt }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="small muted">분석 이력이 없습니다.</p>{% endif %}
+</div>
+<script src="/static/pipeline.js" defer></script>
+{% endblock %}

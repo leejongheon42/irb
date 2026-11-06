@@ -183,6 +183,7 @@ def test_upload_markdown_sop_lifecycle(db, users):
 
 def test_upload_pdf_uses_docproc_when_available(db, monkeypatch):
     monkeypatch.setitem(sys.modules, "irb_automation.docproc", None)
+    monkeypatch.setitem(sys.modules, "irb_automation.docproc.text", None)
     with pytest.raises(kns.KnowledgeError, match="docproc"):
         kns.add_uploaded_source(db, None, title="PDF", kind="guideline", filename="g.pdf", raw=b"%PDF-1.4")
     pkg = types.ModuleType("irb_automation.docproc")

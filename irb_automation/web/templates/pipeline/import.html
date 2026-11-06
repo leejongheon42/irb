@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "pipeline/_macros.html" as pm %}
+{% block title %}타 기관 계획서 가져오기{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/pipeline.css">
+<div class="topbar">
+  <div><h1>연구계획서 가져오기</h1>
+    <div class="sub">다른 병원 서식(HWP·HWPX·DOCX·PDF·스캔본)으로 작성한 계획서를 올리면 내용을 인식해 우리 기관 과제 양식으로 옮겨 드립니다.</div></div>
+  <a class="btn" href="/protocols/new">직접 작성</a>
+</div>
+<div class="grid grid-2">
+  <div class="card">
+    <h2 class="mt0">파일 올리기</h2>
+    <form method="post" action="/protocols/import" enctype="multipart/form-data">
+      {{ csrf_input }}
+      <div class="form-row"><label for="pl-file">연구계획서 파일</label>
+        <input id="pl-file" type="file" name="file" required accept="{{ exts|join(',') }}"></div>
+      <p class="small muted">지원 형식: {{ exts|join(", ") }}</p>
+      <button type="submit" class="btn-primary">분석 시작</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2 class="mt0">처리 과정</h2>
+    <ol class="pl-flow small">
+      <li><strong>문서 인식</strong> — 텍스트층·표 추출{% if ai_on %}, 스캔본은 AI OCR{% else %} (스캔본 OCR은 AI 사용 시){% endif %}</li>
+      <li><strong>분류·개인정보 점검</strong> — 서류 종류 판별, 주민번호 등 실제 환자 정보 탐지</li>
+      <li><strong>정보 추출</strong> — "과제명/연구과제명", "의무기록 열람 기간" 등 기관별 제목 변형을 우리 항목으로 매핑{% if ai_on %} + AI 보조{% endif %}</li>
+      <li><strong>사전검토·관련 정보</strong> — 예상 심의 유형, 지적 사항, 관련 규정·유사 과제</li>
+      <li><strong>선택 적용</strong> — 항목별 신뢰도·근거 문장을 확인하고 체크한 항목만 새 과제에 반영</li>
+    </ol>
+    <div class="callout {{ 'ok' if ai_on else '' }} small">{% if ai_on %}AI 보조가 켜져 있습니다. 텍스트는 개인정보를 가린 뒤 전송하고 전송 기록을 남깁니다.{% else %}AI 보조가 꺼져 있어 규칙 기반으로만 처리합니다(외부 전송 없음).{% endif %}</div>
+  </div>
+</div>
+{% if recent %}
+<div class="card">
+  <h2 class="mt0">최근 가져오기</h2>
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>파일</th><th>상태</th><th>일시</th><th>생성된 과제</th></tr>
+    {% for r in recent %}
+    <tr><td><a href="/pipeline/{{ r.id }}">{{ r.id }}</a></td><td>{{ r.input_name }}</td><td>{{ pm.status(r.status, status_labels) }}</td>
+      <td class="nowrap">{{ r.created_at|fmt }}</td><td>{% if r.protocol_id %}<a href="/protocols/{{ r.protocol_id }}">과제 #{{ r.protocol_id }}</a>{% else %}<span class="muted">—</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endif %}
+{% endblock %}

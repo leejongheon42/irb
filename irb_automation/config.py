@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -66,9 +67,37 @@ class Settings:
     )
     scheduler_enabled: bool = field(default_factory=lambda: _env_bool("IRB_SCHEDULER_ENABLED", True))
 
-    # AI 사전검토 보조 (선택). 연구계획서 텍스트만 전송하며 환자 데이터는 전송하지 않는다.
-    ai_review_enabled: bool = field(default_factory=lambda: _env_bool("IRB_AI_REVIEW_ENABLED", False))
+    # AI 기능 (선택). 기본 비활성화 - 외부 API 전송이므로 기관 승인 후 활성화한다.
+    # IRB_AI_ENABLED 또는 (하위 호환) IRB_AI_REVIEW_ENABLED 로 켠다.
+    ai_review_enabled: bool = field(
+        default_factory=lambda: _env_bool("IRB_AI_ENABLED", False) or _env_bool("IRB_AI_REVIEW_ENABLED", False)
+    )
     ai_model: str = field(default_factory=lambda: os.environ.get("IRB_AI_MODEL", "claude-opus-5-5"))
+
+    # 문서 자동화 파이프라인
+    # 업로드 시 자동 실행(로컬 단계는 항상, AI 단계는 AI 활성 시에만)
+    ai_pipeline_auto: bool = field(default_factory=lambda: _env_bool("IRB_AI_PIPELINE_AUTO", True))
+    # AI로 원본 파일(PDF·이미지)을 보낼 수 있는 서류 종류. 환자 자료가 들어가지 않는 서류만 허용한다.
+    ai_doc_types_allowed: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            t.strip()
+            for t in os.environ.get("IRB_AI_DOC_TYPES_ALLOWED", "protocol,application,crf,deid_plan").split(",")
+            if t.strip()
+        )
+    )
+    # LibreOffice 실행 파일(문서 → PDF 변환). 미지정 시 PATH에서 자동 탐지
+    soffice_path: str = field(
+        default_factory=lambda: os.environ.get("IRB_SOFFICE_PATH")
+        or shutil.which("soffice")
+        or shutil.which("libreoffice")
+        or ""
+    )
+    # 파이프라인을 요청 스레드에서 동기 실행(테스트·디버그용)
+    pipeline_sync: bool = field(default_factory=lambda: _env_bool("IRB_PIPELINE_SYNC", False))
+
+    @property
+    def ai_enabled(self) -> bool:
+        return self.ai_review_enabled
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -95,12 +124,17 @@ class Settings:
         return self.data_dir / "deid"
 
     @property
+    def pipeline_dir(self) -> Path:
+        """문서 자동화 파이프라인 작업 파일(가져오기 원본, 변환 결과)."""
+        return self.data_dir / "pipeline"
+
+    @property
     def mapping_dir(self) -> Path:
         """추가정보(매핑테이블) 저장소 - 가명정보와 분리 보관 (개인정보보호법 제28조의4)."""
         return self.data_dir / "keys" / "mappings"
 
     def ensure_dirs(self) -> None:
-        for path in (self.data_dir, self.upload_dir, self.deid_dir, self.mapping_dir):
+        for path in (self.data_dir, self.upload_dir, self.deid_dir, self.mapping_dir, self.pipeline_dir):
             path.mkdir(parents=True, exist_ok=True)
 
 

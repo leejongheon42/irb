@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% import "pipeline/_macros.html" as pm %}
+{% block title %}문서 분석 #{{ run.id }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/pipeline.css">
+<div class="topbar">
+  <div><div class="muted small">{{ kind_labels.get(run.kind, run.kind) }} · #{{ run.id }}{% if protocol %} · <a href="/protocols/{{ protocol.id }}">{{ protocol.protocol_no or "과제 #" ~ protocol.id }}</a>{% endif %}</div>
+    <h1>{{ run.input_name }}</h1></div>
+  <div class="actions">
+    {{ pm.status(run.status, status_labels) }}
+    {% if steps.convert and steps.convert.status == "succeeded" %}
+    <a class="btn btn-sm" href="/pipeline/{{ run.id }}/markdown">마크다운</a>
+    <a class="btn btn-sm" href="/pipeline/{{ run.id }}/pdf">PDF</a>{% endif %}
+    {% if protocol %}<a class="btn btn-sm" href="/protocols/{{ protocol.id }}/pipeline">과제 분석 이력</a>{% endif %}
+  </div>
+</div>
+
+<div class="card" id="pl-progress" data-run-id="{{ run.id }}" data-active="{{ '1' if run.active else '0' }}">
+  <h2 class="mt0">처리 단계</h2>
+  <ol class="pl-steps">
+    {% for s in run.steps %}
+    <li class="pl-step pl-{{ s.status }}" data-step="{{ s.name }}">
+      <span class="pl-seq">{{ s.seq }}</span>
+      <div class="pl-body"><strong>{{ step_labels[s.name] }}</strong> <span class="pl-badge">{{ pm.status(s.status, status_labels) }}</span>
+        <div class="small pl-msg">{{ s.message }}</div></div>
+      <span class="small muted pl-ms">{% if s.duration_ms %}{{ "%.1f"|format(s.duration_ms / 1000) }}초{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% if run.active %}<noscript><div class="callout small">분석 중입니다. 잠시 후 페이지를 새로 고치십시오.</div></noscript>
+  <div class="small muted pl-live">분석 중… 완료되면 자동으로 결과가 표시됩니다.</div>{% endif %}
+  {% if run.error %}<div class="callout danger small">{{ run.error }}</div>{% endif %}
+</div>
+
+{% if not run.active %}
+{% set rec = steps.recognize.result if steps.recognize else {} %}
+{% if rec.warnings %}<div class="callout warn small">{% for w in rec.warnings %}<div>{{ w }}</div>{% endfor %}</div>{% endif %}
+
+{% if steps.classify and steps.classify.result.mismatch %}
+<div class="callout warn">업로드한 서류 종류(<strong>{{ rs.label("document_types", steps.classify.result.declared) }}</strong>)와 문서 내용(<strong>{{ steps.classify.result.label }}</strong>)이 다를 수 있습니다. {{ steps.classify.result.reason }}</div>
+{% endif %}
+{% if steps.pii and steps.pii.result.counts %}
+<div class="callout {{ 'danger' if steps.pii.result.severe else 'warn' }}"><strong>개인정보 탐지</strong> — {{ steps.pii.message }}
+  {% if steps.pii.result.severe %}<div class="small">제출 서류에 실제 환자 식별정보가 들어가지 않도록 해당 부분을 삭제한 파일로 다시 올려 주십시오.</div>{% endif %}</div>
+{% endif %}
+
+{% if steps.consistency and steps.consistency.result.issues %}
+<div class="card">
+  <h2 class="mt0">정합성 점검 — 과제 입력값과 다른 내용 {{ steps.consistency.result.issues|length }}건</h2>
+  {% for i in steps.consistency.result.issues %}
+  <div class="finding"><div>{{ m.severity_badge(i.severity) }} <strong>{{ i.label }}</strong> — {{ i.message }}</div>
+    {% if i.snippet %}<div class="small muted">문서: “{{ i.snippet }}”</div>{% endif %}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="card">
+  <h2 class="mt0">추출된 정보 {{ rows|length }}개 항목</h2>
+  {% if can_create %}
+  <form method="post" action="/pipeline/{{ run.id }}/apply-import">
+    {{ csrf_input }}
+    <p class="small muted">체크한 항목으로 새 과제(작성중)를 만들고 원본 파일을 '연구계획서'로 첨부합니다. 신뢰도가 낮은 항목은 기본 해제되어 있습니다.</p>
+    {{ pm.field_table(rows) }}
+    <div class="actions"><button type="submit" class="btn-primary">선택 항목으로 새 과제 만들기</button></div>
+  </form>
+  {% elif run.kind == "import" and run.protocol_id %}
+  <div class="callout ok small">이 가져오기로 <a href="/protocols/{{ run.protocol_id }}">과제 #{{ run.protocol_id }}</a>가 만들어졌습니다.</div>
+  {{ pm.field_table(rows, checkable=False) }}
+  {% elif protocol %}
+  <p class="small">기존 과제에 반영하려면 <a href="/protocols/{{ protocol.id }}/pipeline">과제 분석 이력</a>에서 선택 적용하십시오.</p>
+  {{ pm.field_table(rows, show_current=True, checkable=False) }}
+  {% else %}{{ pm.field_table(rows, checkable=False) }}{% endif %}
+</div>
+{% endif %}
+
+<div class="grid grid-2">
+{% if steps.prereview and steps.prereview.status == "succeeded" %}
+{% set pr = steps.prereview.result %}
+<div class="card">
+  <h2 class="mt0">사전검토 미리보기</h2>
+  <p>{{ m.review_badge(pr.review_type) }} {{ m.risk_badge(pr.risk.level, pr.risk.score) }}</p>
+  {% for f in pr.findings[:12] %}<div class="finding small">{{ m.severity_badge(f.severity) }} {{ f.message }}</div>{% endfor %}
+  {% if pr.findings|length > 12 %}<p class="small muted">외 {{ pr.findings|length - 12 }}건</p>{% endif %}
+</div>
+{% endif %}
+{% if steps.related and steps.related.status == "succeeded" %}
+{% set rel = steps.related.result %}
+<div class="card">
+  <h2 class="mt0">관련 정보</h2>
+  {% if rel.similar %}<h3>유사 과제</h3><ul class="small">{% for s in rel.similar %}<li>{% if s.url %}<a href="{{ s.url }}">{{ s.title }}</a>{% else %}{{ s.title }}{% endif %}{% if s.score %} <span class="muted">({{ "%.2f"|format(s.score) }})</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% for code, items in rel.related.items() if items %}
+  <h3 class="small">{{ code }}</h3><ul class="small">{% for it in items %}<li>{% if it.url %}<a href="{{ it.url }}">{{ it.title }}</a>{% else %}{{ it.title }}{% endif %}{% if it.ref %} <span class="muted">{{ it.ref }}</span>{% endif %}<div class="muted">{{ it.snippet }}</div></li>{% endfor %}</ul>
+  {% endfor %}
+  {% if not rel.similar and not rel.related %}<p class="small muted">찾은 관련 정보가 없습니다.</p>{% endif %}
+</div>
+{% endif %}
+{% if steps.ai_summary and steps.ai_summary.status == "succeeded" %}
+{% set a = steps.ai_summary.result %}
+<div class="card">
+  <h2 class="mt0">AI 검토 요약 <span class="badge">참고용</span></h2>
+  <p>{{ a.summary }}</p>
+  {% for title, key in [("핵심 내용", "key_points"), ("확인 필요", "concerns"), ("누락 의심", "missing_items"), ("연구자 질의", "questions_for_researcher")] if a[key] %}
+  <h3 class="small">{{ title }}</h3><ul class="small">{% for x in a[key] %}<li>{{ x }}</li>{% endfor %}</ul>{% endfor %}
+  <p class="small muted">{{ a.model }} · 최종 판단은 IRB가 합니다.</p>
+</div>
+{% endif %}
+{% if steps.forms and steps.forms.status == "succeeded" %}
+<div class="card">
+  <h2 class="mt0">기관 서식 자동 작성 제안</h2>
+  <p class="small muted">과제를 만든 뒤 과제 화면의 '서류 자동 작성'에서 아래 서식을 바로 생성할 수 있습니다.</p>
+  <ul class="small">{% for s in steps.forms.result.suggestions %}<li><strong>{{ s.label }}</strong> — {{ s.reason }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+</div>
+{% endif %}
+<script src="/static/pipeline.js" defer></script>
+{% endblock %}

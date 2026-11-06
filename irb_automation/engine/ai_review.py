@@ -11,6 +11,8 @@ import json
 import logging
 from typing import Any
 
+from ..ai.client import AIError, structured_call_with_response
+from ..ai.privacy import mask_text, record_transmission
 from ..config import get_settings
 
 log = logging.getLogger(__name__)
@@ -116,48 +118,30 @@ def _build_prompt(snapshot: dict[str, Any], rule_result: dict[str, Any]) -> str:
     )
 
 
-def run_ai_review(snapshot: dict[str, Any], rule_result: dict[str, Any]) -> dict[str, Any] | None:
-    settings = get_settings()
-    if not settings.ai_review_enabled:
+def run_ai_review(
+    snapshot: dict[str, Any],
+    rule_result: dict[str, Any],
+    *,
+    db: Any = None,
+    user: Any = None,
+    entity_id: int | None = None,
+) -> dict[str, Any] | None:
+    """AI 사전검토 보조. 비활성이면 None, 실패하면 {"error": ...}.
+
+    연구계획서 텍스트는 개인정보 가드(마스킹)를 거쳐 전송하며, db 가 주어지면 전송 사실을 감사 로그에 남긴다.
+    """
+    if not get_settings().ai_enabled:
         return None
+    guard = mask_text(_build_prompt(snapshot, rule_result))
     try:
-        import anthropic
-    except ImportError:
-        return {"error": "anthropic 패키지가 설치되어 있지 않습니다 (pip install anthropic)."}
-
-    client = anthropic.Anthropic()
-    try:
-        response = client.beta.messages.create(
-            model=settings.ai_model,
-            max_tokens=16000,
-            system=SYSTEM_PROMPT,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            output_config={
-                "effort": "high",
-                "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA},
-            },
-            messages=[{"role": "user", "content": _build_prompt(snapshot, rule_result)}],
+        data, response = structured_call_with_response(
+            system=SYSTEM_PROMPT, content=guard.text, schema=OUTPUT_SCHEMA, effort="high", purpose="사전검토 보조",
         )
-    except anthropic.AuthenticationError:
-        return {"error": "Claude API 인증 실패 - ANTHROPIC_API_KEY를 확인하십시오."}
-    except anthropic.RateLimitError:
-        return {"error": "Claude API 요청 한도 초과 - 잠시 후 다시 시도하십시오."}
-    except anthropic.APIStatusError as e:
-        log.warning("AI review failed: %s (request_id=%s)", e.status_code, getattr(e, "request_id", None))
-        return {"error": f"Claude API 오류({e.status_code})"}
-    except anthropic.APIConnectionError:
-        return {"error": "Claude API 연결 실패 - 네트워크(망분리 여부)를 확인하십시오."}
-
-    if response.stop_reason == "refusal":
-        return {"error": "AI가 이 요청에 응답하지 않았습니다. 규칙 엔진 결과만 참고하십시오."}
-    if response.stop_reason == "max_tokens":
-        return {"error": "AI 응답이 길이 제한으로 잘렸습니다."}
-
-    text = next((b.text for b in response.content if b.type == "text"), "")
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return {"error": "AI 응답 형식 오류"}
+    except AIError as e:  # AIUnavailable 포함
+        return {"error": str(e)}
+    if db is not None:
+        record_transmission(db, user, "사전검토 보조", "protocol", entity_id, guard.text, "text", guard.masked)
     data["model"] = response.model
+    if guard.masked:
+        data["masked"] = guard.masked
     return data

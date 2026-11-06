@@ -306,7 +306,7 @@ def protocol_text(p: Protocol) -> tuple[str, str]:
         f"취약한 연구대상자: {_labels('vulnerable_populations', g('vulnerable_populations')) or '없음'}",
         f"비정형 데이터: {_labels('unstructured_data', g('unstructured_data')) or '없음'}",
         f"동의: {'서면동의 취득' if g('consent_plan') == 'obtain' else '동의 면제 신청'}",
-        f"심의 유형: {p.review_type.label if p.review_type else '-'} · 상태: {p.status.label}",
+        f"심의 유형: {p.review_type.label if p.review_type else '-'} · 상태: {p.status.label if p.status else '작성중'}",
     ]
     return "과제 요약", "\n".join(lines)
 

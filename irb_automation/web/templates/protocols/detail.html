@@ -29,6 +29,8 @@
       {% if p.status in (S.APPROVED, S.EXEMPT, S.EXPIRED, S.SUSPENDED) %}<a class="btn" href="/protocols/{{ p.id }}/report/final_report">종료보고</a>{% endif %}
     {% endif %}
     <a class="btn" href="/protocols/{{ p.id }}/print/prereview">사전검토 보고서 출력</a>
+    <a class="btn" href="/protocols/{{ p.id }}/pipeline">AI 문서 분석</a>
+    <a class="btn" href="/protocols/{{ p.id }}/online-forms">웹 작성 서식</a>
   </div>
 </div>
 

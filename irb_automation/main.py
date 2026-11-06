@@ -25,6 +25,7 @@ from .web import (
     routes_knowledge,
     routes_main,
     routes_meetings,
+    routes_pipeline,
     routes_protocols,
     routes_reports,
     routes_submission,
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
 
     app.include_router(routes_main.router)
     app.include_router(routes_submission.router)  # /documents/review-queue 가 /documents/{id} 보다 먼저 매칭되도록 선등록
+    app.include_router(routes_pipeline.router)  # /protocols/import 가 /protocols/{pid} 보다 먼저
     app.include_router(routes_protocols.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)

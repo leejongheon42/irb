@@ -132,6 +132,10 @@ ACTION_LABELS = {
     "document_preview": "서류 미리보기",
     "document_bundle": "심의자료 합본 다운로드",
     "document_stamp": "승인 도장본 생성",
+    "ai_transmit": "AI 전송",
+    "pipeline_start": "문서 분석 시작",
+    "pipeline_finish": "문서 분석 완료",
+    "pipeline_apply": "분석 결과 적용",
 }
 
 # === 기관 양식(forms) ===
