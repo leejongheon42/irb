@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{{ p.protocol_no or "" }} 심의자료 합본</title>
+<style>
+  body { font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; margin: 40px; color: #111; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .org { color: #555; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; }
+  code { font-size: 11px; word-break: break-all; }
+  .bad { color: #b91c1c; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>심의자료 합본</h1>
+<div class="org">{{ manifest.institution }}</div>
+<table>
+  <tr><th>과제번호</th><td>{{ manifest.protocol_no or "-" }}</td></tr>
+  <tr><th>연구 제목</th><td>{{ manifest.title }}</td></tr>
+  <tr><th>연구책임자</th><td>{{ manifest.pi or "-" }}</td></tr>
+  <tr><th>상태</th><td>{{ manifest.status }}</td></tr>
+  <tr><th>작성</th><td>{{ manifest.generated_at[:16].replace("T", " ") }} · {{ manifest.generated_by }}</td></tr>
+</table>
+<h2>수록 문서 ({{ manifest.documents|length }})</h2>
+<table>
+  <tr><th>파일</th><th>서류</th><th>버전</th><th>상태</th><th>제출</th><th>SHA-256</th></tr>
+  {% for d in manifest.documents %}
+  <tr>
+    <td>{{ d.file }}</td><td>{{ d.label }}</td><td>v{{ d.version }}</td><td>{{ d.status }} · {{ d.source }}</td>
+    <td>{{ (d.uploaded_at or "")[:16].replace("T", " ") }} · {{ d.uploaded_by or "" }}</td>
+    <td><code>{{ d.sha256 }}</code>{% if d.integrity != "ok" %} <span class="bad">해시 불일치</span>{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="6">수록 문서 없음</td></tr>{% endfor %}
+</table>
+<p>각 파일의 SHA-256 값은 manifest.json에도 기록되어 있으며, 시스템에 등록된 해시와 대조해 무결성을 확인할 수 있습니다.</p>
+</body>
+</html>

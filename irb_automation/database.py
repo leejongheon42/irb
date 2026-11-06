@@ -64,6 +64,7 @@ def init_db() -> None:
     from . import models  # noqa: F401  (모델 등록)
     from .doctemplates import models as _doctemplates_models  # noqa: F401
     from .knowledge import models as _knowledge_models  # noqa: F401
+    from .submission import models as _submission_models  # noqa: F401
 
     engine = get_engine()
     Base.metadata.create_all(engine)

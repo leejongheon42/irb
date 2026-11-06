@@ -13,6 +13,22 @@ from irb_automation.engine.facts import ProtocolFacts
 PASSWORD = "Demo!2026pw"
 
 
+def make_pdf(pages: int = 1, text: str = "") -> bytes:
+    """검증을 통과하는 실제 PDF(업로드 검증이 손상 PDF를 거부하므로 테스트용)."""
+    import io
+
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    for i in range(pages):
+        for j, line in enumerate((text or f"page {i + 1}").splitlines()):
+            c.drawString(72, 760 - 16 * j, line)
+        c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
 @pytest.fixture()
 def settings(tmp_path, monkeypatch):
     monkeypatch.delenv("IRB_DATABASE_URL", raising=False)

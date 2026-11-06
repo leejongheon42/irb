@@ -161,20 +161,11 @@
 
 {# ------------------------------------------------------------------ 서류 #}
 <section class="tab-panel" id="tab-documents">
+  {% set board = submission_board(p, user) if submission_board is defined else none %}
+  {% if board %}{% include "submission/_board.html" %}{% endif %}
   <div class="card">
-    <h2>제출 서류</h2>
-    {% if p.documents %}
-    <div class="table-wrap"><table>
-      <tr><th>서류 종류</th><th>파일</th><th>버전</th><th>크기</th><th>업로드</th><th>SHA-256</th></tr>
-      {% for d in p.documents|sort(attribute="doc_type") %}
-      <tr><td>{{ rs.label("document_types", d.doc_type) }}</td><td><a href="/documents/{{ d.id }}">{{ d.filename }}</a></td>
-        <td>v{{ d.version }}</td><td class="num">{{ (d.size / 1024)|round(1) }}KB</td><td class="nowrap">{{ d.uploaded_at|fmt }}</td>
-        <td><code class="small">{{ d.sha256[:12] }}…</code></td></tr>
-      {% endfor %}
-    </table></div>
-    {% else %}<p class="muted">첨부된 서류가 없습니다.</p>{% endif %}
     {% if (is_member and p.is_editable) or user.is_irb_staff %}
-    <h3>서류 자동 작성 <span class="hint">입력한 과제 내용으로 서식을 채워 첨부합니다</span></h3>
+    <h2>서류 자동 작성 <span class="hint">입력한 과제 내용으로 서식을 채워 첨부합니다</span></h2>
     <div class="actions">
       {% for dt in generatable if dt != "amendment_table" or p.status == S.AMENDMENT %}
       {% if dt != "site_list" or p.multicenter %}
@@ -184,16 +175,7 @@
       {% endfor %}
     </div>
     {% endif %}
-    {% if is_member or user.is_irb_staff %}
-    <h3>서류 업로드</h3>
-    <form method="post" action="/protocols/{{ p.id }}/documents" enctype="multipart/form-data" class="form-row">
-      {{ csrf_input }}
-      <div><label for="doc_type">서류 종류</label>
-        <select id="doc_type" name="doc_type">{% for k, label in rs.options("document_types") %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
-      <div><label for="file">파일 <span class="hint">PDF, HWP, DOCX, XLSX 등 / {{ settings.max_upload_mb }}MB 이하</span></label><input id="file" name="file" type="file" required></div>
-      <div><button class="btn-primary" type="submit">업로드</button></div>
-    </form>
-    {% endif %}
+    {% if not ((is_member and p.is_editable) or user.is_irb_staff) %}<p class="muted small">자동 작성은 작성중·보완요청·변경작성 상태에서 사용할 수 있습니다.</p>{% endif %}
   </div>
 </section>
 

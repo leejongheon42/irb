@@ -125,4 +125,11 @@ ACTION_LABELS = {
     "knowledge_update": "지식 문서 변경",
     "knowledge_delete": "지식 문서 삭제",
     "knowledge_reindex": "지식 재색인",
+    # 웹 문서 제출
+    "document_reject": "서류 제출 거부(검증 실패)",
+    "document_review": "서류 검토",
+    "document_comment": "서류 의견",
+    "document_preview": "서류 미리보기",
+    "document_bundle": "심의자료 합본 다운로드",
+    "document_stamp": "승인 도장본 생성",
 }

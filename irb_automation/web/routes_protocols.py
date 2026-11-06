@@ -1,9 +1,6 @@
 """연구과제: 작성·제출·심의·결정·보고 화면."""
 from __future__ import annotations
 
-import hashlib
-import re
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -35,6 +32,9 @@ from ..models import (
     SubmissionKind,
     User,
 )
+from ..submission import service as submission_service
+from ..submission.guess import guess_doc_type
+from ..submission.stamp import stamp_after_decision
 from ..timeutil import parse_date
 from ..workflow import service as wf
 from ..workflow.diff import diff_snapshots, previous_snapshot
@@ -185,31 +185,21 @@ async def upload_document(request: Request, pid: int, user: User = Depends(curre
         flash(request, "파일을 선택하십시오.", "error")
         return _back(pid, "#documents")
     filename = Path(upload.filename).name
-    ext = Path(filename).suffix.lower()
-    if ext not in ALLOWED_EXT:
-        flash(request, f"허용되지 않는 파일 형식입니다({ext}).", "error")
-        return _back(pid, "#documents")
     content = await upload.read()
-    settings = get_settings()
-    if len(content) > settings.max_upload_mb * 1024 * 1024:
-        flash(request, f"파일 크기 제한({settings.max_upload_mb}MB)을 초과했습니다.", "error")
+    if doc_type not in get_ruleset().catalog("document_types"):
+        g = guess_doc_type(filename, content)
+        doc_type = g.doc_type if g.confidence >= 0.5 else "other"
+    try:
+        doc, result = submission_service.store_document(
+            db, user, p, doc_type=doc_type, filename=filename, raw=content, ip=client_ip(request))
+    except submission_service.SubmissionError as e:
+        db.commit()  # 거부 기록(감사 로그)은 남긴다
+        flash(request, f"제출 거부: {e}", "error")
         return _back(pid, "#documents")
-    safe = re.sub(r"[^\w.\-가-힣]", "_", filename)[:120]
-    folder = settings.upload_dir / str(p.id)
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{uuid.uuid4().hex}_{safe}"
-    path.write_bytes(content)
-    version = 1 + max((d.version for d in p.documents if d.doc_type == doc_type), default=0)
-    doc = Document(
-        protocol_id=p.id, doc_type=doc_type, filename=filename, stored_path=str(path),
-        sha256=hashlib.sha256(content).hexdigest(), size=len(content), version=version, uploaded_by=user.id,
-    )
-    db.add(doc)
-    db.flush()
-    audit.record(db, user, "document_upload", "protocol", p.id,
-                 {"doc_id": doc.id, "doc_type": doc_type, "sha256": doc.sha256, "version": version}, client_ip(request))
     db.commit()
-    flash(request, f"'{filename}' 업로드 완료 (v{version}).", "success")
+    flash(request, f"'{filename}' 업로드 완료 (v{doc.version}).", "success")
+    for w in result.warnings:
+        flash(request, f"확인 필요: {w}", "info")
     return _back(pid, "#documents")
 
 
@@ -399,8 +389,10 @@ async def decide(request: Request, pid: int, user: User = Depends(current_user),
         db.rollback()
         flash(request, str(e), "error")
         return _back(pid, "#review")
+    stamped = stamp_after_decision(db, user, p, d, client_ip(request))
     db.commit()
-    flash(request, f"심의결과 '{d.decision.label}' 처리되었습니다. 통지서 번호 {d.letter_no}", "success")
+    flash(request, f"심의결과 '{d.decision.label}' 처리되었습니다. 통지서 번호 {d.letter_no}"
+                   + (f" · 승인 도장본 {len(stamped)}건 생성" if stamped else ""), "success")
     return _back(pid)
 
 

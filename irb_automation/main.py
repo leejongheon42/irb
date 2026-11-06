@@ -26,6 +26,7 @@ from .web import (
     routes_meetings,
     routes_protocols,
     routes_reports,
+    routes_submission,
 )
 from .web.deps import LoginRequired, current_user_optional, render
 
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     app.include_router(routes_main.router)
+    app.include_router(routes_submission.router)  # /documents/review-queue 가 /documents/{id} 보다 먼저 매칭되도록 선등록
     app.include_router(routes_protocols.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)

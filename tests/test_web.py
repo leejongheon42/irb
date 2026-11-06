@@ -10,7 +10,7 @@ from sqlalchemy import select
 from irb_automation.database import SessionLocal
 from irb_automation.models import DeidJob, Protocol, ProtocolStatus
 
-from .conftest import PASSWORD, csrf, login
+from .conftest import PASSWORD, csrf, login, make_pdf
 from .test_deid import HEADERS, make_rows
 
 
@@ -60,9 +60,10 @@ def test_end_to_end_review_over_http(app):
         page = c.get(f"/protocols/{pid}")
         assert "필수 서류 누락" in page.text and "심의면제" in page.text
 
+        pdf_bytes = make_pdf()
         for doc in ("exemption_request", "protocol", "cv", "training_cert", "coi", "crf", "deid_plan", "security_pledge"):
             r = c.post(f"/protocols/{pid}/documents", data={"csrf_token": t, "doc_type": doc},
-                       files={"file": (f"{doc}.pdf", b"%PDF-1.4 test", "application/pdf")}, follow_redirects=False)
+                       files={"file": (f"{doc}.pdf", pdf_bytes, "application/pdf")}, follow_redirects=False)
             assert r.status_code == 303
         bad = c.post(f"/protocols/{pid}/documents", data={"csrf_token": t, "doc_type": "other"},
                      files={"file": ("x.exe", b"MZ", "application/octet-stream")}, follow_redirects=True)
@@ -112,7 +113,7 @@ def test_end_to_end_review_over_http(app):
 
         # 연구자: 문서 다운로드 가능
         login(c, "researcher")
-        assert c.get(f"/documents/{doc_id}").content == b"%PDF-1.4 test"
+        assert c.get(f"/documents/{doc_id}").content == pdf_bytes
 
 
 def test_deid_flow_and_release_gate(app, settings):
