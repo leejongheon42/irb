@@ -61,6 +61,7 @@ PROTOCOL_FIELDS: tuple[str, ...] = (
     "review_model",
     "participating_sites",
     "external_irb",
+    "custom_fields",
 )
 
 
@@ -116,6 +117,11 @@ class ProtocolFacts:
     review_model: str = "local"
     participating_sites: str = ""
     external_irb: str = ""
+    custom_fields: dict[str, Any] = field(default_factory=dict)  # 기관 추가 항목 값
+
+    # 기관 양식 맥락(forms 패키지가 채움)
+    custom_field_defs: list[dict[str, Any]] = field(default_factory=list)
+    online_forms_pending: list[dict[str, Any]] = field(default_factory=list)
 
     # 제출 맥락
     submission_kind: str = "initial"
@@ -174,7 +180,9 @@ class ProtocolFacts:
     @classmethod
     def from_protocol(cls, protocol: Any, **context: Any) -> ProtocolFacts:
         data = {name: getattr(protocol, name) for name in PROTOCOL_FIELDS}
-        return cls.from_mapping(data, **context)
+        facts = cls.from_mapping(data, **context)
+        _attach_institution_forms(facts, protocol)
+        return facts
 
     def to_dict(self) -> dict[str, Any]:
         out = asdict(self)
@@ -183,11 +191,55 @@ class ProtocolFacts:
 
 
 def snapshot_protocol(protocol: Any) -> dict[str, Any]:
-    """JSON 직렬화 가능한 과제 스냅샷."""
+    """JSON 직렬화 가능한 과제 스냅샷.
+
+    기관 추가 항목이 있으면 제출 시점의 항목 라벨·선택지(custom_field_meta)를 함께 남겨,
+    이후 양식이 바뀌어도 과거 제출본과 변경 대비표를 그대로 해석할 수 있게 한다.
+    """
     snap: dict[str, Any] = {}
     for name in PROTOCOL_FIELDS:
         value = getattr(protocol, name)
         if isinstance(value, date):
             value = value.isoformat()
+        if name == "custom_fields":
+            value = dict(value or {})
         snap[name] = value
+    if snap.get("custom_fields"):
+        meta = _custom_field_meta(protocol)
+        if meta:
+            snap["custom_field_meta"] = meta
     return snap
+
+
+def _session_of(protocol: Any) -> Any:
+    try:
+        from sqlalchemy.orm import object_session
+
+        return object_session(protocol)
+    except Exception:  # 매핑되지 않은 객체(테스트용 더미 등)
+        return None
+
+
+def _custom_field_meta(protocol: Any) -> dict[str, Any]:
+    db = _session_of(protocol)
+    if db is None:
+        return {}
+    from ..forms.schema import custom_field_meta
+
+    return custom_field_meta(db)
+
+
+def _attach_institution_forms(facts: ProtocolFacts, protocol: Any) -> None:
+    """기관 양식 정보(필수 추가 항목 정의, 웹 작성 서식 진행 상황)를 덧붙인다. DB 세션에 연결된 과제에서만 동작."""
+    db = _session_of(protocol)
+    if db is None:
+        return
+    from ..forms.online import pending_online_forms
+    from ..forms.schema import active_protocol_fields
+
+    facts.custom_field_defs = [f.to_dict() for f in active_protocol_fields(db)]
+    pending, incomplete = pending_online_forms(db, protocol)
+    facts.online_forms_pending = pending
+    if incomplete:
+        # 개인별 웹 서식이 일부만 제출된 서류는 체크리스트에서 '미제출'로 본다.
+        facts.uploaded_doc_types = set(facts.uploaded_doc_types) - incomplete

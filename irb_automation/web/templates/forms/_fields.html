@@ -1,0 +1,37 @@
+{# 양식 스키마 필드 렌더링. f = FieldDef, value = 현재 값, prefix = 입력 이름 접두어(custom__ / f__) #}
+{% macro field(f, value, prefix, error=None, disabled=False) -%}
+{%- set name = prefix ~ f.key -%}
+{%- set sw = field_show_when(f, prefix) -%}
+<div class="form-field{% if error %} has-error{% endif %}"{% if sw %} data-show-when="{{ sw }}"{% endif %}>
+  {% if f.type == "checkbox" %}
+  <label class="check"><input type="checkbox" name="{{ name }}" id="{{ name }}" {% if value %}checked{% endif %} {% if disabled %}disabled{% endif %}> {{ f.label }}{% if f.required %} <strong>*</strong>{% endif %}</label>
+  {% else %}
+  <label for="{{ name }}">{{ f.label }}{% if f.required %} <strong>*</strong>{% endif %}{% if f.help %} <span class="hint">{{ f.help }}</span>{% endif %}</label>
+  {% if f.type == "textarea" %}
+  <textarea id="{{ name }}" name="{{ name }}" placeholder="{{ f.placeholder }}" {% if disabled %}disabled{% endif %}>{{ value if value is not none else "" }}</textarea>
+  {% elif f.type == "select" %}
+  <select id="{{ name }}" name="{{ name }}" {% if disabled %}disabled{% endif %}>
+    <option value="">선택하십시오</option>
+    {% for o in f.options %}<option value="{{ o.value }}" {% if value is not none and o.value == value|string %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+  </select>
+  {% elif f.type == "multiselect" %}
+  <div class="checks">
+    {% for o in f.options %}<label class="check"><input type="checkbox" name="{{ name }}" value="{{ o.value }}" {% if o.value in (value or [])|map("string")|list %}checked{% endif %} {% if disabled %}disabled{% endif %}> {{ o.label }}</label>{% endfor %}
+  </div>
+  {% elif f.type == "yesno" %}
+  <div class="checks">
+    <label class="check"><input type="radio" name="{{ name }}" value="yes" {% if value is sameas true %}checked{% endif %} {% if disabled %}disabled{% endif %}> 예</label>
+    <label class="check"><input type="radio" name="{{ name }}" value="no" {% if value is sameas false %}checked{% endif %} {% if disabled %}disabled{% endif %}> 아니오</label>
+  </div>
+  {% elif f.type == "number" %}
+  <input type="number" step="any" id="{{ name }}" name="{{ name }}" value="{{ value if value is not none else '' }}" {% if f.min is not none %}min="{{ f.min }}"{% endif %} {% if f.max is not none %}max="{{ f.max }}"{% endif %} placeholder="{{ f.placeholder }}" {% if disabled %}disabled{% endif %}>
+  {% elif f.type == "date" %}
+  <input type="date" id="{{ name }}" name="{{ name }}" value="{{ value or '' }}" {% if disabled %}disabled{% endif %}>
+  {% else %}
+  <input type="text" id="{{ name }}" name="{{ name }}" value="{{ value if value is not none else '' }}" placeholder="{{ f.placeholder }}" {% if disabled %}disabled{% endif %}>
+  {% endif %}
+  {% endif %}
+  {% if f.type == "checkbox" and f.help %}<div class="hint">{{ f.help }}</div>{% endif %}
+  {% if error %}<div class="field-error">{{ error }}</div>{% endif %}
+</div>
+{%- endmacro %}

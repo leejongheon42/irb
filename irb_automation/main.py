@@ -18,6 +18,7 @@ from .database import SessionLocal, init_db
 from .web import (
     routes_admin,
     routes_deid,
+    routes_forms,
     routes_governance,
     routes_main,
     routes_meetings,
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_meetings.router)
     app.include_router(routes_governance.router)
     app.include_router(routes_reports.router)
+    app.include_router(routes_forms.router)
     app.include_router(api_router)
 
     @app.exception_handler(LoginRequired)

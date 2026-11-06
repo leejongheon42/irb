@@ -1,0 +1,131 @@
+# 기본 양식 팩 — 시스템 기본 서식에 예시 기관 추가 항목(모두 선택 입력)과 웹 작성 서식 3종을 더한 구성.
+# 기관 SOP에 맞게 /admin/forms 에서 수정하거나, 다른 병원 팩을 가져와 교체할 수 있다.
+pack: default
+name: 기본 양식 팩
+description: 기본 과제 신청서 + 예시 기관 추가 항목 5개(선택) + 웹 작성 서식 3종(이해상충 공개서·보안서약서·연구책임자 서약서)
+profile:
+  protocol_no_format: "IRB-{YYYY}-{SEQ:4}"
+forms:
+  - kind: protocol
+    name: 과제 신청서 기관 추가 항목
+    schema:
+      sections:
+        - title: 연구비 및 행정 정보
+          fields:
+            - key: grant_number
+              label: 연구비 과제번호
+              type: text
+              placeholder: "예: HI22C0000"
+              help: 연구비 지원기관이 부여한 과제번호
+              show_when: {field: funding_source}
+            - key: review_fee_paid
+              label: 심의비 납부 여부
+              type: yesno
+              help: 외부 연구비 과제는 심의비 납부 확인 후 심의 안건으로 상정됩니다
+              show_when: {field: funding_source}
+            - key: research_center
+              label: 소속 연구센터
+              type: select
+              options:
+                - {value: clinical, label: 임상의학연구소}
+                - {value: biomedical, label: 의생명연구원}
+                - {value: digital, label: 디지털헬스센터}
+                - {value: none, label: 해당 없음}
+        - title: 데이터 신청 정보
+          fields:
+            - key: cdw_request_no
+              label: 임상데이터센터 자료 신청번호
+              type: text
+              placeholder: "예: CDW-2026-0001"
+              help: 데이터센터에 자료 추출을 미리 신청한 경우 신청번호
+            - key: publication_plan
+              label: 결과 공표 계획
+              type: multiselect
+              options:
+                - {value: journal, label: 학술지 게재}
+                - {value: conference, label: 학회 발표}
+                - {value: thesis, label: 학위논문}
+                - {value: policy, label: 정책·내부 보고서}
+
+  - kind: online:coi
+    name: 이해상충 공개서(웹 작성)
+    schema:
+      label: 이해상충 공개서
+      per_member: true
+      intro: 연구책임자와 공동연구자는 각자 본 연구와 관련된 이해관계를 공개합니다. 공개된 내용은 IRB 심의에만 사용됩니다.
+      pledge: 본인은 위 내용이 사실이며, 연구 기간 중 이해관계가 새로 생기면 즉시 IRB에 보고할 것을 서약합니다.
+      sections:
+        - title: 재정적 이해관계
+          fields:
+            - key: has_financial_interest
+              label: 본 연구와 관련된 재정적 이해관계가 있습니까?
+              type: yesno
+              required: true
+              help: 최근 1년간 연구 의뢰자·관련 기업과의 자문료, 강연료, 주식, 특허, 고용 관계 등
+            - key: relationship_types
+              label: 이해관계 유형
+              type: multiselect
+              options: [자문·고문, 강연·원고료, 주식·지분, 특허·로열티, 연구비 수혜, 고용·임원]
+              show_when: {field: has_financial_interest, equals: yes}
+              required: true
+            - key: amount_range
+              label: 연간 금액 규모
+              type: select
+              options:
+                - {value: lt5m, label: 500만원 미만}
+                - {value: 5m_10m, label: 500만원 ~ 1,000만원}
+                - {value: gte10m, label: 1,000만원 이상}
+              show_when: {field: has_financial_interest, equals: yes}
+            - key: financial_detail
+              label: 상세 내용(기관명·관계·기간)
+              type: textarea
+              show_when: {field: has_financial_interest, equals: yes}
+              required: true
+        - title: 비재정적 이해관계 및 관리 방안
+          fields:
+            - key: nonfinancial
+              label: 비재정적 이해관계(가족 관계, 학술적 경쟁 등)
+              type: textarea
+            - key: management_plan
+              label: 이해상충 관리 방안
+              type: textarea
+              show_when: {field: has_financial_interest, equals: yes}
+
+  - kind: online:security_pledge
+    name: 개인정보 보호 및 보안 서약서(웹 작성)
+    schema:
+      label: 개인정보 보호 및 보안 서약서
+      per_member: true
+      intro: 연구 자료(가명정보 포함)를 이용하는 연구진은 각자 아래 사항을 확인하고 서약합니다.
+      pledge: 본인은 위 서약 사항을 위반할 경우 관련 법령(생명윤리법, 개인정보 보호법)과 기관 규정에 따른 책임을 질 것을 확인합니다.
+      sections:
+        - title: 서약 사항
+          fields:
+            - {key: agree_purpose, label: 승인된 연구 목적 범위 내에서만 자료를 이용합니다, type: checkbox, required: true}
+            - {key: agree_no_reid, label: 특정 개인을 알아보기 위한 재식별을 시도하지 않습니다, type: checkbox, required: true}
+            - {key: agree_location, label: 승인된 장소(분석 환경)에서만 자료를 분석합니다, type: checkbox, required: true}
+            - {key: agree_no_transfer, label: 자료를 무단 복제·반출하거나 제3자에게 제공하지 않습니다, type: checkbox, required: true}
+            - {key: agree_destroy, label: 연구 종료 또는 보관기간 만료 시 자료를 파기합니다, type: checkbox, required: true}
+        - title: 서약자 정보
+          fields:
+            - {key: signer_name, label: 성명, type: text, required: true, prefill: user.full_name}
+            - {key: signer_department, label: 소속, type: text, prefill: user.department}
+            - {key: signer_phone, label: 연락처, type: text, required: true, placeholder: "010-0000-0000"}
+
+  - kind: online:researcher_pledge
+    name: 연구책임자 서약서(웹 작성)
+    schema:
+      label: 연구책임자 서약서
+      per_member: false
+      signer: pi
+      required: false
+      intro: 연구책임자는 연구 수행 전 아래 사항을 확인합니다.
+      pledge: 본인은 연구책임자로서 위 사항을 준수할 것을 서약합니다.
+      sections:
+        - title: 확인 사항
+          fields:
+            - {key: confirm_protocol, label: IRB 승인 계획서에 따라 연구를 수행하고 변경 시 사전에 변경심의를 받겠습니다, type: checkbox, required: true}
+            - {key: confirm_training, label: 연구진 전원의 연구윤리 교육 이수를 관리하겠습니다, type: checkbox, required: true}
+            - {key: confirm_report, label: 연구계획 위반·개인정보 유출 등 사고 발생 시 지체 없이 보고하겠습니다, type: checkbox, required: true}
+            - {key: pi_name, label: 연구책임자, type: text, required: true, prefill: pi.full_name}
+            - {key: sign_date, label: 서약일, type: date, required: true, prefill: today}

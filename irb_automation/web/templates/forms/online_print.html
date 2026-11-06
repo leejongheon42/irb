@@ -1,0 +1,28 @@
+{% extends "print/base.html" %}
+{% block title %}{{ spec.label }} · {{ p.title }}{% endblock %}
+{% block title2 %}{{ spec.label }} (웹 작성){% endblock %}
+{% block body %}
+<div class="doc-no">{{ p.protocol_no or "과제번호 미부여" }} · 서식 v{{ spec.version }} · 제출 {{ r.version }}회차<br>작성일 {{ (r.submitted_at or r.updated_at)|fmt }}</div>
+<h1>{{ spec.label }}</h1>
+<div class="org">{{ settings.irb_name }} 귀중</div>
+<table>
+  <tr><th>연구 제목</th><td>{{ p.title }}</td></tr>
+  <tr><th>연구책임자</th><td>{{ p.pi.full_name if p.pi else "-" }}</td></tr>
+  <tr><th>작성자</th><td>{{ respondent.full_name }} ({{ respondent.department }})</td></tr>
+</table>
+{% if spec.intro %}<p class="pre">{{ spec.intro }}</p>{% endif %}
+{% for sec in sections %}
+<h2>{{ sec.title }}</h2>
+<table class="grid">
+  {% for f, text in sec["rows"] %}<tr><th>{{ f.label }}</th><td class="pre">{{ text }}</td></tr>{% endfor %}
+</table>
+{% endfor %}
+{% if spec.pledge %}<h2>서약</h2><p class="pre">{{ spec.pledge }}</p>{% endif %}
+{% if sig %}
+<table>
+  <tr><th>전자서명</th><td>{{ respondent.full_name }} · {{ sig.signed_at|fmt }} · {{ sig.meaning }}</td></tr>
+  <tr><th>내용 해시(SHA-256)</th><td class="small">{{ sig.content_hash }}</td></tr>
+</table>
+{% endif %}
+<div class="note">본 서식은 {{ settings.institution_name }} IRB 시스템에서 웹으로 작성·전자서명되었습니다.{% if settings.letter_footer %} {{ settings.letter_footer }}{% endif %}</div>
+{% endblock %}

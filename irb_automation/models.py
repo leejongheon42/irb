@@ -233,6 +233,9 @@ class Protocol(Base):
     participating_sites: Mapped[str] = mapped_column(Text, default="")
     external_irb: Mapped[str] = mapped_column(String(200), default="")
 
+    # 기관별 추가 항목(양식 스키마로 정의, forms 패키지)
+    custom_fields: Mapped[dict] = mapped_column(JSON, default=dict)
+
     # 동의
     consent_plan: Mapped[str] = mapped_column(String(20), default="waiver")  # obtain|waiver
     waiver_impracticable_reasons: Mapped[list] = mapped_column(JSON, default=list)

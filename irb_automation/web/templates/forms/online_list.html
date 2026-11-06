@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}웹 작성 서식{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/forms.css">
+<div class="topbar">
+  <div><h1>웹 작성 서식</h1><div class="sub">{{ p.protocol_no or "과제번호 미부여" }} · {{ p.title }}</div></div>
+  <a class="btn" href="/protocols/{{ p.id }}">과제로 돌아가기</a>
+</div>
+<div class="callout">파일을 내려받아 작성·스캔할 필요 없이 브라우저에서 작성하고 비밀번호로 전자서명하면, 인쇄용 문서가 과제 서류로 자동 첨부됩니다.
+  <strong>개인별 서식</strong>은 연구책임자·공동연구자 <strong>전원이 제출해야</strong> 서류 체크리스트에서 제출로 인정됩니다.</div>
+{% for st in status %}
+{% set spec = st.spec %}
+<div class="card">
+  <h2>{{ spec.label }}
+    <span class="badge">{{ "개인별" if spec.per_member else "과제 단위" }}</span>
+    {% if spec.required %}<span class="badge b-warn">기관 필수</span>{% endif %}
+    {% if st.complete %}<span class="badge b-ok">완료 {{ st.submitted }}/{{ st.required }}</span>{% else %}<span class="badge b-info">{{ st.submitted }}/{{ st.required }} 제출</span>{% endif %}
+  </h2>
+  {% if spec.intro %}<p class="muted small pre-wrap">{{ spec.intro }}</p>{% endif %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>작성자</th><th>상태</th><th>제출 회차</th><th>제출 일시</th><th></th></tr></thead>
+    <tbody>
+    {% for e in st.entries %}
+    <tr>
+      <td>{{ e.user.full_name if e.user else ("연구책임자" if spec.signer == "pi" else "연구진 누구나") }}</td>
+      <td>{% if e.status == "submitted" %}<span class="badge b-ok">{{ labels[e.status] }}</span>{% elif e.status == "missing" %}<span class="muted">{{ labels[e.status] }}</span>{% else %}<span class="badge b-warn">{{ labels[e.status] }}</span>{% endif %}</td>
+      <td>{{ e.response.version if e.response else 0 }}</td>
+      <td>{{ e.response.submitted_at|fmt if e.response else "-" }}</td>
+      <td class="nowrap">
+        {% set mine = e.user and e.user.id == user.id %}
+        {% if st.can_fill and (mine or not spec.per_member) %}
+        <a class="btn btn-sm btn-primary" href="/protocols/{{ p.id }}/online-forms/{{ spec.doc_type }}">{{ "작성" if e.status == "missing" else "수정" }}</a>
+        {% elif e.response %}
+        <a class="btn btn-sm" href="/protocols/{{ p.id }}/online-forms/{{ spec.doc_type }}{% if e.user %}?user_id={{ e.user.id }}{% endif %}">열람</a>
+        {% endif %}
+        {% if e.response and e.response.version %}<a class="btn btn-sm" href="/protocols/{{ p.id }}/online-forms/{{ spec.doc_type }}/print?response_id={{ e.response.id }}">인쇄본</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if not st.can_fill and st.reason and user.id in p.member_ids() %}<p class="small muted">{{ st.reason }}</p>{% endif %}
+</div>
+{% else %}
+<div class="callout">활성화된 웹 작성 서식이 없습니다. IRB 사무국이 '기관 양식 관리'에서 설정할 수 있습니다.</div>
+{% endfor %}
+{% endblock %}

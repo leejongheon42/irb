@@ -168,6 +168,21 @@
       <textarea id="participating_sites" name="participating_sites">{{ v.participating_sites }}</textarea></div>
   </fieldset>
 
+  {% set custom_sections = institution_protocol_sections() %}
+  {% if custom_sections %}
+  {% import "forms/_fields.html" as ff %}
+  <link rel="stylesheet" href="/static/forms.css">
+  <fieldset class="institution-fields">
+    <legend>8. 기관 추가 항목 <span class="hint">{{ settings.institution_name }} 양식</span></legend>
+    <input type="hidden" name="_custom" value="1">
+    {% for sec in custom_sections %}
+    <h3 class="small">{{ sec.title }}</h3>
+    {% if sec.description %}<p class="muted small">{{ sec.description }}</p>{% endif %}
+    {% for f in sec.fields %}{{ ff.field(f, (v.custom_fields or {}).get(f.key), "custom__") }}{% endfor %}
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+
   <p class="actions"><button class="btn-primary" type="submit">저장하고 자동 사전점검</button></p>
 </form>
 {% endblock %}

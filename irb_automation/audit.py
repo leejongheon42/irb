@@ -114,3 +114,15 @@ ACTION_LABELS = {
     "feasibility_query": "대상자 수 사전 조회",
     "export": "자료 내보내기",
 }
+
+# === 기관 양식(forms) ===
+ACTION_LABELS.update({
+    "profile_update": "기관 프로필 변경",
+    "form_save": "양식 정의 저장",
+    "form_activate": "양식 활성화",
+    "form_deactivate": "양식 비활성화",
+    "form_pack_import": "양식 팩 가져오기",
+    "form_pack_export": "양식 팩 내보내기",
+    "online_form_save": "웹 서식 임시저장",
+    "online_form_submit": "웹 서식 제출",
+})

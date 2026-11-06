@@ -105,6 +105,36 @@
       <tr><th>이해상충</th><td>{{ m.yn(p.conflict_of_interest) }} {{ p.coi_detail }}</td></tr>
     </table>
   </div>
+  {% set custom_sections = institution_protocol_sections() %}
+  {% if custom_sections %}
+  <div class="card">
+    <h2>기관 추가 항목</h2>
+    <table class="kv">
+      {% for sec in custom_sections %}{% for f in sec.fields %}
+      <tr><th>{{ f.label }}{% if f.required %} *{% endif %}</th><td class="pre-wrap">{{ field_display(f, (p.custom_fields or {}).get(f.key)) }}</td></tr>
+      {% endfor %}{% endfor %}
+    </table>
+  </div>
+  {% endif %}
+  {% set online = institution_online_progress(p.id) %}
+  {% if online %}
+  <div class="card">
+    <h2>웹 작성 서식 <a class="btn btn-sm" href="/protocols/{{ p.id }}/online-forms">작성·열람</a></h2>
+    <table class="data">
+      <thead><tr><th>서식</th><th>구분</th><th>제출</th><th>상태</th></tr></thead>
+      <tbody>
+      {% for o in online %}
+      <tr>
+        <td><a href="/protocols/{{ p.id }}/online-forms/{{ o.doc_type }}">{{ o.label }}</a>{% if o.mandatory %} <span class="badge b-warn">기관 필수</span>{% endif %}</td>
+        <td>{{ "개인별" if o.per_member else "과제 단위" }}</td>
+        <td>{{ o.submitted }} / {{ o.required }}</td>
+        <td>{% if o.complete %}<span class="badge b-ok">완료</span>{% elif o.submitted %}<span class="badge b-warn">일부 제출</span>{% else %}<span class="muted">미제출</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 </section>
 
 {# ------------------------------------------------------------------ 사전검토 #}

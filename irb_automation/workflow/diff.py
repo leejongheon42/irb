@@ -102,7 +102,43 @@ def diff_snapshots(old: dict[str, Any], new: dict[str, Any], rs: Ruleset) -> lis
                 "material": key in MATERIAL_FIELDS,
             }
         )
+    changes.extend(_diff_custom(old, new))
     return changes
+
+
+def _fmt_custom(meta: dict[str, Any], value: Any) -> str:
+    if value is None or value == "" or value == []:
+        return "-"
+    if isinstance(value, bool):
+        return "예" if value else "아니오"
+    opts = meta.get("options") or {}
+    if isinstance(value, list):
+        return ", ".join(opts.get(str(v), str(v)) for v in value)
+    return opts.get(str(value), str(value))
+
+
+def _diff_custom(old: dict[str, Any], new: dict[str, Any]) -> list[dict[str, Any]]:
+    """기관 추가 항목 변경. 라벨·선택지는 각 제출본에 함께 저장된 메타(custom_field_meta)를 사용한다."""
+    a_all, b_all = old.get("custom_fields") or {}, new.get("custom_fields") or {}
+    meta = {**(old.get("custom_field_meta") or {}), **(new.get("custom_field_meta") or {})}
+    order = list(meta) + sorted((set(a_all) | set(b_all)) - set(meta))
+    out = []
+    for key in order:
+        a, b = a_all.get(key), b_all.get(key)
+        if isinstance(a, list) and isinstance(b, list):
+            if sorted(map(str, a)) == sorted(map(str, b)):
+                continue
+        elif (a if a is not None else "") == (b if b is not None else ""):
+            continue
+        m = meta.get(key, {})
+        out.append({
+            "field": f"custom__{key}",
+            "label": f"[기관] {m.get('label', key)}",
+            "before": _fmt_custom(m, a),
+            "after": _fmt_custom(m, b),
+            "material": bool(m.get("material")),
+        })
+    return out
 
 
 def previous_snapshot(protocol, submission) -> dict[str, Any] | None:

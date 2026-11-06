@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "forms/_fields.html" as ff %}
+{% block title %}양식 미리보기{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/forms.css">
+<div class="topbar">
+  <div><h1>{{ d.name }} <span class="muted">v{{ d.version }}</span></h1>
+    <div class="sub">{{ kind_label(d.kind, d.schema) }} · {% if d.active %}<span class="badge b-ok">활성</span>{% else %}비활성{% endif %}</div></div>
+  <div><a class="btn" href="/admin/forms/{{ d.id }}/edit">새 버전 편집</a> <a class="btn" href="/admin/forms">목록</a></div>
+</div>
+<div class="card">
+  {% if d.is_online %}
+  <p>
+    <span class="badge">{{ "개인별(연구진 각자)" if d.schema.per_member else "과제 단위 1부" }}</span>
+    {% if d.schema.signer == "pi" %}<span class="badge">연구책임자 작성</span>{% endif %}
+    {% if d.schema.required %}<span class="badge b-warn">기관 필수</span>{% endif %}
+  </p>
+  {% if d.schema.intro %}<p class="pre-wrap">{{ d.schema.intro }}</p>{% endif %}
+  {% endif %}
+  <div class="preview-frame">
+    {% for sec in sections %}<h3 class="small">{{ sec.title }}</h3>
+      {% for f in sec.fields %}{{ ff.field(f, None, "f__" if d.is_online else "custom__") }}{% endfor %}
+    {% endfor %}
+    {% if d.is_online and d.schema.pledge %}<p class="pledge">{{ d.schema.pledge }}</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

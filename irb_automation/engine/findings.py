@@ -306,6 +306,8 @@ def generate_findings(
               "기관별 가명처리 기준을 통일하고 결합키 생성·결합 장소(결합전문기관)를 명시하십시오.",
               legal="pipa_28_3")
 
+    _institution_findings(c, facts, checklist)
+
     if facts.submission_kind == "amendment":
         c.add("info", "AMENDMENT", "변경심의 신청입니다. 변경 전후 비교표를 확인하십시오.")
 
@@ -344,6 +346,44 @@ def _report_findings(c: _Collector, facts: ProtocolFacts, today: date) -> None:
               "개인정보 유출 또는 보안사고가 보고되었습니다.",
               "개인정보 보호책임자에게 즉시 보고하고 유출 통지·신고 절차를 이행하십시오.",
               legal="pipa_29")
+
+
+def _institution_findings(c: _Collector, facts: ProtocolFacts, checklist: list[dict[str, Any]]) -> None:
+    """기관 양식 규칙: 필수 추가 항목, 값 범위·선택지, 웹 작성 서식 미제출."""
+    from ..forms.logic import is_empty, is_visible, option_map, range_error
+    from .facts import PROTOCOL_FIELDS
+
+    values = facts.custom_fields or {}
+    core = {name: getattr(facts, name, None) for name in PROTOCOL_FIELDS}
+    for f in facts.custom_field_defs:
+        if not is_visible(f, values, core):
+            continue
+        key = f["key"]
+        value = values.get(key)
+        if f.get("required") and is_empty(value, f.get("type", "text")):
+            c.add("critical", "CUSTOM_REQUIRED", f"기관 필수 항목 미입력: {f['label']}",
+                  "과제 수정 화면의 '8. 기관 추가 항목'에서 입력하십시오.", field=f"custom__{key}")
+            continue
+        err = range_error(f, value)
+        opts = option_map(f)
+        if opts and value not in (None, "", []):
+            bad = [str(v) for v in (value if isinstance(value, list) else [value]) if str(v) not in opts]
+            if bad:
+                err = f"허용되지 않은 선택값({', '.join(bad)})"
+        if err:
+            c.add("major", "CUSTOM_INVALID", f"기관 추가 항목 값 오류: {f['label']} - {err}",
+                  "과제 수정 화면에서 값을 확인하십시오.", field=f"custom__{key}")
+
+    covered = {item["doc"] for item in checklist}
+    for p in facts.online_forms_pending:
+        if p.get("partial") and p.get("missing"):
+            c.add("major", "ONLINE_FORM_INCOMPLETE",
+                  f"웹 서식 '{p['label']}' 미제출 연구진: {', '.join(p['missing'])}",
+                  "연구진 각자 '웹 작성 서식'에서 서명 제출해야 해당 서류가 제출된 것으로 인정됩니다.",
+                  field="online_forms")
+        if p.get("required") and p["doc_type"] not in covered:
+            c.add("critical", "ONLINE_FORM_REQUIRED", f"기관 필수 웹 서식 미제출: {p['label']}",
+                  "과제 상세 > 개요 > '웹 작성 서식'에서 작성 후 전자서명으로 제출하십시오.", field="online_forms")
 
 
 def _sorted(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
