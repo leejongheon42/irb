@@ -258,5 +258,8 @@ def _attach_document(db: Session, user: User, protocol: Protocol, spec: OnlineFo
     )
     db.add(doc)
     db.flush()
+    from ..submission.hooks import finalize_system_document
+
+    finalize_system_document(db, user, doc, "online_form", versioned=not spec.per_member)
     db.expire(protocol, ["documents"])
     return doc

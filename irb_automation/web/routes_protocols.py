@@ -1,6 +1,7 @@
 """연구과제: 작성·제출·심의·결정·보고 화면."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -41,6 +42,7 @@ from ..workflow.diff import diff_snapshots, previous_snapshot
 from .deps import client_ip, current_user, flash, render, verify_csrf
 from .forms import parse_protocol_form
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="")
 S = ProtocolStatus
 
@@ -102,6 +104,20 @@ async def create_protocol(request: Request, user: User = Depends(current_user), 
 
 
 # --------------------------------------------------------------------- 상세/수정
+def _knowledge_context(db: Session, user: User, p, preview, sub) -> tuple[dict, list]:
+    """사전검토 의견별 관련 근거와 유사 과제(선례). 지식 모듈 오류가 화면을 막지 않도록 격리."""
+    result = preview or (sub.latest_prereview.result if sub and sub.latest_prereview else None)
+    try:
+        from ..knowledge import service as ks
+
+        related = ks.related_for_findings(db, result.get("findings", [])) if result else {}
+        similar = ks.similar_protocols(db, p, user=user)
+    except Exception:  # pragma: no cover - 보조 정보
+        log.exception("knowledge context failed for protocol %s", p.id)
+        return {}, []
+    return related, similar
+
+
 @router.get("/protocols/{pid}")
 def detail(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
@@ -132,11 +148,12 @@ def detail(request: Request, pid: int, user: User = Depends(current_user), db: S
         signatures += esign.signatures_for(db, "submission", s_.id)
         if s_.decision:
             signatures += esign.signatures_for(db, "decision", s_.decision.id)
+    related, similar = _knowledge_context(db, user, p, preview, sub)
     return render(
         request, "protocols/detail.html", db, user,
-        p=p, sub=sub, preview=preview, my_assignment=my_assignment,
+        p=p, sub=sub, preview=preview, my_assignment=my_assignment, related=related, similar=similar,
         diff=diff, revision_items=revision_items, last_revision_items=last_revision_items,
-        signatures=signatures, generatable=GENERATABLE,
+        signatures=signatures, generatable=generatable_doc_types(db),
         agreements=[a for a in db.scalars(select(Agreement).where(Agreement.protocol_id == p.id))],
         outputs=db.scalars(select(OutputRequest).where(OutputRequest.protocol_id == p.id).order_by(OutputRequest.id.desc())).all(),
         destruction=db.scalars(select(DestructionRecord).where(DestructionRecord.protocol_id == p.id)).first(),

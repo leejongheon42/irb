@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
+{% import "knowledge/_related.html" as kn %}
 {% block title %}{{ p.protocol_no or "과제" }}{% endblock %}
 {% block content %}
 <div class="topbar">
@@ -143,6 +144,7 @@
     {% if preview %}
       <h2>실시간 자동 사전점검 <span class="hint">저장된 내용 기준 · 제출 전 점검</span></h2>
       {{ m.prereview(preview, rs) }}
+      {% if related %}<h3>검토 의견별 관련 근거 <span class="hint">법령·지침·보완 가이드 자동 검색</span></h3>{{ kn.findings_related(preview.findings, related) }}{% endif %}
       {% if is_member %}
       <div class="sign-box" id="submit">
         <h3 class="mt0">전자서명 제출</h3>
@@ -165,6 +167,8 @@
       {% set pr = sub.latest_prereview %}
       <h2>자동 사전검토 결과 <span class="hint">{{ sub.kind.label }} · {{ pr.created_at|fmt }} 제출 시점</span></h2>
       {{ m.prereview(pr.result, rs) }}
+      {% if related %}<h3>검토 의견별 관련 근거 <span class="hint">법령·지침·보완 가이드 자동 검색</span></h3>{{ kn.findings_related(pr.result.findings, related) }}{% endif %}
+      {% if similar %}{{ kn.similar_panel(similar) }}{% endif %}
       {% if user.is_irb_staff %}
       <h3>AI 사전검토 보조 <span class="hint">참고용 · 연구계획서 텍스트만 전송</span></h3>
       {% if pr.ai_result %}
@@ -199,7 +203,7 @@
     <div class="actions">
       {% for dt in generatable if dt != "amendment_table" or p.status == S.AMENDMENT %}
       {% if dt != "site_list" or p.multicenter %}
-      <span><a class="btn btn-sm" href="/protocols/{{ p.id }}/generate/{{ dt }}" target="_blank" rel="noopener">{{ rs.label("document_types", dt) }} 미리보기</a>
+      <span><a class="btn btn-sm" href="/protocols/{{ p.id }}/generate/{{ dt }}" target="_blank" rel="noopener">{{ rs.label("document_types", dt) }}{% if generatable[dt] == "institution" %} <span class="badge b-info">기관 서식</span>{% endif %} 미리보기</a>
       <form method="post" action="/protocols/{{ p.id }}/generate/{{ dt }}" class="inline-form">{{ csrf_input }}<button class="btn-sm" type="submit">첨부</button></form></span>
       {% endif %}
       {% endfor %}

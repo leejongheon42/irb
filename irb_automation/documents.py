@@ -171,6 +171,9 @@ def generate_and_attach(db: Session, user: User, protocol: Protocol, doc_type: s
     )
     db.add(doc)
     db.flush()
+    from .submission.hooks import finalize_system_document
+
+    finalize_system_document(db, user, doc, "generated")
     audit.record(db, user, "document_generate", "protocol", protocol.id,
                  {"doc_type": doc_type, "doc_id": doc.id, "sha256": doc.sha256, "source": generated.source,
                   "template_id": generated.template_id, "template_version": generated.template_version}, ip)

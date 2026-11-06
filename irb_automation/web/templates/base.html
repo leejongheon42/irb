@@ -18,6 +18,10 @@
       <li><a href="/protocols/new">+ 새 과제 작성</a></li>
       {% endif %}
       <li><a href="/feasibility">대상자 수 사전 조회</a></li>
+      <li class="section">자료·지식</li>
+      <li><a href="/knowledge">관련 정보 검색</a></li>
+      <li><a href="/knowledge/ask">근거 질의응답</a></li>
+      <li><a href="/doc-templates">서식 자료실</a></li>
       <li><a href="/notifications">알림{% if unread_count %} <span class="badge b-danger">{{ unread_count }}</span>{% endif %}</a></li>
       <li class="section">데이터 활용</li>
       <li><a href="/outputs">결과 반출 심사</a></li>
@@ -34,6 +38,7 @@
       <li class="section">위원회</li>
       <li><a href="/meetings">위원회 회의</a></li>
       <li><a href="/drb">가명처리 적정성 검토</a></li>
+      <li><a href="/documents/review-queue">서류 검토 대기열</a></li>
       {% endif %}
       {% if user.is_irb_staff %}
       <li class="section">IRB 사무국</li>
@@ -43,6 +48,11 @@
       <li><a href="/reports/annual">연간 운영실적</a></li>
       <li><a href="/admin/audit">감사 로그</a></li>
       <li><a href="/admin/rules">사전검토 규칙</a></li>
+      <li class="section">기관 설정</li>
+      <li><a href="/admin/profile">기관 프로필</a></li>
+      <li><a href="/admin/forms">기관 양식 관리</a></li>
+      <li><a href="/admin/templates">기관 서식(DOCX·HWPX)</a></li>
+      <li><a href="/admin/knowledge">지식 관리</a></li>
       {% endif %}
       {% if user.role == Role.ADMIN %}
       <li><a href="/admin/users">사용자 관리</a></li>

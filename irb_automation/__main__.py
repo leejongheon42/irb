@@ -15,6 +15,23 @@ import sys
 from sqlalchemy import select
 
 
+def seed_extensions(db, demo: bool = False) -> None:
+    """기관 양식 팩·지식베이스·제출 설정 기본값 적재(멱등). 데모 서식은 --demo에서만."""
+    from .forms.packs import seed_forms
+    from .knowledge.sources import reindex_protocols, seed_knowledge
+    from .submission.seed import seed_submission
+
+    seed_forms(db)
+    seed_submission(db)
+    seed_knowledge(db)
+    reindex_protocols(db)
+    if demo:
+        from .doctemplates.samples import seed_doctemplates
+
+        seed_doctemplates(db)
+    db.commit()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="irb_automation")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -49,10 +66,12 @@ def main(argv: list[str] | None = None) -> int:
                 db.commit()
                 seed_rich_demo(db)
                 db.commit()
+                seed_extensions(db, demo=True)
                 print("데모 데이터 생성 완료. 공통 비밀번호:", DEMO_PASSWORD)
                 for u in users.values():
                     print(f"  {u.username:12s} {u.role.label}")
             else:
+                seed_extensions(db)
                 print("DB 초기화 완료")
         elif args.cmd == "create-user":
             from .models import Role, User
