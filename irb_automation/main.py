@@ -21,6 +21,7 @@ from .web import (
     routes_governance,
     routes_main,
     routes_meetings,
+    routes_pipeline,
     routes_protocols,
     routes_reports,
 )
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     app.include_router(routes_main.router)
+    app.include_router(routes_pipeline.router)  # /protocols/import 가 /protocols/{pid} 보다 먼저
     app.include_router(routes_protocols.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)

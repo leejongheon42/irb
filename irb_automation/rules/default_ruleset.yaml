@@ -273,3 +273,16 @@ destruction_policy:
 # 계약 만료 알림
 agreement_policy:
   reminder_days: [60, 30]
+
+# === 문서 자동화 파이프라인 ===
+# 기관마다 다른 서식 명칭을 추가로 인식시키려면 아래에 덧붙인다(공백·기호는 무시하고 비교).
+document_pipeline:
+  # 섹션 제목 별칭: title, objectives, background, methods, target_population, inclusion_criteria,
+  # exclusion_criteria, expected_subjects, sample_size_justification, study_period, data_period,
+  # data_items, privacy, consent, retention, funding, pi_name, department
+  field_aliases:
+    title: ["임상연구과제명", "연구과제명국문"]
+    data_period: ["후향적의무기록조사기간"]
+  # 서류 분류 키워드: 서류종류: [키워드 또는 [키워드, 가중치]]
+  classify_keywords:
+    protocol: [["임상연구 심의 신청서", 3]]

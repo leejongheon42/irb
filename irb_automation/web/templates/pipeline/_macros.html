@@ -1,0 +1,30 @@
+{% macro status(s, labels) -%}
+{% set cls = {"succeeded": "b-ok", "partial": "b-warn", "failed": "b-danger", "running": "b-info", "queued": "", "skipped": ""} %}
+<span class="badge {{ cls.get(s, '') }}" data-status="{{ s }}">{{ labels.get(s, s) }}</span>
+{%- endmacro %}
+
+{% macro conf(c) -%}
+{% set pct = (c * 100)|round|int %}
+<span class="badge {{ 'b-ok' if c >= 0.8 else ('b-warn' if c >= 0.5 else 'b-danger') }}" title="신뢰도">{{ pct }}%</span>
+{%- endmacro %}
+
+{% macro method(m) -%}
+{% set names = {"section": "제목 구분", "table": "표", "keyword": "키워드 추정", "first_line": "첫 줄", "ai": "AI(근거 확인)", "ai_unverified": "AI(근거 미확인)", "custom": "기관 항목"} %}
+<span class="small muted">{{ names.get(m, m.replace("+ai", " + AI 일치")) }}</span>
+{%- endmacro %}
+
+{% macro field_table(rows, show_current=False, checkable=True) %}
+<div class="table-wrap"><table class="pl-fields">
+  <tr>{% if checkable %}<th><input type="checkbox" class="pl-check-all" aria-label="전체 선택"></th>{% endif %}<th>항목</th><th>추출 값</th>{% if show_current %}<th>현재 과제 값</th>{% endif %}<th>신뢰도</th><th>근거 문장</th></tr>
+  {% for r in rows %}
+  <tr class="{{ 'pl-same' if r.same else '' }}">
+    {% if checkable %}<td>{% if r.applicable %}<input type="checkbox" name="fields" value="{{ r.key }}" {% if r.confidence >= 0.5 and not r.same %}checked{% endif %} aria-label="{{ r.label }} 적용">{% endif %}</td>{% endif %}
+    <td class="nowrap"><strong>{{ r.label }}</strong><div>{{ method(r.method) }}</div></td>
+    <td class="pre-wrap pl-value">{{ r.display[:600] }}{% if r.display|length > 600 %}…{% endif %}{% if r.alternative is defined %}<div class="small muted">다른 후보: {{ r.alternative }}</div>{% endif %}</td>
+    {% if show_current %}<td class="pre-wrap pl-value muted">{{ (r.current or "—")[:300] }}</td>{% endif %}
+    <td>{{ conf(r.confidence) }}</td>
+    <td class="small muted pl-snippet">{{ r.source_snippet }}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% endmacro %}

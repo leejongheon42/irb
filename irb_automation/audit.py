@@ -113,4 +113,8 @@ ACTION_LABELS = {
     "drb_review": "가명처리 적정성 검토",
     "feasibility_query": "대상자 수 사전 조회",
     "export": "자료 내보내기",
+    "ai_transmit": "AI 전송",
+    "pipeline_start": "문서 분석 시작",
+    "pipeline_finish": "문서 분석 완료",
+    "pipeline_apply": "분석 결과 적용",
 }

@@ -62,6 +62,7 @@ def SessionLocal() -> Session:
 
 def init_db() -> None:
     from . import models  # noqa: F401  (모델 등록)
+    from .pipeline import models as _pipeline_models  # noqa: F401
 
     engine = get_engine()
     Base.metadata.create_all(engine)
