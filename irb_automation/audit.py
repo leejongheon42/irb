@@ -113,4 +113,10 @@ ACTION_LABELS = {
     "drb_review": "가명처리 적정성 검토",
     "feasibility_query": "대상자 수 사전 조회",
     "export": "자료 내보내기",
+    "template_upload": "기관 서식 등록",
+    "template_mapping": "기관 서식 매핑 저장",
+    "template_activate": "기관 서식 활성화",
+    "template_deactivate": "기관 서식 비활성화",
+    "template_fill": "기관 서식 채우기",
+    "template_download": "기관 서식 원본 다운로드",
 }

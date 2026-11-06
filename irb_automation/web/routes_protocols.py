@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session
 from .. import audit, esign
 from ..config import get_settings
 from ..database import get_db
-from ..documents import GENERATABLE, generate_and_attach
-from ..documents import render as render_document
+from ..doctemplates.service import to_pdf as tpl_to_pdf
+from ..documents import GENERATABLE, build_document, generatable_doc_types, generate_and_attach
 from ..engine.ai_review import run_ai_review
 from ..engine.facts import ProtocolFacts
 from ..engine.ruleset import get_ruleset
@@ -489,30 +489,57 @@ async def revision_responses(request: Request, pid: int, user: User = Depends(cu
 
 # --------------------------------------------------------------------- 서류 자동 작성
 @router.get("/protocols/{pid}/generate/{doc_type}")
-def preview_generated(request: Request, pid: int, doc_type: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    p = _get(db, user, pid)
-    if doc_type not in GENERATABLE:
-        raise HTTPException(404)
-    from fastapi.responses import HTMLResponse
+def preview_generated(request: Request, pid: int, doc_type: str, fmt: str = "", source: str = "",
+                      user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """미리보기: 기관 서식(DOCX/HWPX)이면 채운 파일을 내려받고, 기본 서식이면 화면에 표시한다.
 
-    return HTMLResponse(render_document(db, p, doc_type))
+    ``?fmt=pdf`` 는 PDF 변환기가 있을 때 PDF로, ``?source=builtin`` 은 기본 HTML 서식으로 본다.
+    """
+    p = _get(db, user, pid)
+    if doc_type not in generatable_doc_types(db):
+        raise HTTPException(404)
+    from urllib.parse import quote
+
+    from fastapi.responses import HTMLResponse, Response
+
+    try:
+        generated = build_document(db, p, doc_type, prefer_builtin=(source == "builtin" and doc_type in GENERATABLE))
+    except wf.WorkflowError as e:
+        raise HTTPException(400, str(e)) from e
+    if generated.source == "builtin" and fmt != "pdf":
+        return HTMLResponse(generated.content.decode("utf-8"))
+    content, filename, media_type = generated.content, generated.filename, generated.media_type
+    if fmt == "pdf":
+        pdf = tpl_to_pdf(filename, content)
+        if pdf is None:
+            raise HTTPException(400, "PDF 변환을 사용할 수 없습니다(변환기 미설치). 원본 형식으로 내려받으십시오.")
+        content, filename, media_type = pdf, filename.rsplit(".", 1)[0] + ".pdf", "application/pdf"
+    audit.record(db, user, "template_fill", "protocol", p.id,
+                 {"doc_type": doc_type, "template_id": generated.template_id, "preview": True, "fmt": fmt or generated.ext},
+                 client_ip(request))
+    db.commit()
+    return Response(content, media_type=media_type,
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
 @router.post("/protocols/{pid}/generate/{doc_type}", dependencies=[Depends(verify_csrf)])
 def attach_generated(request: Request, pid: int, doc_type: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
-    if doc_type not in GENERATABLE:
+    if doc_type not in generatable_doc_types(db):
         raise HTTPException(404)
     if not (p.is_editable or user.is_irb_staff):
         flash(request, "작성중·보완요청·변경작성 상태에서만 서류를 첨부할 수 있습니다.", "error")
         return _back(pid, "#documents")
+    source = generatable_doc_types(db)[doc_type]
     try:
         doc = generate_and_attach(db, user, p, doc_type, client_ip(request))
     except wf.WorkflowError as e:
+        db.rollback()
         flash(request, str(e), "error")
         return _back(pid, "#documents")
     db.commit()
-    flash(request, f"'{doc.filename}'을(를) 자동 작성하여 첨부했습니다. 내용을 확인하십시오.", "success")
+    how = "기관 서식으로 " if source == "institution" else ""
+    flash(request, f"'{doc.filename}'을(를) {how}자동 작성하여 첨부했습니다. 내용을 확인하십시오.", "success")
     return _back(pid, "#documents")
 
 

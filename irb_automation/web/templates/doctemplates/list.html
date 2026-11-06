@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}기관 서식 관리{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>기관 서식(DOCX·HWPX) 관리</h1>
+    <div class="sub">병원에서 쓰는 원본 서식 파일을 그대로 올리면 자리표시자를 찾아 과제 정보와 연결합니다. 활성화된 서식은 '서류 자동 작성'에 바로 쓰입니다.</div></div>
+  <div class="actions">
+    <a class="btn" href="/doc-templates">서식 자료실 보기</a>
+    <form method="post" action="/admin/templates/samples" class="inline-form" data-confirm="서로 다른 병원 양식의 샘플 서식 2종(심의의뢰서, 동의 면제 사유서)을 등록합니다.">{{ csrf_input }}<button type="submit">샘플 서식 만들기</button></form>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>서식 등록</h2>
+    <form method="post" action="/admin/templates" enctype="multipart/form-data">
+      {{ csrf_input }}
+      <div class="form-row">
+        <div><label for="doc_type">서류 종류</label>
+          <select id="doc_type" name="doc_type">{% for k, l in doc_types %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select></div>
+        <div><label for="name">서식 이름</label><input id="name" name="name" type="text" placeholder="예: 2026년 개정 심의의뢰서"></div>
+      </div>
+      <label for="file">서식 파일 <span class="hint">DOCX(워드) 또는 HWPX(한글) · 20MB 이하</span></label>
+      <input id="file" name="file" type="file" accept=".docx,.hwpx" required>
+      <label for="notes">메모</label><input id="notes" name="notes" type="text" placeholder="개정 사유 등">
+      <p><button class="btn-primary" type="submit">등록하고 자리표시자 찾기</button></p>
+    </form>
+    <p class="small muted">HWP(바이너리)·DOC 파일은 한글/워드에서 HWPX·DOCX로 저장해 올려 주십시오. 같은 서류 종류에 새 서식을 올리면 버전이 올라가고 이전 버전은 이력으로 남습니다.</p>
+  </div>
+  <div class="card">
+    <h2>자리표시자 작성법</h2>
+    <table class="small">
+      <tr><th>문법</th><th>의미</th></tr>
+      <tr><td><code>{{ '{{연구제목}}' }}</code> <code>«연구제목»</code> <code>[[연구제목]]</code></td><td>값 채우기(한글 이름 가능 → 매핑으로 연결)</td></tr>
+      <tr><td><code>{{ '{{작성일|YYYY년 MM월 DD일}}' }}</code></td><td>날짜 형식 · <code>|줄바꿈</code> <code>|번호</code> 목록 형식</td></tr>
+      <tr><td><code>{{ '{{동의방식=waiver}}' }}</code></td><td>값이 같으면 ■, 아니면 □ (목록은 포함 여부, <code>~</code>는 부분 일치)</td></tr>
+      <tr><td><code>{{ '{{#연구진}}' }}</code> … <code>{{ '{{item.성명}}' }}</code> <code>{{ '{{no}}' }}</code></td><td>표 행(또는 문단)을 목록 항목 수만큼 반복</td></tr>
+      <tr><td>워드 편지 병합 필드(MERGEFIELD)</td><td>자동으로 «필드» 로 풀어 처리</td></tr>
+    </table>
+    <p class="small muted">자세한 규칙: docs/기관서식_템플릿.md</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>등록된 서식</h2>
+  {% if by_type %}
+  <div class="table-wrap"><table>
+    <tr><th>서류 종류</th><th>서식</th><th>형식</th><th>버전</th><th>자리표시자</th><th>상태</th><th>등록</th><th></th></tr>
+    {% for dt, items in by_type.items() %}{% for t in items %}{% set miss = unmapped(t) %}
+    <tr>
+      <td>{% if loop.first %}<strong>{{ rs.label("document_types", dt) }}</strong>{% endif %}</td>
+      <td><a href="/admin/templates/{{ t.id }}">{{ t.name }}</a><div class="small muted">{{ t.original_filename }}</div></td>
+      <td>{{ t.fmt|upper }}</td>
+      <td>v{{ t.version }}</td>
+      <td>{{ t.placeholders|length }}개{% if miss %} <span class="badge b-warn">미매핑 {{ miss|length }}</span>{% endif %}</td>
+      <td>{% if t.active %}<span class="badge b-ok">사용 중</span>{% else %}<span class="badge">대기</span>{% endif %}</td>
+      <td class="nowrap small">{{ t.uploaded_at|fmt }} · {{ t.uploader.full_name }}</td>
+      <td><a class="btn btn-sm" href="/admin/templates/{{ t.id }}">매핑·채워보기</a></td>
+    </tr>
+    {% endfor %}{% endfor %}
+  </table></div>
+  {% else %}<p class="muted">등록된 서식이 없습니다. 기관 서식을 올리거나 '샘플 서식 만들기'로 시작하십시오.</p>{% endif %}
+</div>
+{% endblock %}

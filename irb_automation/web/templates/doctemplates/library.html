@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}서식 자료실{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/doctemplates.css">
+<div class="topbar">
+  <div><h1>기관 서식 자료실</h1>
+    <div class="sub">{{ settings.institution_name }} IRB가 사용하는 공식 서식입니다. 빈 서식을 내려받거나, 내 과제 정보가 채워진 서식을 바로 받을 수 있습니다.</div></div>
+  {% if user.role in (Role.COORDINATOR, Role.ADMIN) %}<a class="btn" href="/admin/templates">서식 관리</a>{% endif %}
+</div>
+<div class="card">
+  {% if templates_ %}
+  <div class="table-wrap"><table class="tpl-library">
+    <tr><th>서류 종류</th><th>서식</th><th>형식</th><th>빈 서식</th><th>내 과제로 채워 받기</th></tr>
+    {% for t in templates_ %}
+    <tr>
+      <td><strong>{{ rs.label("document_types", t.doc_type) }}</strong></td>
+      <td>{{ t.name }} <span class="small muted">v{{ t.version }}</span></td>
+      <td class="nowrap">{{ t.fmt|upper }}</td>
+      <td class="nowrap"><a class="btn btn-sm" href="/doc-templates/{{ t.id }}/file">내려받기</a></td>
+      <td>{% if protocols %}
+        <form method="get" action="/doc-templates/{{ t.id }}/fill" class="actions">
+          <select name="protocol_id" aria-label="과제 선택">{% for p in protocols %}<option value="{{ p.id }}">{{ p.protocol_no or "(미부여)" }} · {{ p.title|truncate(28) }}</option>{% endfor %}</select>
+          <button class="btn-sm" type="submit" name="fmt" value="">{{ t.fmt|upper }}</button>
+          {% if pdf_available %}<button class="btn-sm" type="submit" name="fmt" value="pdf">PDF</button>{% endif %}
+        </form>
+        {% else %}<span class="muted small">참여 중인 과제가 없습니다.</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p class="small muted">과제 화면 → 서류 탭의 '서류 자동 작성'에서 첨부하면 같은 서식으로 작성되어 바로 제출 서류에 등록됩니다.</p>
+  {% else %}<p class="muted">사용 중인 기관 서식이 없습니다. 과제 화면의 '서류 자동 작성'은 기본 서식으로 작성됩니다.</p>{% endif %}
+</div>
+{% endblock %}

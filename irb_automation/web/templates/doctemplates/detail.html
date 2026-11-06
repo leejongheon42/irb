@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ tpl.name }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/doctemplates.css">
+<div class="topbar">
+  <div>
+    <div class="muted small"><a href="/admin/templates">기관 서식 관리</a> · {{ rs.label("document_types", tpl.doc_type) }} · {{ tpl.fmt|upper }} · v{{ tpl.version }} · SHA-256 <code>{{ tpl.sha256[:12] }}…</code></div>
+    <h1>{{ tpl.name }}</h1>
+    <div class="actions">
+      {% if tpl.active %}<span class="badge b-ok">사용 중</span>{% else %}<span class="badge">대기</span>{% endif %}
+      <span class="badge">자리표시자 {{ tpl.placeholders|length }}개</span>
+      {% if missing %}<span class="badge b-warn">미매핑 {{ missing|length }}</span>{% else %}<span class="badge b-ok">모두 연결됨</span>{% endif %}
+      <span class="small muted">{{ tpl.original_filename }} · {{ tpl.uploader.full_name }} · {{ tpl.uploaded_at|fmt }}</span>
+    </div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/admin/templates/{{ tpl.id }}/file">원본 내려받기</a>
+    {% if tpl.active %}
+    <form method="post" action="/admin/templates/{{ tpl.id }}/deactivate" class="inline-form" data-confirm="비활성화하면 이 서류 종류는 기본 서식으로 작성됩니다.">{{ csrf_input }}<button type="submit">비활성화</button></form>
+    {% else %}
+    <form method="post" action="/admin/templates/{{ tpl.id }}/activate" class="inline-form">{{ csrf_input }}<button class="btn-ok" type="submit" {% if missing %}disabled title="미매핑 자리표시자를 먼저 연결하십시오"{% endif %}>활성화</button></form>
+    {% endif %}
+  </div>
+</div>
+{% if tpl.notes %}<div class="callout small">{{ tpl.notes }}</div>{% endif %}
+
+<div class="card">
+  <h2>자리표시자 ↔ 과제 필드 매핑 <span class="hint">자동 추천이 미리 선택되어 있습니다. 형식은 비워 두면 기본 형식</span></h2>
+  {% if rows %}
+  <form method="post" action="/admin/templates/{{ tpl.id }}/mapping">
+    {{ csrf_input }}
+    <div class="table-wrap"><table class="tpl-map">
+      <tr><th>자리표시자</th><th>종류</th><th>연결할 필드</th><th>형식</th><th>상태</th></tr>
+      {% for r in rows %}
+      <tr class="{{ 'tpl-missing' if r.status == 'missing' else '' }}">
+        <td><strong>{{ r.ph.name }}</strong><div class="small muted">{% for raw in r.ph.raw %}<code>{{ raw }}</code> {% endfor %}{% if r.ph.count > 1 %}· {{ r.ph.count }}곳{% endif %}</div>
+          <input type="hidden" name="ph_{{ r.i }}" value="{{ r.ph.name }}"></td>
+        <td class="nowrap small">{{ kind_labels[r.ph.kind] }}</td>
+        <td>
+          <select name="map_{{ r.i }}" aria-label="{{ r.ph.name }} 연결 필드">
+            <option value="">(선택 안 함)</option>
+            {% for group, fields in groups.items() %}
+            <optgroup label="{{ group }}">
+              {% for f in fields if r.ph.kind != "list" or f.kind == "list" or f.path.startswith("__") %}
+              <option value="{{ f.path }}" {% if f.path == r.path %}selected{% endif %}>{{ f.label }}{% if not f.path.startswith("__") %} · {{ f.path }}{% endif %}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+          {% if r.suggestion and r.status == "missing" %}<div class="small muted">추천: {{ r.suggestion.path }} ({{ r.suggestion.reason }})</div>{% endif %}
+        </td>
+        <td><input type="text" name="fmt_{{ r.i }}" value="{{ r.fmt }}" placeholder="{{ '예: YYYY.MM.DD' if r.ph.kind == 'field' else ('check' if r.ph.kind == 'compare' else '') }}" class="tpl-fmt"></td>
+        <td class="nowrap">{% if r.status == "mapped" %}<span class="badge b-ok">연결됨</span>{% elif r.status == "direct" %}<span class="badge b-info">필드명 일치</span>{% else %}<span class="badge b-warn">미매핑</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    <div class="actions tpl-actions">
+      <button type="submit">매핑 저장</button>
+      {% if not tpl.active %}<button class="btn-ok" type="submit" name="activate" value="1">저장하고 활성화</button>{% endif %}
+    </div>
+    <p class="small muted">수기로 쓸 칸(서명 등)은 '특수 → 자리표시자 그대로 둠' 또는 '빈칸으로 비움'을 선택하십시오. 모든 자리표시자가 연결되어야 활성화할 수 있습니다.</p>
+  </form>
+  {% else %}<p class="muted">자리표시자를 찾지 못했습니다. 서식에 {{ '{{필드}}' }}, «필드», [[필드]] 형태로 표시하십시오.</p>{% endif %}
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>과제로 채워보기</h2>
+    <form method="get" action="/admin/templates/{{ tpl.id }}/fill">
+      <label for="protocol_id">과제</label>
+      <select id="protocol_id" name="protocol_id">{% for p in protocols %}<option value="{{ p.id }}">{{ p.protocol_no or "(미부여)" }} · {{ p.title|truncate(40) }}</option>{% endfor %}</select>
+      <div class="actions tpl-actions">
+        <button type="submit" name="fmt" value="">{{ tpl.fmt|upper }}로 내려받기</button>
+        {% if pdf_available %}<button type="submit" name="fmt" value="pdf">PDF로 받기</button>{% endif %}
+      </div>
+    </form>
+    <p class="small muted">매핑을 저장한 뒤 실제 과제로 채워 결과를 확인하십시오. 과제 화면의 '서류 자동 작성'은 활성화된 서식을 사용합니다.</p>
+    <h3>버전 이력</h3>
+    <table class="small">
+      {% for v in versions %}<tr><td>v{{ v.version }}</td><td><a href="/admin/templates/{{ v.id }}">{{ v.name }}</a></td><td>{{ v.uploaded_at|fmt }}</td>
+        <td>{% if v.active %}<span class="badge b-ok">사용 중</span>{% endif %}{% if v.id == tpl.id %} <span class="badge b-primary">현재</span>{% endif %}</td></tr>{% endfor %}
+    </table>
+  </div>
+  <div class="card">
+    <h2>서식 본문 미리보기 <span class="hint">텍스트만</span></h2>
+    <pre class="tpl-preview">{{ preview_text or "(본문 텍스트 없음)" }}</pre>
+  </div>
+</div>
+{% endblock %}
