@@ -1,0 +1,9 @@
+/* 기관 서식 관리 화면 */
+.tpl-map select { min-width: 260px; }
+.tpl-map td { vertical-align: middle; }
+.tpl-map tr.tpl-missing td { background: var(--warn-weak); }
+.tpl-fmt { max-width: 170px; }
+.tpl-actions { margin-top: 12px; }
+.tpl-preview { white-space: pre-wrap; max-height: 420px; font-size: 12.5px; }
+.tpl-library td { vertical-align: middle; }
+.tpl-library select { min-width: 220px; width: auto; }

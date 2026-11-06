@@ -2,11 +2,14 @@
 
 과제 입력 내용으로 심의의뢰서·면제 신청서·동의면제 사유서·가명처리 계획서·자료수집 항목표·
 보안서약서·변경 대비표를 생성해 바로 첨부한다. 연구자는 내용을 확인한 뒤 서명본을 추가 첨부할 수 있다.
+
+기관이 자체 서식(DOCX/HWPX)을 등록·활성화한 서류 종류는 그 서식을 채워 만든다(doctemplates 패키지).
 """
 from __future__ import annotations
 
 import hashlib
 import uuid
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
@@ -100,25 +103,76 @@ def render(db: Session, protocol: Protocol, doc_type: str) -> str:
     return tpl.render(**_context(db, protocol), doc_type=doc_type, doc_label=get_ruleset().label("document_types", doc_type))
 
 
+@dataclass
+class GeneratedDocument:
+    content: bytes
+    filename: str
+    media_type: str
+    source: str  # institution(기관 서식) | builtin(기본 HTML 서식)
+    ext: str
+    template_id: int | None = None
+    template_version: int | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
+def generatable_doc_types(db: Session) -> dict[str, str]:
+    """자동 작성 가능한 서류 종류 → 'institution' | 'builtin'.
+
+    기관 서식(DOCX/HWPX)이 활성화된 종류는 기관 서식을 쓰고, 기본 HTML 서식에 없는 종류도 생성할 수 있다.
+    """
+    out: dict[str, str] = {dt: "builtin" for dt in GENERATABLE}
+    try:
+        from .doctemplates.service import active_templates
+    except ImportError:  # pragma: no cover - 패키지 누락 시 기본 서식만
+        return out
+    order = list(get_ruleset().catalog("document_types"))
+    for tpl in sorted(active_templates(db), key=lambda t: order.index(t.doc_type) if t.doc_type in order else 999):
+        out[tpl.doc_type] = "institution"
+    return out
+
+
+def build_document(db: Session, protocol: Protocol, doc_type: str, *, prefer_builtin: bool = False) -> GeneratedDocument:
+    """서류 내용을 만든다. 활성 기관 서식이 있으면 우선 사용하고, 없으면 기본 HTML 서식."""
+    label = get_ruleset().label("document_types", doc_type)
+    if not prefer_builtin:
+        from .doctemplates import service as tpl_service
+
+        tpl = tpl_service.active_template(db, doc_type)
+        if tpl is not None:
+            result = tpl_service.fill(db, tpl, protocol)
+            return GeneratedDocument(
+                content=result.content, filename=result.filename, media_type=result.media_type,
+                source="institution", ext=result.fmt, template_id=tpl.id, template_version=tpl.version,
+                warnings=result.warnings,
+            )
+    if doc_type not in GENERATABLE:
+        raise ValueError(f"자동 작성할 수 없는 서류입니다: {doc_type}")
+    html = render(db, protocol, doc_type).encode("utf-8")
+    return GeneratedDocument(
+        content=html, filename=f"{label}_자동작성_v{protocol.version}.html", media_type="text/html; charset=utf-8",
+        source="builtin", ext="html",
+    )
+
+
 def generate_and_attach(db: Session, user: User, protocol: Protocol, doc_type: str, ip: str = "") -> Document:
     if not user.is_irb_staff:
         wf.require_member(user, protocol)
-    html = render(db, protocol, doc_type).encode("utf-8")
+    generated = build_document(db, protocol, doc_type)
     settings = get_settings()
     folder = settings.upload_dir / str(protocol.id)
     folder.mkdir(parents=True, exist_ok=True)
-    label = get_ruleset().label("document_types", doc_type)
-    filename = f"{label}_자동작성_v{protocol.version}.html"
-    path = folder / f"{uuid.uuid4().hex}_{doc_type}.html"
-    path.write_bytes(html)
+    path = folder / f"{uuid.uuid4().hex}_{doc_type}.{generated.ext}"
+    path.write_bytes(generated.content)
     version = 1 + max((d.version for d in protocol.documents if d.doc_type == doc_type), default=0)
     doc = Document(
-        protocol_id=protocol.id, doc_type=doc_type, filename=filename, stored_path=str(path),
-        sha256=hashlib.sha256(html).hexdigest(), size=len(html), version=version, uploaded_by=user.id,
+        protocol_id=protocol.id, doc_type=doc_type, filename=generated.filename, stored_path=str(path),
+        sha256=hashlib.sha256(generated.content).hexdigest(), size=len(generated.content), version=version,
+        uploaded_by=user.id,
     )
     db.add(doc)
     db.flush()
     audit.record(db, user, "document_generate", "protocol", protocol.id,
-                 {"doc_type": doc_type, "doc_id": doc.id, "sha256": doc.sha256}, ip)
+                 {"doc_type": doc_type, "doc_id": doc.id, "sha256": doc.sha256, "source": generated.source,
+                  "template_id": generated.template_id, "template_version": generated.template_version}, ip)
     db.refresh(protocol)
     return doc
