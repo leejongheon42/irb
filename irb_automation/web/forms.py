@@ -35,8 +35,27 @@ def _int(value: Any, default: int = 0) -> int:
         return default
 
 
-def parse_protocol_form(form: FormData) -> dict[str, Any]:
+CUSTOM_PREFIX = "custom__"
+
+
+def _active_custom_fields() -> list[Any]:
+    from ..database import SessionLocal
+    from ..forms.schema import active_protocol_fields
+
+    with SessionLocal() as db:
+        return active_protocol_fields(db)
+
+
+def parse_protocol_form(form: FormData, custom_fields: list[Any] | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {}
+    # 기관 추가 항목: 폼에 '8. 기관 추가 항목' 구역(_custom 표시)이 있을 때만 해석한다.
+    if "_custom" in form:
+        from ..forms.schema import parse_form_values
+
+        defs = custom_fields if custom_fields is not None else _active_custom_fields()
+        data["custom_fields"], _errors = parse_form_values(form, defs, CUSTOM_PREFIX)
+        # 현재 양식에 없는(과거 양식) 항목 값은 보존하도록 서비스에 알린다.
+        data["_custom_defined"] = [f.key for f in defs]
     for f in TEXT_FIELDS:
         if f in form:
             data[f] = str(form.get(f) or "").strip()

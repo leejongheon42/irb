@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}기관 프로필{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/forms.css">
+<div class="topbar">
+  <div><h1>기관 프로필</h1><div class="sub">기관명·위원회 명칭·과제번호 형식·통지서 하단 문구를 기관에 맞게 설정합니다.</div></div>
+  <a class="btn" href="/admin/forms">양식 관리</a>
+</div>
+{% if errors %}<div class="callout warn"><ul class="error-list">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<div class="grid grid-2">
+<div class="card">
+  <form method="post" action="/admin/profile">
+    {{ csrf_input }}
+    <label for="institution_name">기관명 <strong>*</strong></label>
+    <input id="institution_name" name="institution_name" type="text" value="{{ p.institution_name }}" required>
+    <label for="irb_name">위원회 명칭 <strong>*</strong></label>
+    <input id="irb_name" name="irb_name" type="text" value="{{ p.irb_name }}" required>
+    <label for="protocol_no_format">과제번호 형식 <strong>*</strong> <span class="hint">예시: 올해 첫 과제 → <strong>{{ sample }}</strong></span></label>
+    <input id="protocol_no_format" name="protocol_no_format" type="text" value="{{ p.protocol_no_format }}" required>
+    <label for="letter_footer">통지서 하단 문구</label>
+    <textarea id="letter_footer" name="letter_footer">{{ p.letter_footer }}</textarea>
+    <label for="contact">사무국 연락처</label>
+    <textarea id="contact" name="contact">{{ p.contact }}</textarea>
+    <p class="actions"><button class="btn-primary" type="submit">저장</button></p>
+  </form>
+</div>
+<div class="card">
+  <h2>과제번호 형식 토큰</h2>
+  <table class="ref-table">
+    <tr><th><code>{YYYY}</code></th><td>4자리 연도 (2026)</td></tr>
+    <tr><th><code>{YY}</code></th><td>2자리 연도 (26)</td></tr>
+    <tr><th><code>{SEQ}</code></th><td>일련번호 (1, 2, …)</td></tr>
+    <tr><th><code>{SEQ:n}</code></th><td>n자리 0채움 일련번호 ({SEQ:4} → 0001)</td></tr>
+  </table>
+  <p class="small muted">예: <code>IRB-{YYYY}-{SEQ:4}</code> → IRB-2026-0001, <code>{YY}-{SEQ:3}-C</code> → 26-001-C</p>
+  <p class="small muted">일련번호는 같은 형식·같은 연도의 기존 번호 중 최댓값 다음 번호이며, 형식을 바꾸면 새 형식 기준으로 1번부터 시작합니다.
+    이미 부여된 과제번호는 바뀌지 않습니다. 연도 토큰이 없으면 해마다 초기화되지 않습니다.</p>
+  <p class="small muted">기관명·위원회 명칭은 화면 상단, 통지서, 인쇄물에 사용되며 환경변수(<code>IRB_INSTITUTION_NAME</code>)보다 우선합니다.</p>
+</div>
+</div>
+{% endblock %}

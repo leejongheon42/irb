@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -109,6 +109,11 @@ def _apply(protocol: Protocol, data: dict[str, Any]) -> set[str]:
     for key, value in data.items():
         if key not in EDITABLE_FIELDS:
             continue
+        if key == "custom_fields":
+            # 현재 양식에 정의되지 않은 항목(과거 양식 값)은 지우지 않고 보존
+            defined = set(data.get("_custom_defined") or (value or {}).keys())
+            kept = {k: v for k, v in (protocol.custom_fields or {}).items() if k not in defined}
+            value = {**kept, **(value or {})}
         if getattr(protocol, key) != value:
             setattr(protocol, key, value)
             changed.add(key)
@@ -126,10 +131,10 @@ def _restore_snapshot(protocol: Protocol, snapshot: dict[str, Any]) -> None:
 
 
 def _next_protocol_no(db: Session) -> str:
-    year = today().year
-    prefix = f"IRB-{year}-"
-    count = db.scalar(select(func.count(Protocol.id)).where(Protocol.protocol_no.like(f"{prefix}%"))) or 0
-    return f"{prefix}{count + 1:04d}"
+    """기관 프로필의 과제번호 형식(기본 IRB-{YYYY}-{SEQ:4})으로 연도별 다음 번호를 만든다."""
+    from ..forms.profile import next_protocol_no
+
+    return next_protocol_no(db, today().year)
 
 
 # ---------------------------------------------------------------------- 사전검토

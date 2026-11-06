@@ -17,6 +17,8 @@ from ..audit import ACTION_LABELS
 from ..config import get_settings
 from ..database import get_db
 from ..engine.ruleset import get_ruleset
+from ..forms import views as form_views
+from ..forms.profile import SettingsView, profile_values
 from ..models import (
     ROLE_LABELS,
     STATUS_LABELS,
@@ -57,6 +59,12 @@ templates.env.globals["STATUS_LABELS"] = STATUS_LABELS
 templates.env.globals["ROLE_LABELS"] = ROLE_LABELS
 templates.env.globals["Role"] = Role
 templates.env.globals["S"] = ProtocolStatus
+# 기관 양식(forms 패키지)
+templates.env.globals["institution_protocol_sections"] = form_views.protocol_sections
+templates.env.globals["institution_online_progress"] = form_views.online_progress
+templates.env.globals["field_show_when"] = form_views.field_show_when
+templates.env.globals["field_display"] = form_views.field_display
+templates.env.globals["online_status_label"] = form_views.online_status_label
 
 
 def client_ip(request: Request) -> str:
@@ -121,7 +129,8 @@ def require_roles(*roles: Role):
 
 # ------------------------------------------------------------------ 렌더링
 def render(request: Request, name: str, db: Session | None = None, user: User | None = None, **ctx: Any):
-    settings = get_settings()
+    # 기관명·IRB명은 기관 프로필(/admin/profile) 값을 우선 사용(템플릿은 그대로 settings.* 사용)
+    settings = SettingsView(get_settings(), profile_values(db))
     status = int(ctx.pop("status_code", 200))
     unread = 0
     if db is not None and user is not None:

@@ -20,6 +20,7 @@ from .web import (
     routes_admin,
     routes_deid,
     routes_doctemplates,
+    routes_forms,
     routes_governance,
     routes_knowledge,
     routes_main,
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_reports.router)
     app.include_router(routes_doctemplates.router)
     app.include_router(routes_knowledge.router)
+    app.include_router(routes_forms.router)
     app.include_router(api_router)
     app.include_router(knowledge_api_router)
 

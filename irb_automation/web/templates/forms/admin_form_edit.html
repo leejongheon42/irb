@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "forms/_fields.html" as ff %}
+{% block title %}양식 편집{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/forms.css">
+<div class="topbar">
+  <div><h1>{{ kind_label(kind) }}</h1>
+    <div class="sub">{% if base %}v{{ base.version }}을(를) 바탕으로 새 버전을 만듭니다.{% else %}새 양식 정의{% endif %} 저장하면 새 버전으로 기록되고, 기존 버전과 과거 제출본은 그대로 보존됩니다.</div></div>
+  <a class="btn" href="/admin/forms">목록</a>
+</div>
+{% if errors %}<div class="callout warn"><strong>검증 오류 {{ errors|length }}건</strong><ul class="error-list">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<div class="grid grid-2">
+<div class="card">
+  <form method="post" action="/admin/forms/save">
+    {{ csrf_input }}
+    <div class="form-row">
+      <div><label for="kind">종류(kind)</label><input id="kind" name="kind" type="text" value="{{ kind }}" required></div>
+      <div><label for="name">양식 이름 <strong>*</strong></label><input id="name" name="name" type="text" value="{{ form_name }}" required></div>
+    </div>
+    <label for="schema">스키마 (YAML 또는 JSON)</label>
+    <textarea id="schema" name="schema" class="schema-editor" spellcheck="false">{{ text }}</textarea>
+    <label for="note">변경 메모</label>
+    <input id="note" name="note" type="text" value="{{ note }}" placeholder="예: 심의비 항목 필수로 변경">
+    <label class="check"><input type="checkbox" name="activate" checked> 저장 후 바로 활성화</label>
+    <p class="actions">
+      <button class="btn" type="submit" name="action" value="preview">검증·미리보기</button>
+      <button class="btn-primary" type="submit" name="action" value="save">새 버전으로 저장</button>
+    </p>
+  </form>
+</div>
+<div>
+  {% if preview %}
+  <div class="card"><h2>미리보기</h2>
+    <div class="preview-frame">
+      {% for sec in preview %}<h3 class="small">{{ sec.title }}</h3>
+        {% for f in sec.fields %}{{ ff.field(f, None, "custom__" if kind == "protocol" else "f__") }}{% endfor %}
+      {% endfor %}
+    </div>
+    <p class="small muted">미리보기는 입력할 수 있지만 저장되지 않습니다. 조건부 항목(show_when)도 실제와 같이 동작합니다.</p>
+  </div>
+  {% endif %}
+  <div class="card"><h2>작성 안내</h2>
+    <table class="ref-table">
+      <tr><th>type</th><td>{% for k, v in field_types.items() %}<code>{{ k }}</code> {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+      <tr><th>key</th><td>영문 소문자로 시작, 영문 소문자·숫자·밑줄 40자 이하. 과제 신청서에서는 기본 항목명(title, funding_source 등)을 쓸 수 없습니다.</td></tr>
+      <tr><th>required</th><td>true면 사전검토에서 미입력 시 '필수 보완'(CUSTOM_REQUIRED)으로 표시</td></tr>
+      <tr><th>options</th><td>select/multiselect 전용. <code>[{value: a, label: 가}]</code> 또는 <code>[가, 나]</code></td></tr>
+      <tr><th>show_when</th><td><code>{field: 키, equals: 값}</code> — yesno는 yes/no, equals 생략 시 값이 있으면 표시. 과제 신청서에서는 기본 항목(예: funding_source)도 참조 가능</td></tr>
+      <tr><th>min / max</th><td>number 전용</td></tr>
+      <tr><th>material</th><td>true면 변경 대비표에서 핵심 변경으로 강조</td></tr>
+      {% if kind.startswith("online:") %}
+      <tr><th>웹 서식 전용</th><td><code>label</code> 표시 이름(필수), <code>per_member</code> 연구진 각자 작성, <code>signer: pi</code> 연구책임자만, <code>required</code> 기관 필수 서식, <code>intro</code> 안내문, <code>pledge</code> 서약문</td></tr>
+      <tr><th>prefill</th><td>{% for k, v in prefill_sources.items() %}<code>{{ k }}</code> {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</div>
+</div>
+{% endblock %}
