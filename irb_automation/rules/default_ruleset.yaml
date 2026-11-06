@@ -273,3 +273,13 @@ destruction_policy:
 # 계약 만료 알림
 agreement_policy:
   reminder_days: [60, 30]
+
+# === 웹 문서 제출 ===
+submission:
+  max_files_per_upload: 20        # 한 번에 제출 가능한 파일 수
+  reject_encrypted_pdf: true      # 비밀번호 없이 열 수 없는 PDF는 거부(검토·도장·합본 불가)
+  warn_pdf_active_content: true   # PDF 내 JavaScript·실행 동작·내장 파일 경고
+  stamp_doc_types: [consent_form, protocol]   # 승인·시정승인·면제확인 시 승인 도장본을 만들 서류
+  stamp_all_pages: true           # false면 첫 쪽에만 도장
+  # 승인·면제 이후에도(변경 신청 없이) 제출 가능한 서류
+  report_doc_types: [progress_report, final_report, destruction_certificate, other]

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}서류 검토 대기열{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/submission.css">
+<div class="topbar">
+  <div><h1>서류 검토 대기열</h1>
+    <div class="sub">제출된 서류를 문서별로 확인하거나 보완을 요청합니다.{% if not user.is_irb_staff %} 배정된 과제의 서류만 표시됩니다.{% endif %}</div></div>
+</div>
+<div class="card">
+  <h2>검토 대기 ({{ pending|length }})</h2>
+  {% if pending %}
+  <div class="table-wrap"><table>
+    <tr><th>과제</th><th>서류</th><th>파일</th><th>버전</th><th>제출</th><th>자동 검증</th><th></th></tr>
+    {% for d in pending %}
+    <tr>
+      <td class="nowrap"><a href="/protocols/{{ d.protocol.id }}#documents">{{ d.protocol.protocol_no or "(미부여)" }}</a><div class="small muted">{{ d.protocol.title|truncate(30) }}</div></td>
+      <td>{{ rs.label("document_types", d.doc_type) }}</td>
+      <td>{{ d.filename|truncate(36) }}<div class="small muted">{{ d.source_label }}</div></td>
+      <td>v{{ d.version }}</td>
+      <td class="nowrap small">{{ d.uploaded_at|fmt }}{% if d.uploader %}<div class="muted">{{ d.uploader.full_name }}</div>{% endif %}</td>
+      <td>{% if d.validation and d.validation.warnings %}<span class="badge b-warn">경고 {{ d.validation.warnings|length }}</span>{% else %}<span class="badge b-ok">이상 없음</span>{% endif %}</td>
+      <td class="nowrap"><a class="btn btn-sm btn-primary" href="/documents/{{ d.id }}/preview">검토</a>
+        <form method="post" action="/documents/{{ d.id }}/review" class="inline-form">{{ csrf_input }}
+          <input type="hidden" name="action" value="accept"><input type="hidden" name="next" value="/documents/review-queue">
+          <button class="btn-sm btn-ok" type="submit">바로 확인</button></form></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">검토할 서류가 없습니다.</p>{% endif %}
+</div>
+<div class="card">
+  <h2>연구자 보완 대기 ({{ waiting|length }})</h2>
+  {% if waiting %}
+  <div class="table-wrap"><table>
+    <tr><th>과제</th><th>서류</th><th>보완 요청 사유</th><th>요청</th></tr>
+    {% for d in waiting %}
+    <tr>
+      <td class="nowrap"><a href="/protocols/{{ d.protocol.id }}#documents">{{ d.protocol.protocol_no or "(미부여)" }}</a></td>
+      <td><a href="/documents/{{ d.id }}/preview">{{ rs.label("document_types", d.doc_type) }} v{{ d.version }}</a></td>
+      <td class="small">{{ d.review_note }}</td>
+      <td class="nowrap small">{{ d.reviewed_at|fmt }}{% if d.reviewer %}<div class="muted">{{ d.reviewer.full_name }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">없음</p>{% endif %}
+</div>
+{% endblock %}

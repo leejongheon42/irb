@@ -1,0 +1,80 @@
+{# 서류 탭: 체크리스트형 제출 현황판 + 다중 업로드. 변수: p, board, user, csrf_input, rs, settings #}
+<link rel="stylesheet" href="/static/submission.css">
+<div class="card">
+  <div class="sub-head">
+    <h2>제출 서류 현황 <span class="hint">필수 서류는 자동 사전검토 기준</span></h2>
+    {% if board.can_participate %}
+    <div class="actions">
+      <a class="btn btn-sm" href="/protocols/{{ p.id }}/bundle.zip">심의자료 ZIP</a>
+      <a class="btn btn-sm" href="/protocols/{{ p.id }}/bundle.pdf">PDF 합본</a>
+    </div>
+    {% endif %}
+  </div>
+  <div class="actions chips">
+    <span class="badge {{ 'b-danger' if board.counts.missing else '' }}">미제출 {{ board.counts.missing }}</span>
+    <span class="badge b-info">검토 대기 {{ board.counts.submitted }}</span>
+    <span class="badge {{ 'b-warn' if board.counts.revision_requested else '' }}">보완 요청 {{ board.counts.revision_requested }}</span>
+    <span class="badge b-ok">확인 완료 {{ board.counts.accepted }}</span>
+  </div>
+  {% if board.rows %}
+  <div class="table-wrap"><table class="board-table">
+    <tr><th>서류</th><th>현행본</th><th>상태</th><th class="num">버전</th><th>작업</th></tr>
+    {% for r in board.rows %}{% set d = r.current %}
+    <tr class="{{ 'row-missing' if r.required and not d else '' }}">
+      <td><strong>{{ r.label }}</strong>{% if r.required %} <span class="badge">필수</span>{% endif %}</td>
+      <td>
+        {% if d %}
+          <a href="/documents/{{ d.id }}/preview">{{ d.filename }}</a>
+          <div class="small muted">{{ d.source_label }}{% if d.page_count %} · {{ d.page_count }}쪽{% endif %} · {{ (d.size / 1024)|round(1) }}KB · {{ d.uploaded_at|fmt }}{% if d.uploader %} · {{ d.uploader.full_name }}{% endif %}</div>
+          {% if d.validation and d.validation.warnings %}<div class="small warn-text">⚠ {{ d.validation.warnings|join(" / ") }}</div>{% endif %}
+        {% else %}<span class="muted">미제출</span>{% endif %}
+      </td>
+      <td>
+        {% if d %}
+          <span class="badge {{ {'submitted': 'b-info', 'accepted': 'b-ok', 'revision_requested': 'b-warn'}.get(d.status, '') }}">{{ d.status_label }}</span>
+          {% if d.status == "revision_requested" and d.review_note %}<div class="small warn-text">{{ d.review_note }}</div>{% endif %}
+        {% else %}<span class="badge {{ 'b-danger' if r.required else '' }}">없음</span>{% endif %}
+      </td>
+      <td class="num">{{ r.versions|length }}</td>
+      <td class="nowrap">
+        {% if d %}
+          <a class="btn btn-sm" href="/documents/{{ d.id }}/preview">{{ "검토" if board.can_review and d.status == "submitted" else "미리보기" }}</a>
+          {% if r.versions|length > 1 %}<a class="btn btn-sm" href="/documents/{{ d.id }}/compare">비교</a>{% endif %}
+          <a class="btn btn-sm" href="/documents/{{ d.id }}">다운로드</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">필수 서류 정보가 없습니다. 과제 내용을 저장하면 필요한 서류가 표시됩니다.</p>{% endif %}
+</div>
+
+{% if board.upload_types %}
+<div class="card">
+  <h2>서류 제출 <span class="hint">여러 파일을 한 번에 제출할 수 있습니다</span></h2>
+  <form method="post" action="/protocols/{{ p.id }}/documents/bulk" enctype="multipart/form-data" class="upload-form" data-max-files="{{ board.max_files }}">
+    {{ csrf_input }}
+    <div class="dropzone" tabindex="0" role="button" aria-label="파일 선택 또는 끌어다 놓기">
+      <p><strong>파일을 여기에 끌어다 놓거나 클릭하여 선택</strong></p>
+      <p class="small muted">PDF·HWP/HWPX·DOC/DOCX·XLS/XLSX·CSV/TXT·JPG/PNG·ZIP · 최대 {{ board.max_files }}개 · 파일당 {{ settings.max_upload_mb }}MB</p>
+      <input type="file" name="files" multiple class="file-input" accept=".pdf,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.zip">
+    </div>
+    <div class="file-list" aria-live="polite"></div>
+    <div class="no-js-type">
+      <label for="doc_type_all">서류 종류</label>
+      <select id="doc_type_all" name="doc_type_all">
+        <option value="auto">자동 추정(파일명·내용)</option>
+        {% for k, label in board.upload_types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <select class="doc-type-template hidden" aria-hidden="true" tabindex="-1">
+      <option value="auto">자동 추정</option>
+      {% for k, label in board.upload_types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+    </select>
+    <p class="small muted">제출 시 확장자와 실제 형식의 일치, 손상·암호화, 중복 여부를 자동 검사합니다. 같은 종류의 서류를 다시 제출하면 새 버전이 되고 이전 파일은 보존됩니다.
+      {% if p.status in (S.SUBMITTED, S.UNDER_REVIEW) %}<strong>심의 중에는 보완 요청된 서류와 미제출 서류만 제출할 수 있습니다.</strong>{% endif %}</p>
+    <p><button class="btn-primary" type="submit">제출</button></p>
+  </form>
+</div>
+<script src="/static/submission.js" defer></script>
+{% endif %}

@@ -26,7 +26,6 @@ from ..notifications import notify, staff
 from ..timeutil import now, today
 from ..workflow import service as wf
 
-
 ALLOWED_ATTACHMENTS = {".pdf", ".hwp", ".hwpx", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".zip", ".tif", ".tiff"}
 
 

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .. import esign
 from ..database import get_db
 from ..models import DecisionType, Meeting, MeetingItem, Role, User
+from ..submission.stamp import stamp_after_decision
 from ..workflow import meetings as mt
 from ..workflow import service as wf
 from .deps import client_ip, flash, render, require_roles, verify_csrf
@@ -105,8 +106,10 @@ async def item_vote(request: Request, iid: int, user: User = Depends(staff_only)
         db.rollback()
         flash(request, str(e), "error")
         return RedirectResponse(f"/meetings/{item.meeting_id}#item-{iid}", status_code=303)
+    stamped = stamp_after_decision(db, user, item.submission.protocol, d, client_ip(request))
     db.commit()
-    flash(request, f"의결: {d.decision.label} (통지서 {d.letter_no})", "success")
+    flash(request, f"의결: {d.decision.label} (통지서 {d.letter_no})"
+                   + (f" · 승인 도장본 {len(stamped)}건 생성" if stamped else ""), "success")
     return RedirectResponse(f"/meetings/{item.meeting_id}#item-{iid}", status_code=303)
 
 

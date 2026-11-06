@@ -410,8 +410,48 @@ class Document(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    # 웹 제출 관리(문서별 검토·버전): submitted|accepted|revision_requested|superseded
+    status: Mapped[str] = mapped_column(String(24), default="submitted")
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    source: Mapped[str] = mapped_column(String(20), default="upload")  # upload|generated|online_form|pipeline|stamped
+    mime_type: Mapped[str] = mapped_column(String(100), default="")
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    validation: Mapped[dict] = mapped_column(JSON, default=dict)
+    review_note: Mapped[str] = mapped_column(Text, default="")
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     protocol: Mapped[Protocol] = relationship(back_populates="documents")
+    uploader: Mapped[User] = relationship(foreign_keys=[uploaded_by])
+    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewed_by])
+
+    STATUS_LABELS = {
+        "submitted": "검토 대기",
+        "accepted": "확인 완료",
+        "revision_requested": "보완 요청",
+        "superseded": "이전 버전",
+    }
+    SOURCE_LABELS = {
+        "upload": "업로드",
+        "generated": "자동 작성",
+        "online_form": "온라인 서식",
+        "pipeline": "자동 변환",
+        "stamped": "승인 도장본",
+    }
+
+    @property
+    def status_label(self) -> str:
+        return self.STATUS_LABELS.get(self.status or "submitted", self.status or "")
+
+    @property
+    def source_label(self) -> str:
+        return self.SOURCE_LABELS.get(self.source or "upload", self.source or "")
+
+    @property
+    def has_file(self) -> bool:
+        from pathlib import Path
+
+        return bool(self.stored_path) and Path(self.stored_path).is_file()
 
 
 class Comment(Base):

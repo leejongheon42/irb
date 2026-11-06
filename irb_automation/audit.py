@@ -113,4 +113,11 @@ ACTION_LABELS = {
     "drb_review": "가명처리 적정성 검토",
     "feasibility_query": "대상자 수 사전 조회",
     "export": "자료 내보내기",
+    # 웹 문서 제출
+    "document_reject": "서류 제출 거부(검증 실패)",
+    "document_review": "서류 검토",
+    "document_comment": "서류 의견",
+    "document_preview": "서류 미리보기",
+    "document_bundle": "심의자료 합본 다운로드",
+    "document_stamp": "승인 도장본 생성",
 }
