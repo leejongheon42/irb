@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "knowledge/_related.html" as kn %}
+{% block title %}{{ src.title }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/knowledge.css">
+<div class="topbar">
+  <div>
+    <div class="kn-meta">{{ kn.kind_badge(src.kind) }} {{ src.ref }}{% if src.version %} · 버전 {{ src.version }}{% endif %} · 갱신 {{ src.updated_at|fmt }}</div>
+    <h1>{{ src.title }}</h1>
+  </div>
+  <div class="actions">
+    {% if src.url and src.url.startswith('http') %}<a class="btn" href="{{ src.url }}" target="_blank" rel="noopener noreferrer">원문 보기</a>{% endif %}
+    {% if src.kind in ("protocol", "decision") and src.url %}<a class="btn" href="{{ src.url }}">과제 열기</a>{% endif %}
+    <a class="btn" href="/knowledge">검색으로</a>
+  </div>
+</div>
+{% if not src.active %}<div class="callout warn">비활성화된 문서입니다(검색에 사용되지 않음).</div>{% endif %}
+{% if src.kind in ("law", "guideline") %}<div class="callout small">요약본입니다. 법령·지침은 개정될 수 있으므로 판단 전에 원문을 확인하십시오.</div>{% endif %}
+<div class="card">
+  {% for c in src.chunks %}
+  <div class="kn-chunk">
+    {% if c.heading %}<h3 class="mt0">{{ c.heading }}</h3>{% endif %}
+    <div class="pre-wrap">{{ c.text }}</div>
+  </div>
+  {% else %}<p class="muted">내용이 없습니다.</p>{% endfor %}
+</div>
+{% endblock %}

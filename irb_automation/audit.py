@@ -113,4 +113,10 @@ ACTION_LABELS = {
     "drb_review": "가명처리 적정성 검토",
     "feasibility_query": "대상자 수 사전 조회",
     "export": "자료 내보내기",
+    "knowledge_search": "지식 검색",
+    "knowledge_answer": "근거 질의응답",
+    "knowledge_upload": "지식 문서 등록",
+    "knowledge_update": "지식 문서 변경",
+    "knowledge_delete": "지식 문서 삭제",
+    "knowledge_reindex": "지식 재색인",
 }

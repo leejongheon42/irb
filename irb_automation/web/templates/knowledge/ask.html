@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% import "knowledge/_related.html" as kn %}
+{% block title %}근거 질의응답{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/knowledge.css">
+<div class="topbar">
+  <div><h1>근거 질의응답</h1>
+    <div class="sub">질문과 관련된 규정·지침·SOP·FAQ를 찾아 근거를 인용해 답합니다. AI가 꺼져 있으면 근거 문장을 자동 발췌합니다.</div></div>
+  <a class="btn" href="/knowledge">관련 정보 검색</a>
+</div>
+<div class="card">
+  <form method="post" action="/knowledge/ask">
+    {{ csrf_input }}
+    <label for="question">질문 <span class="hint">개인정보(이름·연락처·등록번호 등)는 입력하지 마십시오. 입력되면 자동으로 가려집니다.</span></label>
+    <textarea id="question" name="question" maxlength="1000" required>{{ question }}</textarea>
+    <p class="actions"><button class="btn-primary" type="submit">질문하기</button></p>
+  </form>
+  <div class="kn-examples">{% for e in examples %}<span class="badge">{{ e }}</span>{% endfor %}</div>
+</div>
+
+{% if result %}
+<div class="card">
+  <h2>답변 <span class="badge {{ 'b-primary' if result.mode == 'ai' else '' }}">{{ "AI 근거 인용" if result.mode == "ai" else "자동 발췌" }}</span></h2>
+  {% for w in result.warnings %}<div class="callout warn small">{{ w }}</div>{% endfor %}
+  <div class="kn-answer">{{ result.answer }}</div>
+  <p class="small muted">본 답변은 참고용이며 심의 결과를 대신하지 않습니다. 최종 판단은 IRB가 합니다.</p>
+</div>
+{% if result.citations %}
+<div class="card">
+  <h2>인용 근거</h2>
+  {% for c in result.citations %}
+  <div class="kn-cite">
+    <div class="kn-meta">[{{ c.n }}] {{ kn.kind_badge(c.kind) }} {{ c.ref }}</div>
+    <a href="{{ '/knowledge/source/' ~ c.source_id }}">{{ c.title }}</a>
+    {% if c.url and c.url.startswith('http') %} · <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">원문</a>{% endif %}
+    <blockquote>“{{ c.cited_text }}”</blockquote>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if result.hits %}
+<div class="card">{{ kn.related_panel(result.hits, title="검색된 관련 근거") }}</div>
+{% endif %}
+{% endif %}
+{% endblock %}

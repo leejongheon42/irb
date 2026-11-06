@@ -273,3 +273,14 @@ destruction_policy:
 # 계약 만료 알림
 agreement_policy:
   reminder_days: [60, 30]
+
+# === 관련 정보 검색(지식베이스) ===
+knowledge:
+  bm25_k1: 1.2            # 단어 빈도 포화 정도
+  bm25_b: 0.75            # 문서 길이 정규화 정도
+  title_boost: 2          # 제목·조문·소제목 토큰 가중치(배수)
+  snippet_chars: 220      # 검색 결과 발췌 길이
+  answer_max_chunks: 6    # 질의응답에 사용할 최대 근거 수
+  ai_answer_max_tokens: 4000
+  # 과거 과제·심의 선례를 전체 열람할 수 있는 역할(그 외 사용자는 본인이 열람 가능한 과제만)
+  precedent_roles: [coordinator, chair, admin, reviewer]
