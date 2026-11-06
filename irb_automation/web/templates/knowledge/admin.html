@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% import "knowledge/_related.html" as kn %}
+{% block title %}지식 관리{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/knowledge.css">
+<div class="topbar">
+  <div><h1>지식베이스 관리</h1><div class="sub">기관 SOP·지침을 등록하면 제목 단위로 나누어 색인하고, 관련 정보 검색·사전검토 근거·질의응답에 바로 반영됩니다.</div></div>
+  <div class="actions">
+    <form method="post" action="/admin/knowledge/reseed" class="inline-form">{{ csrf_input }}<button type="submit">내장 지식 갱신</button></form>
+    <form method="post" action="/admin/knowledge/reindex-precedents" class="inline-form">{{ csrf_input }}<button type="submit">선례 재색인</button></form>
+  </div>
+</div>
+
+<div class="grid grid-3">
+  <div class="card stat"><div class="label">과거 과제(자동 색인)</div><div class="value">{{ precedent.get("protocol", 0) }}</div></div>
+  <div class="card stat"><div class="label">심의 선례(자동 색인)</div><div class="value">{{ precedent.get("decision", 0) }}</div></div>
+  <div class="card stat"><div class="label">정책 문서</div><div class="value">{{ sources|length }}</div></div>
+</div>
+
+<div class="card">
+  <h2>문서 등록</h2>
+  <form method="post" action="/admin/knowledge" enctype="multipart/form-data">
+    {{ csrf_input }}
+    <div class="form-row-3">
+      <div><label for="title">제목</label><input id="title" name="title" type="text" required placeholder="예: 연구데이터 반출 심사 표준운영지침"></div>
+      <div><label for="kind">유형</label><select id="kind" name="kind">{% for k in upload_kinds %}<option value="{{ k }}">{{ kind_labels[k] }}</option>{% endfor %}</select></div>
+      <div><label for="ref">근거 표기 <span class="hint">예: SOP-07 제3조</span></label><input id="ref" name="ref" type="text"></div>
+      <div><label for="version">버전</label><input id="version" name="version" type="text" placeholder="v2.1 (2026-10)"></div>
+      <div><label for="url">원문 링크</label><input id="url" name="url" type="text" placeholder="https://"></div>
+      <div><label for="file">파일 <span class="hint">TXT·MD (PDF·DOCX·HWPX·HWP는 문서 인식 모듈 필요)</span></label><input id="file" name="file" type="file" accept=".txt,.md,.markdown,.pdf,.docx,.hwpx,.hwp"></div>
+    </div>
+    <label for="text">또는 내용 붙여넣기</label>
+    <textarea id="text" name="text" placeholder="제1조(목적) ... 처럼 제목이 있으면 제목 단위로 나뉘어 색인됩니다."></textarea>
+    <p><button class="btn-primary" type="submit">등록 및 색인</button></p>
+  </form>
+</div>
+
+{% macro source_table(rows) -%}
+<div class="table-wrap"><table>
+  <tr><th>유형</th><th>제목 · 근거 표기</th><th class="num">구간</th><th>상태</th><th>갱신</th><th></th></tr>
+  {% for s in rows %}
+  <tr>
+    <td class="nowrap">{{ kn.kind_badge(s.kind) }}</td>
+    <td><a href="/knowledge/source/{{ s.id }}">{{ s.title }}</a>
+      <div class="small muted">{{ s.ref }}{% if s.version %} · 버전 {{ s.version }}{% endif %}</div></td>
+    <td class="num">{{ counts.get(s.id, 0) }}</td>
+    <td class="nowrap">{% if s.active %}<span class="badge b-ok">사용</span>{% else %}<span class="badge">중지</span>{% endif %}</td>
+    <td class="small nowrap">{{ s.updated_at|fmt }}</td>
+    <td class="nowrap">
+      <form method="post" action="/admin/knowledge/{{ s.id }}/toggle" class="inline-form">{{ csrf_input }}<button class="btn-sm" type="submit">{{ "중지" if s.active else "사용" }}</button></form>
+      <form method="post" action="/admin/knowledge/{{ s.id }}/reindex" class="inline-form">{{ csrf_input }}<button class="btn-sm" type="submit">재색인</button></form>
+      {% if not s.is_builtin %}<form method="post" action="/admin/knowledge/{{ s.id }}/delete" class="inline-form" data-confirm="문서를 삭제합니다. 되돌릴 수 없습니다.">{{ csrf_input }}<button class="btn-sm btn-danger" type="submit">삭제</button></form>{% endif %}
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="6" class="muted">문서가 없습니다.</td></tr>{% endfor %}
+</table></div>
+{%- endmacro %}
+{% set uploaded = sources|rejectattr("is_builtin")|list %}
+{% set builtin = sources|selectattr("is_builtin")|list %}
+<div class="card">
+  <h2>기관 등록 문서 {{ uploaded|length }}건</h2>
+  {{ source_table(uploaded) }}
+</div>
+<div class="card">
+  <details>
+    <summary><strong>내장 지식 {{ builtin|length }}건</strong> <span class="small muted">법령·지침 요약, 검토 의견 가이드, FAQ — 기관 사정에 맞지 않는 항목은 중지하십시오.</span></summary>
+    {{ source_table(builtin) }}
+  </details>
+</div>
+{% endblock %}

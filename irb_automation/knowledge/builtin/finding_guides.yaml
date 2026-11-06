@@ -1,0 +1,495 @@
+# 자동 사전검토 검토 의견(engine/findings.py 코드)별 보완 가이드. code가 검토 의견 코드와 일치해야 자동 연결됩니다.
+version: "2026.11"
+sources:
+  - key: finding:RRN_COLLECTION
+    kind: finding_guide
+    code: RRN_COLLECTION
+    title: 검토 의견 가이드 — 주민등록번호 수집
+    ref: 개인정보 보호법 제24조의2
+    sections:
+      - heading: 보완 방법
+        text: |
+          주민등록번호는 법령 근거가 있는 경우에만 처리할 수 있으므로 수집 항목에서 삭제하고 연구용 일련번호로 대체한다.
+          사망 정보 등 외부 자료와 연계가 필요하면 데이터관리자(CDW팀)가 연계를 수행하고 연구자에게는 결과만 일련번호로 제공하도록 계획을 바꾼다.
+      - heading: 작성 예시
+        text: |
+          "주민등록번호는 수집하지 않으며, 사망 여부 연계는 임상데이터센터가 수행한 뒤 연구용 일련번호만 연구진에게 제공한다."
+
+  - key: finding:UNIQUE_ID_COLLECTION
+    kind: finding_guide
+    code: UNIQUE_ID_COLLECTION
+    title: 검토 의견 가이드 — 고유식별정보 수집
+    ref: 개인정보 보호법 제24조
+    sections:
+      - heading: 보완 방법
+        text: |
+          여권번호·운전면허번호·외국인등록번호 등 고유식별정보는 별도 동의 또는 법령 근거가 필요하다. 연구 목적상 필수인지 다시 검토하고, 필요하지 않으면 삭제한다.
+          불가피하면 동의 취득 계획과 암호화 등 안전조치를 기술한다.
+      - heading: 작성 예시
+        text: |
+          "외국인 환자 식별은 국적(내국인/외국인) 범주로만 수집하며 외국인등록번호는 수집하지 않는다."
+
+  - key: finding:IDENTIFIER_JUSTIFICATION
+    kind: finding_guide
+    code: IDENTIFIER_JUSTIFICATION
+    title: 검토 의견 가이드 — 식별자 수집 필요성 소명
+    ref: 보건의료데이터 활용 가이드라인 · 개인정보 최소수집
+    sections:
+      - heading: 보완 방법
+        text: |
+          수집하려는 식별자마다 연구 목적상 반드시 필요한 이유, 사용 시점, 사용 후 처리(삭제·일련번호 대체)를 적는다.
+          대부분의 후향적 연구는 가명처리된 자료로 수행할 수 있으므로, 식별자 대신 데이터관리자가 가명처리한 자료를 받는 방식을 우선 검토한다.
+      - heading: 작성 예시
+        text: |
+          "등록번호는 퇴원 후 사망·전원 정보 연계에만 사용하며, 연계 직후 연구용 일련번호로 대체하고 원본 등록번호는 분석 자료에서 삭제한다."
+
+  - key: finding:DEID_INCONSISTENT
+    kind: finding_guide
+    code: DEID_INCONSISTENT
+    title: 검토 의견 가이드 — 처리 수준과 수집 식별자 불일치
+    ref: 개인정보 보호법 제28조의2
+    sections:
+      - heading: 보완 방법
+        text: |
+          익명정보를 이용한다고 했으나 식별자를 수집하도록 되어 있다. 실제 계획에 맞게 처리 수준(익명/가명/식별가능)이나 수집 식별자 항목 중 하나를 정정한다.
+          익명정보는 추가정보를 사용해도 개인을 알아볼 수 없는 정보이므로 등록번호·생년월일 등이 남아 있으면 익명정보로 볼 수 없다.
+
+  - key: finding:DEID_SEPARATION
+    kind: finding_guide
+    code: DEID_SEPARATION
+    title: 검토 의견 가이드 — 가명처리자와 연구자 미분리
+    ref: 개인정보 보호법 제28조의4
+    sections:
+      - heading: 보완 방법
+        text: |
+          연구자가 원본 식별정보에 접근해 직접 가명처리하면 재식별 위험이 커진다. 가명처리는 연구진과 분리된 데이터관리자(CDW팀 등)가 수행하고, 매핑표 등 추가정보는 연구진이 접근할 수 없는 곳에 분리 보관하도록 바꾼다.
+      - heading: 작성 예시
+        text: |
+          "가명처리는 임상데이터센터 데이터관리자가 수행하며, 연구진은 가명정보만 원내 분석서버에서 제공받는다. 매핑정보는 데이터센터가 별도 보관한다."
+
+  - key: finding:PSEUDONYM_DUTIES
+    kind: finding_guide
+    code: PSEUDONYM_DUTIES
+    title: 검토 의견 가이드 — 가명정보 처리 의무
+    ref: 개인정보 보호법 제28조의4·제28조의5
+    sections:
+      - heading: 확인 사항
+        text: |
+          가명정보를 처리할 때에는 재식별 금지, 추가정보 분리 보관, 처리 기록 작성·보관 의무가 적용된다.
+          연구계획서에 재식별 가능성이 생기면 즉시 처리를 중지하고 회수·파기하겠다는 내용과, 처리 기록 관리 방법을 적는다.
+
+  - key: finding:FREE_TEXT
+    kind: finding_guide
+    code: FREE_TEXT
+    title: 검토 의견 가이드 — 자유기술(경과기록·판독문) 이용
+    ref: 보건의료데이터 활용 가이드라인 · 가명정보 처리 가이드라인(비정형)
+    sections:
+      - heading: 보완 방법
+        text: |
+          자유기술에는 성명, 연락처, 주소, 등록번호, 날짜 등이 섞여 있을 수 있다. 정규표현식·사전 기반 스크러빙 절차, 표본 검수 비율, 잔존 식별정보 발견 시 처리 방법을 기술한다.
+          분석에 꼭 필요한 문장만 추출하거나 구조화된 변수로 변환해 원문 제공을 줄이는 방안도 검토한다.
+      - heading: 작성 예시
+        text: |
+          "경과기록은 데이터관리자가 개인정보 스크러빙(성명·연락처·주소·등록번호·날짜 치환)을 적용한 뒤 무작위 5% 표본을 검수하여 잔존 식별정보가 없을 때만 제공한다."
+
+  - key: finding:MEDICAL_IMAGES
+    kind: finding_guide
+    code: MEDICAL_IMAGES
+    title: 검토 의견 가이드 — 의료영상(DICOM) 이용
+    ref: 가명정보 처리 가이드라인(비정형 데이터)
+    sections:
+      - heading: 보완 방법
+        text: |
+          DICOM 헤더의 환자명·등록번호·생년월일·검사일시 등 태그를 비식별화하고, 영상에 새겨진(번인) 텍스트를 제거하는 절차를 적는다.
+          두경부 CT·MRI는 3차원 재구성으로 얼굴이 복원될 수 있으므로 얼굴 제거(defacing) 여부를 검토한다.
+
+  - key: finding:AUDIO_VIDEO
+    kind: finding_guide
+    code: AUDIO_VIDEO
+    title: 검토 의견 가이드 — 음성·동영상 이용
+    ref: 가명정보 처리 가이드라인(비정형 데이터)
+    sections:
+      - heading: 보완 방법
+        text: |
+          음성·영상은 목소리와 얼굴만으로 개인을 알아볼 수 있어 가명처리가 어렵다. 음성 변조, 얼굴 블러·합성 등 처리 방안을 제시하거나 연구대상자 동의 취득을 검토한다.
+
+  - key: finding:GENETIC_DATA
+    kind: finding_guide
+    code: GENETIC_DATA
+    title: 검토 의견 가이드 — 유전정보 이용
+    ref: 개인정보 보호법 제23조 · 보건의료데이터 활용 가이드라인
+    sections:
+      - heading: 보완 방법
+        text: |
+          유전정보는 민감정보이고 재식별 위험이 높다. 활용 범위, 보관 장소, 결합 금지 여부, 결과 공개 범위를 구체적으로 적고, 가이드라인상 동의가 원칙인지 확인한다.
+          생명윤리법의 유전자검사 관련 규정이 적용되는지도 함께 검토한다.
+
+  - key: finding:SENSITIVE
+    kind: finding_guide
+    code: SENSITIVE
+    title: 검토 의견 가이드 — 민감정보 포함
+    ref: 개인정보 보호법 제23조
+    sections:
+      - heading: 보완 방법
+        text: |
+          정신질환, HIV·성매개감염병, 약물 의존, 성생활·생식, 범죄경력 등 민감정보가 포함되면 접근권한을 최소화하고, 결과 공표 시 소규모 셀을 억제하는 등 추가 보호조치를 적는다.
+          보건의료데이터 활용 가이드라인에서 동의가 원칙인 정보에 해당하는지 확인한다.
+
+  - key: finding:VULNERABLE
+    kind: finding_guide
+    code: VULNERABLE
+    title: 검토 의견 가이드 — 취약한 연구대상자 포함
+    ref: 생명윤리법 제3조제5항
+    sections:
+      - heading: 보완 방법
+        text: |
+          미성년자, 의사결정능력 저하자 등 취약한 연구대상자가 포함되면 수집 항목 최소화, 접근 제한, 결과 공개 시 소규모 셀 억제 등 추가 보호 대책을 적는다.
+          식별가능 정보를 이용하면 정규심의 대상이 될 수 있으므로 가명처리로 위험을 낮출 수 있는지 검토한다.
+      - heading: 작성 예시
+        text: |
+          "소아 자료는 연령을 월 단위로만 제공하고 거주지는 수집하지 않으며, 결과는 5명 미만 셀을 억제하여 공표한다."
+
+  - key: finding:RARE_DISEASE
+    kind: finding_guide
+    code: RARE_DISEASE
+    title: 검토 의견 가이드 — 희귀질환 연구
+    ref: 보건의료데이터 활용 가이드라인
+    sections:
+      - heading: 보완 방법
+        text: |
+          환자 수가 적어 지역·연령·진단일 조합만으로 개인이 특정될 수 있다. 지역은 시도 단위, 연령은 넓은 구간으로 범주화하고, 결과 공표 시 소규모 셀을 억제한다.
+
+  - key: finding:ACCESS_CONTROLS
+    kind: finding_guide
+    code: ACCESS_CONTROLS
+    title: 검토 의견 가이드 — 안전조치(접근통제·암호화) 기술 부족
+    ref: 개인정보 보호법 제29조
+    sections:
+      - heading: 보완 방법
+        text: |
+          분석 장소(원내 분석서버 등), 접근권한자와 계정 관리, 암호화, 반출 통제(반출 심사), 접속기록 보관 기간을 구체적으로 적는다.
+      - heading: 작성 예시
+        text: |
+          "자료는 원내 폐쇄망 분석서버에만 저장하고 연구진 2인에게 개인 계정으로 접근권한을 부여한다. USB·이메일 반출은 차단하며 결과 반출은 반출 심사를 거친다. 접속기록은 1년 이상 보관한다."
+
+  - key: finding:EXTERNAL_STORAGE
+    kind: finding_guide
+    code: EXTERNAL_STORAGE
+    title: 검토 의견 가이드 — 원외(클라우드·외부 기관) 보관
+    ref: 개인정보 보호법 제29조
+    sections:
+      - heading: 보완 방법
+        text: |
+          외부 클라우드나 외부 기관에 보관하면 보안인증(예: CSAP, ISMS) 여부, 위탁계약, 접근통제와 파기 방법을 제시해야 한다. 가능하면 원내 분석 환경 사용을 우선 검토한다.
+
+  - key: finding:EXTERNAL_TRANSFER
+    kind: finding_guide
+    code: EXTERNAL_TRANSFER
+    title: 검토 의견 가이드 — 기관 외 자료 제공
+    ref: 생명윤리법 제18조
+    sections:
+      - heading: 보완 방법
+        text: |
+          외부 기관에 자료를 제공하려면 제공 항목, 처리 수준, 제공 방법을 적고, 재제공 금지·목적 외 이용 금지·기간 만료 시 파기를 포함한 자료 제공 계약을 체결한다.
+          본 시스템에서는 외부 제공 과제는 유효한 자료 제공 계약이 등록되어야 가명정보를 제공할 수 있다.
+
+  - key: finding:TRANSFER_RECIPIENT
+    kind: finding_guide
+    code: TRANSFER_RECIPIENT
+    title: 검토 의견 가이드 — 제공받는 기관 미기재
+    ref: 생명윤리법 제18조
+    sections:
+      - heading: 보완 방법
+        text: |
+          자료를 제공받는 기관명, 기관의 책임자, 제공 목적을 적는다. 제공받는 기관이 여러 곳이면 기관별 제공 범위를 구분한다.
+
+  - key: finding:INTERNATIONAL_TRANSFER
+    kind: finding_guide
+    code: INTERNATIONAL_TRANSFER
+    title: 검토 의견 가이드 — 국외 이전
+    ref: 개인정보 보호법 제28조의8
+    sections:
+      - heading: 보완 방법
+        text: |
+          가명정보를 포함한 개인정보를 국외로 이전하려면 법에서 정한 이전 요건 중 하나를 충족해야 한다. 이전 국가, 이전받는 기관, 이전 항목, 이전 방법, 보호조치를 명시한다.
+          집계 결과만 공유해도 목적을 달성할 수 있는지 먼저 검토한다.
+
+  - key: finding:DATA_LINKAGE
+    kind: finding_guide
+    code: DATA_LINKAGE
+    title: 검토 의견 가이드 — 타 기관 데이터와 결합
+    ref: 개인정보 보호법 제28조의3
+    sections:
+      - heading: 보완 방법
+        text: |
+          서로 다른 개인정보처리자의 가명정보 결합은 결합전문기관을 통해야 한다. 결합 대상 기관, 결합키 생성 방법, 결합 장소, 결합 후 반출 심사 계획을 적는다.
+      - heading: 작성 예시
+        text: |
+          "본원 가명정보와 건강보험 자료의 결합은 지정된 결합전문기관에서 수행하며, 결합 결과는 결합전문기관 반출 심사를 거쳐 가명정보 형태로만 반출한다."
+
+  - key: finding:LINKAGE_TARGET
+    kind: finding_guide
+    code: LINKAGE_TARGET
+    title: 검토 의견 가이드 — 결합 대상 미기재
+    ref: 개인정보 보호법 제28조의3
+    sections:
+      - heading: 보완 방법
+        text: |
+          결합하려는 데이터의 보유 기관과 데이터 이름, 결합에 쓰는 항목을 적는다.
+
+  - key: finding:RETENTION_MISSING
+    kind: finding_guide
+    code: RETENTION_MISSING
+    title: 검토 의견 가이드 — 보관기간 미기재
+    ref: 기관 SOP · 개인정보 보호법 제28조의4
+    sections:
+      - heading: 보완 방법
+        text: |
+          연구 종료 후 자료를 보관할 기간(예: 3년)과 그 근거(연구 검증, 학술지 요구 등)를 적는다. 보관기간이 끝나면 파기한다.
+
+  - key: finding:DESTRUCTION_MISSING
+    kind: finding_guide
+    code: DESTRUCTION_MISSING
+    title: 검토 의견 가이드 — 파기 방법 미기재
+    ref: 개인정보 보호법 제29조 · 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          파기 시점, 방법(복구할 수 없는 삭제), 파기 확인 절차(파기 확인서 제출)를 적는다.
+      - heading: 작성 예시
+        text: |
+          "보관기간 3년이 끝나면 분석서버의 자료를 복구 불가능한 방법으로 영구 삭제하고, 데이터센터의 확인을 받아 파기 확인서를 IRB에 제출한다."
+
+  - key: finding:AI_ML
+    kind: finding_guide
+    code: AI_ML
+    title: 검토 의견 가이드 — AI/ML 모델 개발
+    ref: 보건의료데이터 활용 가이드라인 · 가명정보 처리 가이드라인
+    sections:
+      - heading: 확인 사항
+        text: |
+          학습 데이터의 가명처리 수준, 모델이 학습 데이터를 암기해 개인정보를 출력할 위험, 모델의 반출·공개 범위, 검증 데이터 분리 계획을 적는다.
+          모델 자체를 외부로 반출하거나 상용화하면 결과 반출 심사와 이해상충 검토가 필요할 수 있다.
+
+  - key: finding:COMMERCIAL_USE
+    kind: finding_guide
+    code: COMMERCIAL_USE
+    title: 검토 의견 가이드 — 상업적 활용
+    ref: 개인정보 보호법 제28조의2
+    sections:
+      - heading: 보완 방법
+        text: |
+          연구 결과나 데이터의 상업적 활용 계획이 과학적 연구 목적 범위 안인지 설명하고, 연구비 지원 기관과의 관계, 이해상충 관리, 이익 공유 계획을 적는다.
+
+  - key: finding:DIRECT_CONTACT
+    kind: finding_guide
+    code: DIRECT_CONTACT
+    title: 검토 의견 가이드 — 연구대상자 직접 접촉·전향적 수집
+    ref: 생명윤리법 제16조
+    sections:
+      - heading: 확인 사항
+        text: |
+          설문·면담·추가 검사 등 직접 접촉이 있으면 의료데이터 2차 활용 범위를 넘어선다. 서면동의 절차, 설명문, 연구대상자 보호 방안을 별도로 준비한다.
+
+  - key: finding:WAIVER_JUSTIFICATION
+    kind: finding_guide
+    code: WAIVER_JUSTIFICATION
+    title: 검토 의견 가이드 — 동의 면제 소명 부족
+    ref: 생명윤리법 제16조제3항
+    sections:
+      - heading: 보완 방법
+        text: |
+          동의 면제는 두 요건을 모두 소명해야 한다. 첫째, 동의를 받는 것이 현실적으로 불가능하거나 연구 타당성을 크게 해치는 구체적 사유(대상자 수, 사망·추적 불가 비율, 선택편향). 둘째, 동의 거부를 추정할 사유가 없고 위험이 극히 낮은 근거(가명처리, 접촉 없음, 안전조치).
+      - heading: 작성 예시
+        text: |
+          "대상자는 2015~2024년 8,500명으로 약 20%가 사망 또는 추적 불가하여 개별 동의가 현실적으로 불가능하다. 동의 가능 환자만 포함하면 중증 환자가 빠져 선택편향이 생긴다. 연구진은 데이터센터가 가명처리한 자료만 원내 서버에서 분석하므로 연구대상자 위험은 극히 낮다."
+
+  - key: finding:WAIVER_NOT_ELIGIBLE
+    kind: finding_guide
+    code: WAIVER_NOT_ELIGIBLE
+    title: 검토 의견 가이드 — 동의 면제 요건 미충족
+    ref: 생명윤리법 제16조제3항
+    sections:
+      - heading: 보완 방법
+        text: |
+          식별가능 정보를 동의 없이 이용하는 계획은 위험이 극히 낮다는 요건을 충족하기 어렵다. 가명처리 수준을 높여 식별자를 제외하거나, 동의 취득 방식으로 바꾸는 것을 검토한다.
+
+  - key: finding:COI_DETAIL
+    kind: finding_guide
+    code: COI_DETAIL
+    title: 검토 의견 가이드 — 이해상충 내용 부족
+    ref: 기관 이해상충 관리 규정
+    sections:
+      - heading: 보완 방법
+        text: |
+          재정적 이해관계(자문료, 지분, 연구비 등)의 내용과 금액 범위, 연구에 미칠 수 있는 영향, 관리 방안(공개, 역할 제한, 독립적 분석)을 적는다.
+
+  - key: finding:OBJECTIVES_MISSING
+    kind: finding_guide
+    code: OBJECTIVES_MISSING
+    title: 검토 의견 가이드 — 연구 목적 부족
+    ref: 연구계획서 작성 기준
+    sections:
+      - heading: 보완 방법
+        text: |
+          연구 질문, 주요 결과변수, 가설을 구체적으로 적는다. 목적이 분명해야 수집 변수의 최소성을 판단할 수 있다.
+
+  - key: finding:METHODS_MISSING
+    kind: finding_guide
+    code: METHODS_MISSING
+    title: 검토 의견 가이드 — 연구 방법 부족
+    ref: 연구계획서 작성 기준
+    sections:
+      - heading: 보완 방법
+        text: |
+          자료 추출 절차(누가, 어떤 시스템에서), 데이터 흐름(가명처리·전달·보관), 분석 방법과 통계 계획을 적는다.
+
+  - key: finding:INCLUSION_MISSING
+    kind: finding_guide
+    code: INCLUSION_MISSING
+    title: 검토 의견 가이드 — 선정 기준 불명확
+    ref: 연구계획서 작성 기준
+    sections:
+      - heading: 보완 방법
+        text: |
+          진단코드(KCD), 대상 기간, 연령, 진료과, 처방 등 자료를 추출할 수 있을 만큼 구체적인 기준을 적는다.
+
+  - key: finding:DATA_ITEMS_MISSING
+    kind: finding_guide
+    code: DATA_ITEMS_MISSING
+    title: 검토 의견 가이드 — 수집 변수 목록 누락
+    ref: 개인정보 최소수집 원칙
+    sections:
+      - heading: 보완 방법
+        text: |
+          연구 목적에 필요한 변수만 목록으로 적는다. 각 변수의 제공 형태(예: 생년월일 → 5세 구간 연령)를 함께 적으면 가명처리 계획을 세우기 쉽다.
+
+  - key: finding:SAMPLE_SIZE_JUSTIFICATION
+    kind: finding_guide
+    code: SAMPLE_SIZE_JUSTIFICATION
+    title: 검토 의견 가이드 — 대상자 수 근거 부족
+    ref: 연구계획서 작성 기준
+    sections:
+      - heading: 보완 방법
+        text: |
+          통계적 검정력 계산 근거 또는 연구 기간 내 적격 환자 전수 조사라는 사유를 적는다. 사전 대상자 수 조회 결과를 근거로 활용할 수 있다.
+
+  - key: finding:DATA_PERIOD_FUTURE
+    kind: finding_guide
+    code: DATA_PERIOD_FUTURE
+    title: 검토 의견 가이드 — 후향적 연구의 미래 자료 기간
+    ref: 생명윤리법 시행규칙 제13조
+    sections:
+      - heading: 보완 방법
+        text: |
+          기존 자료 이용 연구는 심의 승인 이전에 생성된 자료로 한정한다. 앞으로 생성될 자료를 포함하려면 전향적 자료수집으로 연구 유형을 바꾸고 동의 절차를 검토한다.
+
+  - key: finding:PI_TRAINING_EXPIRED
+    kind: finding_guide
+    code: PI_TRAINING_EXPIRED
+    title: 검토 의견 가이드 — 연구책임자 교육 이수 만료
+    ref: 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          연구윤리 교육을 다시 이수하고 이수증을 첨부한다. 이수일·만료일은 사용자 정보에 등록하면 자동으로 확인된다.
+
+  - key: finding:TEAM_TRAINING_EXPIRED
+    kind: finding_guide
+    code: TEAM_TRAINING_EXPIRED
+    title: 검토 의견 가이드 — 공동연구자 교육 이수 만료
+    ref: 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          교육 이수가 만료된 공동연구자는 재이수 후 이수증을 첨부하거나 연구진에서 제외한다.
+
+  - key: finding:SITES_MISSING
+    kind: finding_guide
+    code: SITES_MISSING
+    title: 검토 의견 가이드 — 다기관 참여기관 미기재
+    ref: 다기관 공동연구 심의
+    sections:
+      - heading: 보완 방법
+        text: |
+          참여기관별로 기관명, 기관 연구책임자, 제공 자료 범위, 기관별 IRB 승인 또는 위임 현황을 적는다.
+
+  - key: finding:EXTERNAL_IRB_MISSING
+    kind: finding_guide
+    code: EXTERNAL_IRB_MISSING
+    title: 검토 의견 가이드 — 대표 IRB 미기재
+    ref: 생명윤리법 제12조 · 다기관 공동연구 심의
+    sections:
+      - heading: 보완 방법
+        text: |
+          심의 결과를 인정받으려는 대표 IRB의 기관명과 승인 번호, 승인된 계획서 버전을 적고 대표 IRB 승인서를 첨부한다.
+
+  - key: finding:RELIANCE
+    kind: finding_guide
+    code: RELIANCE
+    title: 검토 의견 가이드 — 타기관 IRB 심의 결과 인정
+    ref: 생명윤리법 제12조 · 다기관 공동연구 심의
+    sections:
+      - heading: 확인 사항
+        text: |
+          대표 IRB 승인서와 승인 계획서 버전이 제출본과 일치하는지, 본원 고유 사항(자료 반출 범위, 보안, 기관 규정, 본원 연구책임자)이 반영되었는지 확인한다.
+
+  - key: finding:DATA_BREACH
+    kind: finding_guide
+    code: DATA_BREACH
+    title: 검토 의견 가이드 — 개인정보 유출·보안사고 보고
+    ref: 개인정보 보호법 제29조 · 기관 개인정보 보호 규정
+    sections:
+      - heading: 조치 방법
+        text: |
+          즉시 개인정보 보호책임자에게 보고하고 확산을 막는 조치를 한다. 유출 항목·규모·경위, 정보주체 통지와 신고 여부, 재발 방지 대책을 정리해 IRB에 보고한다.
+
+  - key: finding:DEVIATIONS
+    kind: finding_guide
+    code: DEVIATIONS
+    title: 검토 의견 가이드 — 연구계획 위반·이탈 보고
+    ref: 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          위반·이탈 내용, 발생 경위와 원인, 연구대상자와 자료에 미친 영향, 재발 방지 대책을 적는다. 승인 범위를 바꿔야 하면 변경심의를 신청한다.
+
+  - key: finding:DATA_NOT_DESTROYED
+    kind: finding_guide
+    code: DATA_NOT_DESTROYED
+    title: 검토 의견 가이드 — 종료 시 파기 미확인
+    ref: 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          보관기간과 파기 예정일을 명시하거나, 이미 파기했으면 파기 확인서를 첨부한다. 본 시스템은 종료 시 보관기간에 따라 파기 기한을 자동으로 설정하고 알림을 보낸다.
+
+  - key: finding:APPROVAL_LAPSED
+    kind: finding_guide
+    code: APPROVAL_LAPSED
+    title: 검토 의견 가이드 — 승인 기간 만료 후 지속심의
+    ref: 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          승인 만료 기간 동안 자료 분석 등 연구 활동을 했는지 보고한다. 만료 이후의 연구 수행은 허용되지 않으므로 활동이 있었다면 위반으로 보고한다.
+
+  - key: finding:DOC_MISSING
+    kind: finding_guide
+    code: DOC_MISSING
+    title: 검토 의견 가이드 — 필수 서류 누락
+    ref: 기관 SOP
+    sections:
+      - heading: 보완 방법
+        text: |
+          과제 상세의 서류 탭에서 누락된 서류를 첨부한다. 심의의뢰서, 면제 신청서, 동의면제 사유서, 가명처리 계획서, 보안서약서 등은 서류 자동 작성 기능으로 초안을 만들 수 있다.
+
+  - key: finding:LARGE_DATASET
+    kind: finding_guide
+    code: LARGE_DATASET
+    title: 검토 의견 가이드 — 대규모 데이터 활용
+    ref: 개인정보 최소수집 원칙
+    sections:
+      - heading: 확인 사항
+        text: |
+          대상자가 많으면 유출 시 피해도 커진다. 목적에 필요한 최소 범위(기간·대상·변수)인지 확인하고, 표본 추출로 목적을 달성할 수 있는지 검토한다.

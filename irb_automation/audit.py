@@ -119,4 +119,10 @@ ACTION_LABELS = {
     "template_deactivate": "기관 서식 비활성화",
     "template_fill": "기관 서식 채우기",
     "template_download": "기관 서식 원본 다운로드",
+    "knowledge_search": "지식 검색",
+    "knowledge_answer": "근거 질의응답",
+    "knowledge_upload": "지식 문서 등록",
+    "knowledge_update": "지식 문서 변경",
+    "knowledge_delete": "지식 문서 삭제",
+    "knowledge_reindex": "지식 재색인",
 }

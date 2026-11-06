@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__
+from .api.knowledge import router as knowledge_api_router
 from .api.routes import router as api_router
 from .config import get_settings
 from .database import SessionLocal, init_db
@@ -20,6 +21,7 @@ from .web import (
     routes_deid,
     routes_doctemplates,
     routes_governance,
+    routes_knowledge,
     routes_main,
     routes_meetings,
     routes_protocols,
@@ -99,7 +101,9 @@ def create_app() -> FastAPI:
     app.include_router(routes_governance.router)
     app.include_router(routes_reports.router)
     app.include_router(routes_doctemplates.router)
+    app.include_router(routes_knowledge.router)
     app.include_router(api_router)
+    app.include_router(knowledge_api_router)
 
     @app.exception_handler(LoginRequired)
     async def _login_required(request: Request, exc: LoginRequired):

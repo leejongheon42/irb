@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "knowledge/_related.html" as kn %}
+{% block title %}관련 정보 검색{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/knowledge.css">
+<div class="topbar">
+  <div><h1>관련 정보 검색</h1>
+    <div class="sub">법령·지침 요약, 기관 SOP, 검토 의견 가이드, FAQ{% if precedent_full %}, 과거 과제·심의 선례{% else %}, 열람 가능한 본인 과제{% endif %}에서 근거를 찾습니다.</div></div>
+  <div class="actions"><a class="btn" href="/knowledge/ask">근거 질의응답</a>
+    {% if user.is_irb_staff %}<a class="btn" href="/admin/knowledge">지식 관리</a>{% endif %}</div>
+</div>
+
+<div class="card">
+  <form method="get" action="/knowledge" class="kn-search">
+    <input type="text" name="q" value="{{ q }}" placeholder="예: 제28조의2 가명정보, 동의 면제 요건, 자유기술 스크러빙" aria-label="검색어" autofocus>
+    <select name="kind" aria-label="유형">
+      <option value="">전체 유형</option>
+      {% for k, label in kind_labels.items() %}<option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="btn-primary" type="submit">검색</button>
+  </form>
+  {% if q and facets %}
+  <div class="kn-facets">
+    <a class="badge {{ 'b-primary' if not kind else '' }}" href="/knowledge?q={{ q|urlencode }}">전체</a>
+    {% for k, n in facets.most_common() %}<a class="badge {{ 'b-primary' if kind == k else '' }}" href="/knowledge?q={{ q|urlencode }}&kind={{ k }}">{{ kind_labels[k] }} {{ n }}</a>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% if q %}
+<div class="card">
+  <h2>검색 결과 {{ hits|length }}건 <span class="hint">관련도순 · 문서별 대표 구간</span></h2>
+  {% for h in hits %}
+  <div class="kn-hit">
+    <div class="kn-meta">{{ kn.kind_badge(h.kind) }} {% if h.ref %}{{ h.ref }}{% endif %}{% if h.heading %} · {{ h.heading }}{% endif %}</div>
+    <h3><a href="{{ h.view_url }}">{{ h.title }}</a></h3>
+    <div class="kn-snippet">{{ h.highlight }}</div>
+    <div class="kn-meta">관련도 {{ h.score }}{% if h.external_url %} · <a href="{{ h.external_url }}" target="_blank" rel="noopener noreferrer">원문 보기</a>{% endif %}</div>
+  </div>
+  {% else %}
+  <p class="muted">검색 결과가 없습니다. 다른 표현(예: 조문 번호, 핵심 용어)으로 검색하거나 <a href="/knowledge/ask">근거 질의응답</a>을 이용하십시오.</p>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <h2>지식베이스 현황</h2>
+  <div class="kn-stats">
+    {% for k, label in kind_labels.items() if stats.get(k) %}<div class="card stat mb0"><div class="label">{{ label }}</div><div class="value">{{ stats[k] }}</div></div>{% endfor %}
+  </div>
+  <h3>검색 예시</h3>
+  <div class="kn-examples">{% for e in examples %}<a class="badge" href="/knowledge?q={{ e|urlencode }}">{{ e }}</a>{% endfor %}</div>
+  <p class="small muted">법령·지침은 요약본입니다. 결론에 영향을 주는 경우 '원문 보기'로 국가법령정보센터 등 원문을 확인하십시오.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,52 @@
+{#- 관련 정보 검색 부분 템플릿. 다른 화면에서 독립적으로 import해 사용한다.
+    {% import "knowledge/_related.html" as kn %}
+    {{ kn.related_panel(hits) }}            hits: knowledge.service.search / related_for_findings 결과(list[dict])
+    {{ kn.similar_panel(items) }}           items: knowledge.service.similar_protocols 결과(list[dict])
+    {{ kn.findings_related(findings, related) }}  사전검토 검토 의견 목록과 related_for_findings 결과를 함께 표시
+  컨텍스트 변수에 의존하지 않으며 app.css의 기본 클래스만 사용한다. -#}
+
+{% macro kind_badge(kind) -%}
+{%- set labels = {"law": "법령", "guideline": "지침", "sop": "기관 SOP", "faq": "FAQ", "finding_guide": "보완 가이드",
+                  "protocol": "과거 과제", "decision": "심의 선례", "uploaded": "등록 문서"} -%}
+{%- set cls = {"law": "b-primary", "guideline": "b-info", "sop": "b-ok", "faq": "", "finding_guide": "b-warn",
+               "protocol": "", "decision": "b-ok", "uploaded": "b-info"} -%}
+<span class="badge {{ cls.get(kind, '') }}">{{ labels.get(kind, kind) }}</span>
+{%- endmacro %}
+
+{% macro related_panel(hits, title="관련 근거", empty="관련 근거를 찾지 못했습니다.") -%}
+<div class="kn-related">
+  {% if title %}<div class="small muted">{{ title }}</div>{% endif %}
+  {% for h in hits %}
+  <div class="small">
+    {{ kind_badge(h.kind) }}
+    <a href="{{ h.view_url or h.url }}">{{ h.title }}</a>{% if h.ref %} <span class="muted">· {{ h.ref }}</span>{% endif %}
+    {% if h.external_url %} <a href="{{ h.external_url }}" target="_blank" rel="noopener noreferrer">원문</a>{% endif %}
+    <div class="muted">{{ h.highlight if h.highlight is defined and h.highlight else h.snippet }}</div>
+  </div>
+  {% else %}<div class="small muted">{{ empty }}</div>{% endfor %}
+</div>
+{%- endmacro %}
+
+{% macro similar_panel(items, title="유사 과제(선례)") -%}
+<div class="kn-similar">
+  {% if title %}<h3>{{ title }}</h3>{% endif %}
+  {% if items %}
+  <div class="table-wrap"><table>
+    <tr><th>과제번호</th><th>제목</th><th>심의유형</th><th>최근 결정</th><th>상태</th></tr>
+    {% for it in items %}
+    <tr><td class="nowrap">{{ it.protocol_no }}</td><td><a href="{{ it.url }}">{{ it.title }}</a></td>
+      <td>{{ it.review_type or "-" }}</td><td>{{ it.decision or "-" }}</td><td>{{ it.status }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="small muted">비슷한 선례가 없습니다.</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro findings_related(findings, related) -%}
+{% for f in findings if related.get(f.code) %}
+<details class="finding {{ f.severity }}">
+  <summary><strong>{{ f.message }}</strong> <span class="small muted">— 관련 근거 {{ related[f.code]|length }}건</span></summary>
+  {{ related_panel(related[f.code], title="") }}
+</details>
+{% endfor %}
+{%- endmacro %}
