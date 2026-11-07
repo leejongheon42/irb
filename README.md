@@ -119,6 +119,11 @@ http://127.0.0.1:8000 접속. 데모 계정(공통 비밀번호 `Demo!2026pw`):
 
 데모에는 면제 확인된 과제(+공동연구 협약), 정규심의 대기 과제, 안건이 구성된 다음 주 위원회 회의가 미리 들어 있습니다.
 
+### GitHub Codespaces로 시연
+1. 저장소 → **Code ▸ Codespaces ▸ Create codespace on `claude/gifted-hawking-yh1og1`**
+2. 생성이 끝나면 터미널에 `접속 주소`와 `데모 비밀번호`가 출력됩니다(`bash scripts/codespaces_start.sh`로 다시 볼 수 있음).
+3. 주소가 열리지 않으면 **포트** 탭 → 8000 → 가시성을 *Public*으로 변경하십시오. 공개 주소는 아는 사람 누구나 접속할 수 있으므로 **실제 환자 정보는 넣지 마십시오.**
+
 ### Docker
 ```bash
 cp .env.example .env   # IRB_SECRET_KEY, IRB_PSEUDONYM_SECRET 반드시 변경
