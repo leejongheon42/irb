@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .models import Document, Protocol, Role, User
 from .security import hash_password
 
-DEMO_PASSWORD = "Demo!2026pw"
+DEMO_PASSWORD = None  # None이면 데모 계정 비밀번호 = 아이디 (researcher/researcher, admin/admin)
 
 DEMO_USERS = [
     ("admin", "연구지원관리자", "연구지원팀", Role.ADMIN),
@@ -25,14 +25,13 @@ def _doc(p: Protocol, doc_type: str, uid: int) -> Document:
     )
 
 
-def seed_demo(db: Session, password: str = DEMO_PASSWORD) -> dict[str, User]:
+def seed_demo(db: Session, password: str | None = DEMO_PASSWORD) -> dict[str, User]:
     users: dict[str, User] = {}
-    pw = hash_password(password)
     for username, name, dept, role in DEMO_USERS:
         u = db.scalars(select(User).where(User.username == username)).first()
         if u is None:
             u = User(
-                username=username, password_hash=pw, full_name=name, department=dept, role=role,
+                username=username, password_hash=hash_password(password or username), full_name=name, department=dept, role=role,
                 training_expires_on=date.today() + timedelta(days=400),
             )
             db.add(u)

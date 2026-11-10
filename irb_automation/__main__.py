@@ -74,9 +74,9 @@ def main(argv: list[str] | None = None) -> int:
                 seed_rich_demo(db)
                 db.commit()
                 seed_extensions(db, demo=True)
-                print("데모 데이터 생성 완료. 공통 비밀번호:", DEMO_PASSWORD)
+                print("데모 데이터 생성 완료. 비밀번호는 아이디와 같습니다:")
                 for u in users.values():
-                    print(f"  {u.username:12s} {u.role.label}")
+                    print(f"  {u.username:12s} / {DEMO_PASSWORD or u.username:12s} {u.role.label}")
             else:
                 seed_extensions(db)
                 print("DB 초기화 완료")

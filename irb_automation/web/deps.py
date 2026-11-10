@@ -95,6 +95,8 @@ async def verify_csrf(request: Request) -> None:
     sent = form.get("csrf_token") or request.headers.get("x-csrf-token")
     expected = request.session.get("csrf")
     if not expected or not sent or not secrets.compare_digest(str(sent), str(expected)):
+        if request.url.path == "/login":
+            raise LoginRequired()  # 세션 만료(서버 재시작 등): 로그인 화면을 새로 열어 다시 시도
         raise HTTPException(status_code=403, detail="CSRF 토큰이 유효하지 않습니다. 페이지를 새로고침하십시오.")
 
 

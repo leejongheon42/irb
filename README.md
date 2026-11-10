@@ -85,7 +85,7 @@ python -m irb_automation init-db --demo
 python -m irb_automation serve
 ```
 
-http://127.0.0.1:8000 접속. 데모 계정(공통 비밀번호 `Demo!2026pw`):
+http://127.0.0.1:8000 접속. 데모 계정(비밀번호 = 아이디: `researcher`/`researcher`, `researcher2`/`researcher2`, `admin`/`admin`):
 
 | 아이디 | 역할 | 해볼 것 |
 |---|---|---|
