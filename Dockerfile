@@ -3,6 +3,11 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 IRB_DATA_DIR=/data
 WORKDIR /app
 
+# DOCX 자동 작성·HWP/DOC 변환용 LibreOffice와 한글 글꼴
+RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-writer-nogui fonts-nanum \
+    && rm -rf /var/lib/apt/lists/*
+ENV IRB_SOFFICE_PATH=/usr/bin/soffice
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

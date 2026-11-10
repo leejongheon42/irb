@@ -20,7 +20,7 @@ TARGETS: list[tuple[str, list[str], list[str]]] = [
     (r"동의\s*면제|면제\s*사유", ["waiver_impracticable_detail", "waiver_minimal_risk_detail"], ["waiver_request"]),
     (r"가명|비식별|식별정보|등록번호|개인정보|보안|접근", ["identifier_justification", "access_controls", "deid_level"], ["deid_plan", "security_pledge"]),
     (r"대상자\s*수|표본|검정력|산출", ["expected_subjects", "sample_size_justification"], ["protocol"]),
-    (r"선정\s*기준|제외\s*기준|대상", ["inclusion_criteria", "exclusion_criteria", "target_population"], ["protocol"]),
+    (r"선정\s*기준|제외\s*기준|연구\s*대상(?!자)", ["inclusion_criteria", "exclusion_criteria", "target_population"], ["protocol"]),
     (r"기간|일정|종료일|시작일", ["study_start", "study_end", "data_period_start", "data_period_end"], ["protocol", "consent_form"]),
     (r"보관|파기|폐기", ["retention_years", "destruction_method"], ["protocol", "deid_plan"]),
     (r"방법|설계|분석|통계", ["methods"], ["protocol"]),

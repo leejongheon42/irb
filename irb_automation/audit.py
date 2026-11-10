@@ -78,12 +78,12 @@ ACTION_LABELS = {
     "protocol_update": "과제 수정",
     "document_upload": "서류 업로드",
     "document_download": "서류 열람",
-    "submit": "심의 신청",
+    "submit": "IRB 제출 기록",
     "prereview": "자동 사전검토",
-    "request_revision": "보완 요청",
+    "request_revision": "IRB 보완 요청 입력",
     "assign_reviewers": "심의위원 배정",
     "review_submit": "심의의견 제출",
-    "decision": "심의 결정",
+    "decision": "IRB 결과 입력",
     "start_amendment": "변경 신청 시작",
     "status_change": "상태 변경",
     "expire": "승인 만료",
@@ -148,4 +148,10 @@ ACTION_LABELS.update({
     "form_pack_export": "양식 팩 내보내기",
     "online_form_save": "웹 서식 임시저장",
     "online_form_submit": "웹 서식 제출",
+})
+
+ACTION_LABELS.update({
+    "qc_run": "서류 품질 점검",
+    "qc_autofix": "서류 자동 교정",
+    "package_autocomplete": "제출 서류 자동 완성",
 })

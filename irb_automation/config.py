@@ -50,6 +50,8 @@ class Settings:
             os.environ.get("IRB_RULESET_PATH", str(BASE_DIR / "rules" / "default_ruleset.yaml"))
         )
     )
+    # 서류 품질 점검 기준(기관용 사본). 비우면 irb_automation/qc/criteria.yaml
+    qc_criteria_path: str = field(default_factory=lambda: os.environ.get("IRB_QC_CRITERIA_PATH", ""))
     approval_validity_days: int = field(
         default_factory=lambda: _env_int("IRB_APPROVAL_VALIDITY_DAYS", 365)
     )

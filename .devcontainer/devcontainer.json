@@ -1,11 +1,25 @@
 {
   "name": "IRB 자동화 시연",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
-  "postCreateCommand": "pip install -r requirements.txt",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui fonts-nanum && pip install -r requirements.txt",
   "postStartCommand": "bash scripts/codespaces_start.sh",
-  "forwardPorts": [8000],
+  "forwardPorts": [
+    8000
+  ],
   "portsAttributes": {
-    "8000": { "label": "IRB 자동화", "onAutoForward": "openBrowser" }
+    "8000": {
+      "label": "IRB 자동화",
+      "onAutoForward": "openBrowser"
+    }
   },
-  "customizations": { "codespaces": { "openFiles": ["README.md"] } }
+  "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "README.md"
+      ]
+    }
+  },
+  "containerEnv": {
+    "IRB_SOFFICE_PATH": "/usr/bin/soffice"
+  }
 }

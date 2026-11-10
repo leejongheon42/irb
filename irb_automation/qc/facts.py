@@ -207,7 +207,8 @@ def restyle(key: str, old_raw: str, ref: Fact) -> str | None:
         da, db_ = date.fromisoformat(a), date.fromisoformat(b)
         out = old_raw
         for m, d in reversed(list(zip(olds[:2], (da, db_)))):
-            out = out[:m.start()] + _like(m.group(0), d) + out[m.end():]
+            core = m.group(0).rstrip()
+            out = out[:m.start()] + _like(core, d) + m.group(0)[len(core):] + out[m.end():]
         return out
     if key in ("dosage", "duration", "drug", "pi", "title"):
         return ref.raw if ref.raw and ref.raw != old_raw else None

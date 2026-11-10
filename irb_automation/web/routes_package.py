@@ -233,4 +233,10 @@ def revision_page(request: Request, pid: int, draft: int = 0, user: User = Depen
     if draft:
         db.commit()
     return render(request, "package/revision.html", db, user, p=p, items=items, drafts=drafts,
-                  is_member=wf.is_member(user, p), ai_on=_ai_on(), drafted=bool(draft), field_labels=DRAFT_FIELDS)
+                  is_member=wf.is_member(user, p), ai_on=_ai_on(), drafted=bool(draft), field_labels=_field_labels())
+
+
+def _field_labels() -> dict[str, str]:
+    from ..workflow.diff import FIELD_LABELS
+
+    return {**{k: v[0] for k, v in FIELD_LABELS.items()}, **DRAFT_FIELDS}
