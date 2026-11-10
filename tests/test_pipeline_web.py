@@ -58,7 +58,7 @@ def test_import_flow_creates_protocol(app, settings):
         assert c.get(f"/protocols/{pid}/pipeline").status_code == 403
         assert c.get("/admin/ai").status_code == 403
 
-        login(c, "coordinator")
+        login(c, "admin")
         assert c.get(f"/pipeline/{rid}").status_code == 200
         admin = c.get("/admin/ai").text
         assert "AI·문서 자동화 관리" in admin and "전송 정책" in admin
@@ -73,5 +73,3 @@ def test_import_rejects_bad_files_and_roles(app, settings):
         assert "지원하지 않는" in r.text
         r = c.post("/protocols/import", files={"file": ("a.txt", b"x", "text/plain")}, follow_redirects=False)
         assert r.status_code in (400, 403)  # CSRF
-        login(c, "reviewer1")
-        assert c.get("/protocols/import").status_code == 403

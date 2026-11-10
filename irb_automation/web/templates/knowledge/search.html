@@ -7,7 +7,7 @@
   <div><h1>관련 정보 검색</h1>
     <div class="sub">법령·지침 요약, 기관 SOP, 검토 의견 가이드, FAQ{% if precedent_full %}, 과거 과제·심의 선례{% else %}, 열람 가능한 본인 과제{% endif %}에서 근거를 찾습니다.</div></div>
   <div class="actions"><a class="btn" href="/knowledge/ask">근거 질의응답</a>
-    {% if user.is_irb_staff %}<a class="btn" href="/admin/knowledge">지식 관리</a>{% endif %}</div>
+    {% if user.is_admin %}<a class="btn" href="/admin/knowledge">지식 관리</a>{% endif %}</div>
 </div>
 
 <div class="card">

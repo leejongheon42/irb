@@ -14,8 +14,6 @@
   <tr><th>원본 파일</th><td>{{ job.original_filename }} ({{ "{:,}".format(job.row_count) }}행 × {{ job.analysis.column_count }}열)<br><small>SHA-256 {{ job.input_sha256 }}</small></td></tr>
   <tr><th>결과 파일</th><td>{{ "{:,}".format(r.output_rows or 0) }}행 × {{ r.output_columns }}열<br><small>SHA-256 {{ r.output_sha256 }}</small></td></tr>
   <tr><th>처리자</th><td>{{ r.processed_by }}</td></tr>
-  <tr><th>DRB 적정성 검토</th><td>{{ {"approved": "적정", "rejected": "부적정"}.get(job.drb_status, "검토 대기") }}{% if job.drb_reviewer %} · {{ job.drb_reviewer.full_name }} · {{ job.drb_reviewed_at|fmt }}{% endif %}</td></tr>
-  <tr><th>제공</th><td>{% if job.released_at %}{{ job.released_at|fmt }} 연구팀 제공{% else %}미제공{% endif %}</td></tr>
 </table>
 
 <div class="result">적정성 자동 판정 : {{ r.verdict }}</div>

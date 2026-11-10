@@ -16,7 +16,7 @@ from ..models import Role, User
 from .deps import client_ip, current_user, flash, render, require_roles, verify_csrf
 
 router = APIRouter()
-staff_only = require_roles(Role.COORDINATOR, Role.CHAIR)
+staff_only = require_roles(Role.ADMIN)
 
 EXAMPLE_QUERIES = [
     "가명정보 동의 없이 연구",
@@ -85,7 +85,7 @@ async def knowledge_ask(request: Request, user: User = Depends(current_user), db
 @router.get("/knowledge/source/{sid}")
 def knowledge_source(request: Request, sid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     src = db.get(KnowledgeSource, sid)
-    if src is None or (not src.active and not user.is_irb_staff):
+    if src is None or (not src.active and not user.is_admin):
         raise HTTPException(404, "지식 문서를 찾을 수 없습니다.")
     if src.kind in PRECEDENT_KINDS and not ks.precedent_full_access(user):
         pid = (src.meta or {}).get("protocol_id")

@@ -2,23 +2,23 @@
 <link rel="stylesheet" href="/static/submission.css">
 <div class="card">
   <div class="sub-head">
-    <h2>제출 서류 현황 <span class="hint">필수 서류는 자동 사전검토 기준</span></h2>
+    <h2>서류함 <span class="hint">필수 서류는 IRB 사전점검 기준 · 점검 결과는 최근 서류 점검</span></h2>
     {% if board.can_participate %}
     <div class="actions">
-      <a class="btn btn-sm" href="/protocols/{{ p.id }}/bundle.zip">심의자료 ZIP</a>
+      <a class="btn btn-sm" href="/protocols/{{ p.id }}/package.zip">e-IRB 업로드용 ZIP</a>
       <a class="btn btn-sm" href="/protocols/{{ p.id }}/bundle.pdf">PDF 합본</a>
     </div>
     {% endif %}
   </div>
   <div class="actions chips">
-    <span class="badge {{ 'b-danger' if board.counts.missing else '' }}">미제출 {{ board.counts.missing }}</span>
-    <span class="badge b-info">검토 대기 {{ board.counts.submitted }}</span>
-    <span class="badge {{ 'b-warn' if board.counts.revision_requested else '' }}">보완 요청 {{ board.counts.revision_requested }}</span>
-    <span class="badge b-ok">확인 완료 {{ board.counts.accepted }}</span>
+    <span class="badge {{ 'b-danger' if board.counts.missing else '' }}">필수 미첨부 {{ board.counts.missing }}</span>
+    <span class="badge {{ 'b-danger' if board.qc.issues else '' }}">점검 이슈 서류 {{ board.qc.issues }}</span>
+    <span class="badge b-ok">점검 통과 {{ board.qc.clean }}</span>
+    <span class="badge">미점검 {{ board.qc.unchecked }}</span>
   </div>
   {% if board.rows %}
   <div class="table-wrap"><table class="board-table">
-    <tr><th>서류</th><th>현행본</th><th>상태</th><th class="num">버전</th><th>작업</th></tr>
+    <tr><th>서류</th><th>현행본</th><th>점검</th><th class="num">버전</th><th>작업</th></tr>
     {% for r in board.rows %}{% set d = r.current %}
     <tr class="{{ 'row-missing' if r.required and not d else '' }}">
       <td><strong>{{ r.label }}</strong>{% if r.required %} <span class="badge">필수</span>{% endif %}</td>
@@ -30,15 +30,15 @@
         {% else %}<span class="muted">미제출</span>{% endif %}
       </td>
       <td>
-        {% if d %}
-          <span class="badge {{ {'submitted': 'b-info', 'accepted': 'b-ok', 'revision_requested': 'b-warn'}.get(d.status, '') }}">{{ d.status_label }}</span>
-          {% if d.status == "revision_requested" and d.review_note %}<div class="small warn-text">{{ d.review_note }}</div>{% endif %}
+        {% if d %}{% set q = (d.validation or {}).get("qc") %}
+          {% if q %}<a class="badge {{ 'b-danger' if q.critical else ('b-warn' if q.major else 'b-ok') }}" href="/qc/{{ q.run }}">C{{ q.critical }} · M{{ q.major }} · m{{ q.minor }}</a>
+          {% else %}<span class="badge">미점검</span>{% endif %}
         {% else %}<span class="badge {{ 'b-danger' if r.required else '' }}">없음</span>{% endif %}
       </td>
       <td class="num">{{ r.versions|length }}</td>
       <td class="nowrap">
         {% if d %}
-          <a class="btn btn-sm" href="/documents/{{ d.id }}/preview">{{ "검토" if board.can_review and d.status == "submitted" else "미리보기" }}</a>
+          <a class="btn btn-sm" href="/documents/{{ d.id }}/preview">미리보기</a>
           {% if r.versions|length > 1 %}<a class="btn btn-sm" href="/documents/{{ d.id }}/compare">비교</a>{% endif %}
           <a class="btn btn-sm" href="/documents/{{ d.id }}">다운로드</a>
         {% endif %}
@@ -51,7 +51,7 @@
 
 {% if board.upload_types %}
 <div class="card">
-  <h2>서류 제출 <span class="hint">여러 파일을 한 번에 제출할 수 있습니다</span></h2>
+  <h2>서류 올리기 <span class="hint">직접 작성한 서류나 개인 서류(이력서·교육 이수증) · 여러 파일 가능</span></h2>
   <form method="post" action="/protocols/{{ p.id }}/documents/bulk" enctype="multipart/form-data" class="upload-form" data-max-files="{{ board.max_files }}">
     {{ csrf_input }}
     <div class="dropzone" tabindex="0" role="button" aria-label="파일 선택 또는 끌어다 놓기">
@@ -71,9 +71,8 @@
       <option value="auto">자동 추정</option>
       {% for k, label in board.upload_types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
     </select>
-    <p class="small muted">제출 시 확장자와 실제 형식의 일치, 손상·암호화, 중복 여부를 자동 검사합니다. 같은 종류의 서류를 다시 제출하면 새 버전이 되고 이전 파일은 보존됩니다.
-      {% if p.status in (S.SUBMITTED, S.UNDER_REVIEW) %}<strong>심의 중에는 보완 요청된 서류와 미제출 서류만 제출할 수 있습니다.</strong>{% endif %}</p>
-    <p><button class="btn-primary" type="submit">제출</button></p>
+    <p class="small muted">올릴 때 확장자와 실제 형식의 일치, 손상·암호화, 중복 여부를 자동 검사합니다. 같은 종류를 다시 올리면 새 버전이 되고 이전 파일은 보존됩니다.</p>
+    <p><button class="btn-primary" type="submit">올리기</button></p>
   </form>
 </div>
 <script src="/static/submission.js" defer></script>

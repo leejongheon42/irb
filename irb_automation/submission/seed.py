@@ -10,9 +10,8 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..engine.ruleset import get_ruleset
-from ..models import Decision, Document, Protocol, Submission, User
+from ..models import Document
 from .pdfkit import korean_font
-from .stamp import STAMP_DECISIONS, stamp_approved_documents
 from .validate import safe_filename, validate_upload
 
 
@@ -56,7 +55,7 @@ def _demo_pdf(doc: Document) -> bytes:
 
 
 def seed_submission(db: Session) -> int:
-    """파일이 없는 데모 문서에 PDF를 채우고, 승인·면제된 과제의 도장본을 만든다. 생성한 파일 수를 반환."""
+    """파일이 없는 데모 문서에 PDF를 채운다. 생성한 파일 수를 반환."""
     settings = get_settings()
     created = 0
     for d in db.scalars(select(Document).where(Document.stored_path == "")):
@@ -76,22 +75,5 @@ def seed_submission(db: Session) -> int:
         d.validation = result.to_dict()
         created += 1
     db.flush()
-    for p in db.scalars(select(Protocol).where(Protocol.approved_at.is_not(None))):
-        if any(doc.source == "stamped" for doc in p.documents):
-            continue
-        decision = db.scalars(
-            select(Decision).join(Submission).where(Submission.protocol_id == p.id,
-                                                   Decision.decision.in_(list(STAMP_DECISIONS)))
-            .order_by(Decision.id.desc())
-        ).first()
-        if decision is None:
-            continue
-        decider = db.get(User, decision.decided_by)
-        for doc in p.documents:  # 승인 전 검토가 끝난 것으로 표시
-            if doc.status == "submitted":
-                doc.status = "accepted"
-                doc.reviewed_by = decider.id
-                doc.reviewed_at = decision.decided_at
-        stamp_approved_documents(db, decider, p, decision, "seed")
     db.flush()
     return created

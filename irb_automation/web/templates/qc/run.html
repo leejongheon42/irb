@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}점검 결과 {{ qr.score }}점{% endblock %}
+{% block content %}
+{% set sev = {"critical": "Critical", "major": "Major", "minor": "Minor"} %}
+<div class="topbar">
+  <div>
+    <div class="muted small">{% if qr.protocol %}<a href="/protocols/{{ qr.protocol.id }}/package">{{ qr.protocol.title }}</a> · {% endif %}{{ qr.created_at|fmt }} · 기준 {{ qr.criteria_version }}</div>
+    <h1>서류 점검 결과</h1>
+  </div>
+  <div class="actions">
+    {% if qr.protocol and can_fix %}<form method="post" action="/qc/{{ qr.id }}/rerun" class="inline-form">{{ csrf_input }}<button type="submit">현재 서류로 다시 점검</button></form>{% endif %}
+    <a class="btn" href="/qc">새 점검</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="score-card">
+    <div><div class="score {{ 'verdict-pass' if qr.passed else 'verdict-fail' }}">{{ qr.score }}<small> / 100</small></div>
+      <div class="{{ 'verdict-pass' if qr.passed else 'verdict-fail' }}"><strong>{{ "✓ PASS" if qr.passed else "✕ FAIL" }}</strong></div></div>
+    <div class="sev-counts">
+      <div class="critical"><div class="small muted">Critical</div><div class="n">{{ qr.counts.critical }}</div></div>
+      <div class="major"><div class="small muted">Major</div><div class="n">{{ qr.counts.major }}</div></div>
+      <div class="minor"><div class="small muted">Minor</div><div class="n">{{ qr.counts.minor }}</div></div>
+      <div><div class="small muted">자동 교정 가능</div><div class="n">{{ fixable|length }}</div></div>
+    </div>
+  </div>
+  {% if qr.counts.critical %}<p class="small verdict-fail">Critical 이슈가 있어 점수와 무관하게 FAIL입니다. IRB 반려·보완 요청의 가장 흔한 원인이므로 제출 전에 해결하십시오.</p>{% endif %}
+  <div class="phase-list">
+    {% for k in ("1", "2", "3") %}{% set ph = qr.phases[k] %}
+    <div class="phase"><strong>Phase {{ k }} · {{ ph.label }}</strong>
+      <div>{{ {"done": "완료", "skipped": "건너뜀", "failed": "실패"}.get(ph.status, ph.status) }} · 이슈 {{ ph.issues }}건</div>
+      {% if ph.message %}<div class="small muted">{{ ph.message }}</div>{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% if qr.phases.rejected %}<div class="callout danger small">점검 제외: {{ qr.phases.rejected|join(" / ") }}</div>{% endif %}
+</div>
+
+<div class="card">
+  <h2>점검한 서류</h2>
+  <div class="table-wrap"><table>
+    <tr><th>파일</th><th>판별한 종류</th><th>파일명 버전</th><th>이슈</th><th>자동 교정</th></tr>
+    {% for d in qr.docs %}
+    <tr><td>{% if d.document_id %}<a href="/documents/{{ d.document_id }}/preview">{{ d.name }}</a>{% else %}{{ d.name }}{% endif %}</td><td>{{ d.label }}</td>
+      <td>{{ d.name|file_version or "-" }}</td><td>{{ d.issues }}</td>
+      <td>{{ "가능" if d.fixable else "원본(DOCX·HWPX) 필요" }}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+
+<form method="post" action="/qc/{{ qr.id }}/autofix">
+  {{ csrf_input }}
+  <div class="card">
+    <h2>이슈 {{ qr.issues|length }}건 {% for c, n in by_cat.items() %}<span class="badge">{{ cats.get(c, c) }} {{ n }}</span> {% endfor %}</h2>
+    {% for i in qr.issues %}
+    <div class="finding {{ i.severity }}">
+      <div>
+        {% if can_fix and i.id in fixable %}<label class="check"><input type="checkbox" name="issue" value="{{ i.id }}" checked> </label>{% endif %}
+        <span class="badge {{ 'b-danger' if i.severity == 'critical' else ('b-warn' if i.severity == 'major' else 'b-info') }}">{{ sev[i.severity] }}</span>
+        <span class="badge">{{ cats.get(i.category, i.category) }}</span>
+        {% if i.source == "ai" %}<span class="badge b-primary">AI</span>{% endif %}
+        <strong>{{ i.title }}</strong> <span class="small muted">{{ i.doc_name }}</span>
+      </div>
+      {% if i.detail %}<div class="rec">{{ i.detail }}</div>{% endif %}
+      {% if i.evidence %}<div class="small"><code>{{ i.evidence }}</code></div>{% endif %}
+      {% if i.suggestion %}<div class="rec">→ {{ i.suggestion }}</div>{% endif %}
+      {% for f in i.fixes[:4] %}<div class="fix-row"><span class="muted">자동 교정:</span> <del>{{ f.old }}</del> → <ins>{{ f.new }}</ins>{% if f.all %} <span class="hint">(모든 위치)</span>{% endif %}</div>{% endfor %}
+    </div>
+    {% else %}<p class="verdict-pass">발견된 이슈가 없습니다.</p>{% endfor %}
+  </div>
+  {% if can_fix and (fixable or qr.docs|selectattr("fixable")|list) %}
+  <div class="card">
+    <h2>자동 교정 <span class="hint">원본 레이아웃(표·머리글·바닥글)을 유지하고 선택한 항목만 고칩니다</span></h2>
+    <div class="checks">
+      <label class="check"><input type="checkbox" name="unify_font"> 글꼴 통일</label>
+      <input name="font" value="맑은 고딕" aria-label="통일할 글꼴">
+      {% if qr.protocol %}<label class="check"><input type="checkbox" name="save" value="on" checked> 수정 완료본을 과제 서류의 새 버전으로 저장</label>{% endif %}
+    </div>
+    <p class="small muted">결과는 두 가지로 만듭니다: <strong>변경 추적본</strong>(Word 변경 내용 추적 — 검토 후 수락) · <strong>수정 완료본</strong>(고친 곳 노란 형광펜 표시).
+      '내용 추가'가 필요한 항목(필수 기재사항 누락 등)은 자동으로 쓰지 않으니 직접 작성하십시오.</p>
+    <button class="btn-primary" type="submit">선택 항목 자동 교정</button>
+  </div>
+  {% endif %}
+</form>
+
+{% if qr.outputs %}
+<div class="card" id="outputs">
+  <h2>교정 파일</h2>
+  <div class="table-wrap"><table>
+    <tr><th>원본</th><th>적용</th><th>내려받기</th><th>과제 서류</th></tr>
+    {% for o in qr.outputs %}
+    <tr><td>{{ o.name }}</td>
+      <td>{% if o.error %}<span class="verdict-fail small">{{ o.error }}</span>{% else %}{{ o.applied }}곳{% if o.font %} · 글꼴 {{ o.font }}{% endif %}{% if o.missed %}<div class="small muted">찾지 못한 문구: {{ o.missed|join(", ") }}</div>{% endif %}{% endif %}</td>
+      <td>{% if o.clean %}<a class="btn btn-sm" href="/qc/{{ qr.id }}/file/{{ loop.index0 }}/clean">수정 완료본</a>{% endif %}
+          {% if o.tracked %}<a class="btn btn-sm" href="/qc/{{ qr.id }}/file/{{ loop.index0 }}/tracked">변경 추적본</a>{% endif %}</td>
+      <td>{% if o.version %}<a href="/documents/{{ o.document_id }}/preview">v{{ o.version }} 저장됨</a>{% elif o.save_error %}<span class="small verdict-fail">{{ o.save_error }}</span>{% else %}-{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if qr.protocol %}<form method="post" action="/qc/{{ qr.id }}/rerun">{{ csrf_input }}<button type="submit">교정본으로 다시 점검</button></form>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

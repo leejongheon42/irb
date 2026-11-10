@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}서류 점검{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>IRB 서류 품질 점검</h1>
+    <p class="muted mb0">여러 서류를 함께 올리면 서로 교차 대조하고, 버전·필수 기재사항·용어·오탈자·숫자를 점검해 점수로 판정합니다. 고칠 수 있는 항목은 서식을 유지한 채 자동 교정합니다.</p></div>
+</div>
+<div class="grid-2">
+  <div class="card">
+    <h2>서류 올려 점검하기</h2>
+    <form method="post" action="/qc" enctype="multipart/form-data">
+      {{ csrf_input }}
+      <div class="drop">
+        <label for="files">계획서·동의서·신청서 등 (DOCX·HWPX·HWP·PDF·TXT, 여러 개)</label>
+        <input id="files" name="files" type="file" multiple required accept=".docx,.hwpx,.hwp,.pdf,.txt,.doc">
+        <p class="small muted mb0">서류 종류는 파일명·내용으로 자동 판별합니다. 자동 교정은 DOCX·HWPX·TXT 원본에서 가능합니다.</p>
+      </div>
+      <div class="form-row">
+        <div><label for="protocol_id">과제 정보와도 대조 <span class="hint">선택</span></label>
+          <select id="protocol_id" name="protocol_id"><option value="">선택 안 함</option>{% for p in protocols %}<option value="{{ p.id }}">{{ p.title[:50] }}</option>{% endfor %}</select></div>
+        <div><label>&nbsp;</label><label class="check"><input type="checkbox" name="use_ai" {% if ai_on %}checked{% else %}disabled{% endif %}> AI 심층 분석{% if not ai_on %} <span class="hint">(꺼짐)</span>{% endif %}</label></div>
+      </div>
+      <p><button class="btn-primary" type="submit">점검 시작</button></p>
+    </form>
+    <form method="post" action="/qc" class="inline-form">{{ csrf_input }}<input type="hidden" name="sample" value="1">
+      <button class="btn-sm" type="submit">샘플 서류(계획서 v3.0 + 동의서)로 체험</button></form>
+  </div>
+  <div class="card">
+    <h2>점검 기준 <span class="hint">기준 버전 {{ criteria.version }}</span></h2>
+    <ul class="small">
+      {% for k, v in criteria.categories.items() %}<li>{{ v }}</li>{% endfor %}
+    </ul>
+    <p class="small">감점: Critical −{{ criteria.scoring.critical }} · Major −{{ criteria.scoring.major }} · Minor −{{ criteria.scoring.minor }}.
+      Critical이 1건이라도 있으면 점수와 무관하게 <strong>FAIL</strong>, {{ criteria.scoring.pass_score }}점 미만도 FAIL.</p>
+    <p class="small muted">3단계 스캔: ① 규칙 기반(필수항목·버전·용어·교차 대조) ② AI 심층 분석(문맥·규제, 선택) ③ 오탈자·숫자·날짜 검증</p>
+  </div>
+</div>
+<div class="card">
+  <h2>내 점검 기록</h2>
+  {% if runs %}
+  <div class="table-wrap"><table>
+    <tr><th>일시</th><th>대상</th><th>점수</th><th>판정</th><th>C/M/m</th></tr>
+    {% for r in runs %}
+    <tr><td class="nowrap">{{ r.created_at|fmt }}</td><td><a href="/qc/{{ r.id }}">{{ r.title or ("점검 #" ~ r.id) }}</a>{% if r.protocol %} <span class="small muted">· {{ r.protocol.title[:30] }}</span>{% endif %}</td>
+      <td>{{ r.score }}</td><td><strong class="{{ 'verdict-pass' if r.passed else 'verdict-fail' }}">{{ r.verdict }}</strong></td>
+      <td>{{ r.counts.critical }}/{{ r.counts.major }}/{{ r.counts.minor }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">아직 점검 기록이 없습니다.</p>{% endif %}
+</div>
+{% endblock %}

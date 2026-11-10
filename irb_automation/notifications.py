@@ -78,9 +78,6 @@ def send_email_async(to: str, message: str, link: str = "") -> threading.Thread:
     return t
 
 
-def staff(db: Session) -> list[User]:
-    return list(
-        db.scalars(
-            select(User).where(User.role.in_([Role.COORDINATOR, Role.CHAIR]), User.is_active.is_(True))
-        )
-    )
+def admins(db: Session) -> list[User]:
+    """기관 관리자(연구지원 담당). 개인정보 탐지 등 기관 차원의 주의 알림 대상."""
+    return list(db.scalars(select(User).where(User.role == Role.ADMIN, User.is_active.is_(True))))

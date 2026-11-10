@@ -111,7 +111,7 @@ def test_schema_validation_errors():
 
 
 def test_definition_versions_and_single_active(db, users):
-    admin = users["coordinator"]
+    admin = users["admin"]
     d1 = save_definition(db, admin, "protocol", "v1", SCHEMA, activate=True)
     d2 = save_definition(db, admin, "protocol", "v2", SCHEMA, activate=True)
     assert (d1.version, d2.version) == (1, 2)
@@ -127,7 +127,7 @@ def test_definition_versions_and_single_active(db, users):
 
 # ------------------------------------------------------------------ 커스텀 항목 → 사전검토·스냅샷 diff
 def test_custom_fields_findings_and_diff(db, users):
-    save_definition(db, users["coordinator"], "protocol", "기관 항목", SCHEMA, activate=True)
+    save_definition(db, users["admin"], "protocol", "기관 항목", SCHEMA, activate=True)
     p = _protocol(db, users)
     codes = _codes(wf.preview(db, p))
     req = [f for f in codes.values() if f["code"] == "CUSTOM_REQUIRED"]
@@ -160,7 +160,7 @@ def test_custom_fields_findings_and_diff(db, users):
 
 
 def test_custom_fields_keep_values_of_retired_fields(db, users):
-    save_definition(db, users["coordinator"], "protocol", "v1", SCHEMA, activate=True)
+    save_definition(db, users["admin"], "protocol", "v1", SCHEMA, activate=True)
     p = _protocol(db, users, custom_fields={"legacy": "keep", "center": "a"})
     wf.update_protocol(db, users["researcher"], p,
                        {"custom_fields": {"center": "b"}, "_custom_defined": ["grant_number", "fee_paid", "center", "rows"]})
@@ -225,7 +225,7 @@ def test_online_form_permissions(db, users):
     p = _protocol(db, users)
     pledge = get_online_spec(db, "researcher_pledge")
     assert pledge.signer == "pi"
-    ok, _ = of.can_fill(users["coordinator"], p, pledge)
+    ok, _ = of.can_fill(users["admin"], p, pledge)
     assert not ok  # 사무국은 열람만
     ok, _ = of.can_fill(users["researcher"], p, pledge)
     assert ok
@@ -236,7 +236,7 @@ def test_online_form_permissions(db, users):
 
 def test_required_online_form_and_required_custom_from_pack_b(db, users):
     pack = parse_pack(read_bundled("sample_hospital_b"))
-    import_pack(db, users["coordinator"], pack, activate=True, apply_profile=True)
+    import_pack(db, users["admin"], pack, activate=True, apply_profile=True)
     invalidate_cache()
     assert get_profile(db).protocol_no_format == "{YY}-{SEQ:3}-B"
     assert next_protocol_no(db, 2026) == "26-001-B"
@@ -258,13 +258,13 @@ def test_required_online_form_and_required_custom_from_pack_b(db, users):
 
 def test_pack_export_import_roundtrip(db, users):
     seed_forms(db)
-    save_definition(db, users["coordinator"], "protocol", "수정본", SCHEMA, activate=True)
+    save_definition(db, users["admin"], "protocol", "수정본", SCHEMA, activate=True)
     text = export_pack(db)
     pack = parse_pack(text)
     kinds = {f["kind"]: f for f in pack["forms"]}
     assert kinds["protocol"]["schema"] == SCHEMA and "online:coi" in kinds
     assert pack["profile"]["protocol_no_format"] == "IRB-{YYYY}-{SEQ:4}"
-    result = import_pack(db, users["coordinator"], pack, activate=True)
+    result = import_pack(db, users["admin"], pack, activate=True)
     assert {d.kind for d in result["forms"]} == set(kinds)
     active = db.scalars(select(FormDefinition).where(FormDefinition.kind == "protocol",
                                                      FormDefinition.active.is_(True))).all()
@@ -286,7 +286,7 @@ def test_http_admin_and_online_forms(app, db):
         assert c.get("/admin/forms").status_code == 403
         assert c.get("/admin/profile").status_code == 403
 
-        login(c, "coordinator")
+        login(c, "admin")
         page = c.get("/admin/forms")
         assert page.status_code == 200 and "이해상충 공개서" in page.text  # 기본 팩 자동 로드
         t = csrf(c)
@@ -297,7 +297,7 @@ def test_http_admin_and_online_forms(app, db):
         bad = c.post("/admin/profile", data={"csrf_token": t, "institution_name": "x", "irb_name": "y",
                                              "protocol_no_format": "NO-SEQ"})
         assert bad.status_code == 400 and "일련번호" in bad.text
-        assert "테스트병원 IRB" in c.get("/").text  # 화면 상단 기관명은 프로필 값
+        assert "테스트병원" in c.get("/").text  # 화면 상단 기관명은 프로필 값
 
         # YAML 편집: 검증 오류 → 400, 미리보기, 저장
         yaml_text = "sections:\n  - title: 행정\n    fields:\n      - {key: title, label: x}\n"
@@ -322,7 +322,7 @@ def test_http_admin_and_online_forms(app, db):
         assert "8. 기관 추가 항목" in form_page.text and 'name="custom__fee_paid"' in form_page.text
         r = c.post("/protocols/new", data={"csrf_token": t, "_custom": "1", "title": "기관 항목 과제",
                                            "custom__fee_paid": "yes"}, follow_redirects=False)
-        pid = int(r.headers["location"].rsplit("/", 1)[1])
+        pid = int(r.headers["location"].split("/")[2])
         db.expire_all()
         assert db.get(Protocol, pid).custom_fields == {"fee_paid": True}
         detail = c.get(f"/protocols/{pid}")
@@ -351,7 +351,7 @@ def test_http_admin_and_online_forms(app, db):
         assert pr.status_code == 200 and "개인정보 보호 및 보안 서약서" in pr.text
 
         # 사무국: 열람만 가능(제출 불가)
-        login(c, "coordinator")
+        login(c, "admin")
         t = csrf(c)
         view = c.get(f"/protocols/{pid}/online-forms/researcher_pledge")
         assert view.status_code == 200 and "전자서명 후 제출" not in view.text

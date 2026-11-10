@@ -12,27 +12,10 @@ from .security import hash_password
 DEMO_PASSWORD = "Demo!2026pw"
 
 DEMO_USERS = [
-    ("admin", "시스템관리자", "정보전략팀", Role.ADMIN),
-    ("coordinator", "김간사", "IRB 사무국", Role.COORDINATOR),
-    ("chair", "박위원장", "IRB", Role.CHAIR),
-    ("reviewer1", "이심의", "내과", Role.REVIEWER),
-    ("reviewer2", "최심의", "의료정보학과", Role.REVIEWER),
-    ("reviewer3", "강윤리", "외부위원(법학)", Role.REVIEWER),
-    ("reviewer4", "윤시민", "외부위원(지역사회)", Role.REVIEWER),
+    ("admin", "연구지원관리자", "연구지원팀", Role.ADMIN),
     ("researcher", "정연구", "내분비내과", Role.RESEARCHER),
-    ("researcher2", "한공동", "영상의학과", Role.RESEARCHER),
-    ("steward", "오데이터", "임상데이터센터(CDW)", Role.DATA_STEWARD),
+    ("researcher2", "한공동", "소아청소년과", Role.RESEARCHER),
 ]
-
-# 위원 속성: (위원 여부, 외부위원, 사회적·윤리적 위원, 성별)
-DEMO_COMMITTEE = {
-    "chair": (True, False, False, "M"),
-    "reviewer1": (True, False, False, "F"),
-    "reviewer2": (True, False, False, "M"),
-    "reviewer3": (True, True, True, "F"),
-    "reviewer4": (True, True, True, "M"),
-    "coordinator": (False, False, False, "F"),
-}
 
 
 def _doc(p: Protocol, doc_type: str, uid: int) -> Document:
@@ -52,10 +35,6 @@ def seed_demo(db: Session, password: str = DEMO_PASSWORD) -> dict[str, User]:
                 username=username, password_hash=pw, full_name=name, department=dept, role=role,
                 training_expires_on=date.today() + timedelta(days=400),
             )
-            if username in DEMO_COMMITTEE:
-                cm, ext, lay, gender = DEMO_COMMITTEE[username]
-                u.is_committee_member, u.is_external_member, u.is_lay_member, u.gender = cm, ext, lay, gender
-                u.term_end = date.today() + timedelta(days=700)
             db.add(u)
         users[username] = u
     db.flush()
@@ -117,36 +96,26 @@ def seed_demo(db: Session, password: str = DEMO_PASSWORD) -> dict[str, User]:
 
 
 def seed_rich_demo(db: Session) -> None:
-    """화면 시연용 진행 데이터: 면제 확인 과제, 정규심의 대기 과제와 회의, 계약."""
-    from datetime import datetime
-
-    from . import esign
-    from .governance import records
-    from .models import DecisionType, Meeting, Recommendation
-    from .workflow import meetings as mt
+    """화면 시연용 진행 데이터: IRB 면제 확인을 받은 과제, 보완 요청을 받은 과제."""
     from .workflow import service as wf
 
-    if db.scalars(select(Meeting)).first():
+    if db.scalars(select(Protocol).where(Protocol.title.contains("PEWS"))).first():
         return
     u = {x.username: x for x in db.scalars(select(User))}
     p1 = db.scalars(select(Protocol).where(Protocol.title.contains("SGLT2"))).first()
     if p1 and p1.status.value == "draft":
-        sub = wf.submit(db, u["researcher"], p1, "seed")
-        esign.record_signature(db, u["researcher"], "연구책임자 제출 서약", "submission", sub.id, sub.snapshot, "seed")
-        wf.decide(db, u["coordinator"], p1, DecisionType.EXEMPT_CONFIRM)
-        records.create_agreement(db, u["steward"], {
-            "protocol_id": p1.id, "agreement_type": "collaboration", "counterparty": "○○대학교 의과대학",
-            "title": "SGLT2 코호트 공동연구 협약", "permitted_use": "가명정보의 공동 분석(원내 분석서버 한정)",
-            "terms": ["no_redistribution", "purpose_limited", "no_reidentification", "destruction"],
-            "start_date": date.today() - timedelta(days=30), "end_date": date.today() + timedelta(days=45),
-        })
+        wf.record_submission(db, u["researcher"], p1, external_ref="E-2026-0412", force=True, ip="seed")
+        wf.record_result(db, u["researcher"], p1, "exempt", irb_no="IRB-2026-0412", note="심의면제 확인", ip="seed")
 
     p3 = Protocol(
-        title="소아 중환자실 패혈증 환자의 조기 경고 점수 검증: 식별정보 연계 후향적 연구",
-        pi_id=u["researcher2"].id, department="소아청소년과", study_type="retrospective_chart_review",
-        objectives="소아 중환자실 입실 환자에서 조기 경고 점수(PEWS)의 패혈증 예측 성능을 검증한다." * 2,
-        methods="EMR에서 활력징후·검사결과를 추출하고, 사망·전원 정보 연계를 위해 등록번호를 사용한다. ROC 분석을 시행한다." * 2,
+        title="소아 중환자실 패혈증 환자의 조기 경고 점수(PEWS) 검증: 식별정보 연계 후향적 연구",
+        pi_id=u["researcher2"].id, co_investigators=[u["researcher"].id], department="소아청소년과",
+        study_type="retrospective_chart_review",
+        objectives="소아 중환자실 입실 환자에서 조기 경고 점수(PEWS)의 패혈증 예측 성능을 검증한다.",
+        background="소아 패혈증은 조기 인지가 예후를 좌우하나 PEWS의 국내 PICU 검증 자료는 부족하다.",
+        methods="EMR에서 활력징후·검사결과를 추출하고, 사망·전원 정보 연계를 위해 등록번호를 사용한다. ROC 분석을 시행한다.",
         target_population="2018-2024년 소아 중환자실 입실 환자", inclusion_criteria="만 18세 이하, PICU 입실 24시간 이상인 환자로 한정함",
+        exclusion_criteria="입실 24시간 이내 전원 환자",
         expected_subjects=1800, sample_size_justification="연구 기간 내 적격 환자 전수(약 1,800명)",
         study_start=date.today() + timedelta(days=30), study_end=date.today() + timedelta(days=500),
         data_sources=["emr", "lis"], data_period_start=date(2018, 1, 1), data_period_end=date(2024, 12, 31),
@@ -163,11 +132,9 @@ def seed_rich_demo(db: Session) -> None:
         db.add(_doc(p3, d, p3.pi_id))
     db.flush()
     db.refresh(p3)
-    sub3 = wf.submit(db, u["researcher2"], p3, "seed")
-    esign.record_signature(db, u["researcher2"], "연구책임자 제출 서약", "submission", sub3.id, sub3.snapshot, "seed")
-    wf.assign_reviewers(db, u["coordinator"], p3, [u["reviewer1"].id, u["reviewer3"].id], u["reviewer1"].id)
-    for a in sub3.assignments:
-        wf.submit_review(db, a.reviewer, a, Recommendation.MODIFY, "소아 대상 식별정보 이용에 대한 추가 보호대책(연계 후 즉시 가명화 절차) 명시 필요")
-    m = mt.create_meeting(db, u["coordinator"], datetime.combine(date.today() + timedelta(days=7), datetime.min.time()).replace(hour=15),
-                          "본관 3층 대회의실")
-    mt.build_agenda(db, u["coordinator"], m)
+    wf.record_submission(db, u["researcher2"], p3, external_ref="E-2026-0533", force=True, ip="seed")
+    wf.record_revision_request(db, u["researcher2"], p3, (
+        "1. 소아 대상 식별정보(등록번호) 이용에 대한 추가 보호대책(연계 후 즉시 가명화 절차)을 명시하십시오.\n"
+        "2. 연구대상자 동의서에 법정대리인 동의 및 만 7세 이상 아동의 assent 절차를 추가하십시오.\n"
+        "3. 연구계획서와 동의서의 연구 기간 표기가 다릅니다. 일치시키십시오."
+    ), ip="seed")

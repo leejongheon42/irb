@@ -21,7 +21,7 @@
   <li>민감속성은 l-다양성(l ≥ {{ rs.deid_policy.l_threshold }})을 점검</li>
   <li>자유기술은 정규표현식·사전 기반 스크러빙 후 표본 검수{% if "free_text" not in p.unstructured_data %} (해당 없음){% endif %}</li>
   <li>{% if "medical_images" in p.unstructured_data %}의료영상은 DICOM 태그 비식별화, 번인 텍스트 제거, 필요 시 얼굴 재구성 방지 처리{% else %}의료영상 해당 없음{% endif %}</li>
-  <li>처리 결과는 데이터심의위원회(또는 IRB)의 적정성 검토를 거쳐 제공</li>
+  <li>처리 결과는 가명처리 적정성 평가(k-익명성 등)를 거쳐 분석에 사용하며, 기관 데이터심의위원회 검토가 필요한 경우 그 절차를 따른다</li>
 </ul>
 <h2>4. 안전조치 및 사후관리</h2>
 <ul>

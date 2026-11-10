@@ -1,0 +1,52 @@
+{% extends "generated/_base.html" %}
+{% set child = "children" in (p.vulnerable_populations or []) %}
+{% block doc %}
+<p>버전: v{{ p.version }}.0 · 작성일 {{ today.strftime("%Y. %m. %d.") }}</p>
+<table>
+  <tr><th>연구 제목</th><td>{{ p.title }}</td></tr>
+  <tr><th>연구책임자</th><td>{{ pi.full_name }} ({{ settings.institution_name }} {{ pi.department }})</td></tr>
+</table>
+<p>귀하{% if child %}(또는 귀하의 자녀){% endif %}는 위 연구에 참여하도록 요청받았습니다. 이 설명문은 연구의 목적과 내용을 알려 드리기 위한 것입니다. 충분히 읽고 궁금한 점은 언제든지 연구진에게 물어보십시오.</p>
+<h2>1. 연구 목적</h2>
+<p class="pre">{{ p.objectives or "(작성)" }}</p>
+<h2>2. 연구 방법 및 참여 절차</h2>
+<p class="pre">{{ p.methods or "(작성)" }}</p>
+<p>이 연구에는 총 {{ "{:,}".format(p.expected_subjects) }}명의 연구대상자가 참여할 예정입니다.</p>
+<h2>3. 참여 기간</h2>
+<p>연구 기간은 {{ p.study_start.strftime("%Y.%m.%d") if p.study_start else "(작성)" }} ~ {{ p.study_end.strftime("%Y.%m.%d") if p.study_end else "(작성)" }}입니다.</p>
+<h2>4. 예상되는 위험과 불편</h2>
+<p>{% if p.existing_data_only and not p.direct_contact %}이 연구는 진료 기록 등 이미 있는 자료를 이용하므로 추가 검사나 신체적 위험은 없습니다.{% else %}연구 참여 과정에서 시간 소요 등의 불편이 있을 수 있습니다.{% endif %}
+개인정보가 노출될 위험이 있으나 아래 6항의 보호 조치로 최소화합니다.</p>
+<h2>5. 예상되는 이익</h2>
+<p>귀하에게 직접적인 이익은 없을 수 있으나, 연구 결과는 같은 질환을 가진 환자의 진료에 도움이 될 수 있습니다.</p>
+<h2>6. 개인정보 보호와 비밀 보장</h2>
+<p>수집한 정보는 {{ rs.label("deid_levels", p.deid_level) }} 상태로 관리하며, 연구 목적 외에는 사용하지 않습니다. 귀하를 알아볼 수 있는 정보는 비밀이 보장되고, 연구 결과를 발표할 때에도 귀하의 신원은 공개되지 않습니다.
+{% if p.external_transfer %}수집한 정보는 {{ p.external_recipient }}에 제공될 수 있습니다.{% endif %}</p>
+<p>연구의 모니터링·점검을 위해 기관생명윤리위원회 등 관계 기관이 법령에 따라 연구 기록을 열람할 수 있습니다.</p>
+<h2>7. 자발적 참여와 동의 철회</h2>
+<p>연구 참여는 전적으로 자발적인 결정입니다. 참여하지 않거나 참여 중 언제든지 동의를 철회하고 그만둘 수 있으며, 그렇게 하더라도 진료 등에서 어떠한 불이익도 받지 않습니다. 동의를 철회하면 그 이후에는 귀하의 정보를 수집하지 않습니다.</p>
+<h2>8. 비용과 보상</h2>
+<p>연구 참여에 따른 별도 비용 부담은 없습니다. 연구와 관련하여 손상이 발생하면 관련 규정에 따라 보상합니다.</p>
+<h2>9. 새로운 정보의 제공</h2>
+<p>연구 진행 중 귀하의 참여 결정에 영향을 줄 수 있는 새로운 정보가 있으면 즉시 알려 드립니다.</p>
+<h2>10. 자료의 보관과 폐기</h2>
+<p>연구 자료는 연구 종료 후 {{ p.retention_years }}년간 보관한 뒤 복구할 수 없는 방법으로 폐기합니다.</p>
+<h2>11. 연락처</h2>
+<table>
+  <tr><th>연구책임자</th><td>{{ pi.full_name }} ({{ pi.department }}){% if pi.email %} · {{ pi.email }}{% endif %}</td></tr>
+  <tr><th>기관생명윤리위원회(IRB)</th><td>{{ settings.irb_name }}{% if settings.irb_contact %} · {{ settings.irb_contact }}{% endif %} (연구대상자의 권리에 관한 문의)</td></tr>
+</table>
+<h2>동의서</h2>
+<p>본인은 위 설명문을 읽고 충분한 설명을 들었으며, 자발적으로 연구에 참여하는 것에 동의합니다. 본인은 동의서 사본을 받았습니다.</p>
+<table>
+  <tr><th>연구대상자 성명</th><td></td><th>서명</th><td></td><th>날짜</th><td>&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;일</td></tr>
+  {% if child %}<tr><th>법정대리인 성명(관계)</th><td></td><th>서명</th><td></td><th>날짜</th><td>&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;일</td></tr>{% endif %}
+  <tr><th>설명한 연구자 성명</th><td></td><th>서명</th><td></td><th>날짜</th><td>&nbsp;&nbsp;&nbsp;&nbsp;년&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;일</td></tr>
+</table>
+{% if child %}
+<h2>아동 동의(assent)</h2>
+<p>만 7세 이상 아동에게는 나이에 맞는 쉬운 말로 된 아동용 설명문으로 설명하고 아동 동의를 받습니다.</p>
+<p>(아동용) 이 연구는 아픈 친구들을 더 잘 돌보는 방법을 찾기 위한 거예요. 하기 싫으면 언제든지 안 해도 되고, 그래도 아무 일도 생기지 않아요.</p>
+<table><tr><th>아동 이름</th><td></td><th>서명(또는 표시)</th><td></td><th>날짜</th><td></td></tr></table>
+{% endif %}
+{% endblock %}

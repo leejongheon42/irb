@@ -43,7 +43,7 @@ from ..engine.facts import PROTOCOL_FIELDS, ProtocolFacts
 from ..engine.prereview import run_prereview
 from ..engine.ruleset import get_ruleset
 from ..models import Document, Protocol, User
-from ..notifications import notify, staff
+from ..notifications import admins, notify
 from ..timeutil import now
 from ..workflow import service as wf
 from .models import ExtractedTextCache, PipelineRun, PipelineStep
@@ -357,9 +357,9 @@ def step_pii(ctx: _Context) -> dict[str, Any]:
     if severe and ctx.run.kind != "protocol":
         link = f"/pipeline/{ctx.run.id}"
         where = f"과제 {ctx.protocol.protocol_no or ctx.protocol.id}" if ctx.protocol else "가져오기 문서"
-        notify(ctx.db, staff(ctx.db), f"[개인정보 주의] {where}의 '{ctx.run.input_name}'에서 {detail}이(가) 탐지되었습니다.",
+        notify(ctx.db, {*([ctx.user.id] if ctx.user else []), *(u.id for u in admins(ctx.db))}, f"[개인정보 주의] {where}의 '{ctx.run.input_name}'에서 {detail}이(가) 탐지되었습니다.",
                link=link, dedup_key=f"pipeline-pii-{ctx.run.input_sha256 or ctx.run.id}")
-    return {"_message": f"탐지: {detail}" + (" - 사무국에 알렸습니다." if severe and ctx.run.kind != "protocol" else ""),
+    return {"_message": f"탐지: {detail}" + (" - 본인과 관리자에게 알렸습니다." if severe and ctx.run.kind != "protocol" else ""),
             "counts": counts, "severe": severe}
 
 
@@ -653,7 +653,7 @@ def _summary(ctx: _Context) -> dict[str, Any]:
 
 # ====================================================================== 조회·적용
 def can_view_run(db: Session, user: User, run: PipelineRun) -> bool:
-    if user.is_irb_staff:
+    if user.is_admin:
         return True
     if run.protocol_id:
         protocol = db.get(Protocol, run.protocol_id)

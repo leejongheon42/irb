@@ -1,0 +1,17 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+{% include "generated/_overview.html" %}
+<p>{{ settings.irb_name }}의 보완 요청에 대하여 아래와 같이 답변하고 해당 서류를 수정하여 제출합니다.</p>
+<table>
+  <tr><th style="width:6%">번호</th><th style="width:34%">보완 요청 사항</th><th>답변 및 수정 내용</th></tr>
+  {% for i in revision_items %}
+  <tr><td>{{ i.seq }}</td><td class="pre">{{ i.request_text }}</td><td class="pre">{{ i.response_text or "(답변 작성)" }}</td></tr>
+  {% else %}<tr><td colspan="3">보완 요청 항목이 없습니다.</td></tr>{% endfor %}
+</table>
+{% if changes %}
+<h2>변경 대비</h2>
+<table><tr><th>항목</th><th>변경 전</th><th>변경 후</th></tr>
+{% for c in changes %}<tr><td>{{ c.label }}</td><td class="pre">{{ c.before }}</td><td class="pre">{{ c.after }}</td></tr>{% endfor %}</table>
+{% endif %}
+<div class="sign">{{ today.strftime("%Y년 %m월 %d일") }}<div class="who">연구책임자 {{ pi.full_name }} (서명)</div></div>
+{% endblock %}

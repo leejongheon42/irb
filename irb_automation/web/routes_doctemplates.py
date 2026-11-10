@@ -23,7 +23,7 @@ from ..workflow import service as wf
 from .deps import client_ip, current_user, flash, render, require_roles, verify_csrf
 
 router = APIRouter()
-template_admin = require_roles(Role.COORDINATOR)  # 시스템관리자는 require_roles가 항상 허용
+template_admin = require_roles(Role.ADMIN)  # 시스템관리자는 require_roles가 항상 허용
 
 KIND_LABELS = {"field": "값", "compare": "비교(체크)", "list": "목록(반복)"}
 

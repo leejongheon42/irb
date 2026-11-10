@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..config import get_settings
 from ..engine.ruleset import get_ruleset
-from ..models import Decision, Protocol, Submission, User
+from ..models import SUBMISSION_RESULTS, Protocol, ProtocolStatus, RevisionItem, Submission, User
 from ..timeutil import now
 from .models import UPLOAD_KINDS, KnowledgeChunk, KnowledgeSource
 
@@ -311,23 +311,26 @@ def protocol_text(p: Protocol) -> tuple[str, str]:
     return "과제 요약", "\n".join(lines)
 
 
-def decision_text(d: Decision) -> tuple[str, str, str]:
-    p = d.submission.protocol
-    title = f"[{d.decision.label}] {p.protocol_no} {d.submission.snapshot.get('title') or p.title}"
-    lines = [
-        f"심의 결정: {d.decision.label} ({d.review_type.label}, {d.submission.kind.label})",
-        f"결정일: {d.decided_at:%Y-%m-%d}" + (f" · 회의일: {d.meeting_date}" if d.meeting_date else ""),
-    ]
-    if d.conditions:
-        lines.append(f"시정 조건·보완 사유: {d.conditions}")
-    if d.comments:
-        lines.append(f"위원회 의견: {d.comments}")
-    pr = d.submission.latest_prereview
+def decision_text(sub: Submission, items: list[RevisionItem]) -> tuple[str, str, str]:
+    """외부 IRB 결과(승인·보완 요청 등)를 선례 문서로 만든다. 보완 요청 항목과 답변이 핵심 학습 자료."""
+    p = sub.protocol
+    label = SUBMISSION_RESULTS.get(sub.result or "", sub.result or "")
+    title = f"[{label}] {p.protocol_no or ''} {sub.snapshot.get('title') or p.title}".replace("  ", " ")
+    lines = [f"IRB 결과: {label} ({sub.kind.label}" + (f", 예상 {sub.review_type.label}" if sub.review_type else "") + ")"]
+    if sub.result_date:
+        lines.append(f"결과일: {sub.result_date}")
+    if sub.result_note and sub.result != "revision":
+        lines.append(f"IRB 의견·조건: {sub.result_note}")
+    for i in items:
+        lines.append(f"보완 요청 {i.seq}: {i.request_text}")
+        if i.response_text:
+            lines.append(f"  답변 {i.seq}: {i.response_text}")
+    pr = sub.latest_prereview
     if pr:
         majors = [f["message"] for f in pr.result.get("findings", []) if f["severity"] in ("critical", "major")]
         if majors:
-            lines.append("주요 검토 의견: " + " / ".join(majors[:6]))
-    return title, "심의 결정", "\n".join(lines)
+            lines.append("자동 점검 주요 의견: " + " / ".join(majors[:6]))
+    return title, "IRB 결과·보완 요청", "\n".join(lines)
 
 
 _sync_memo: dict[str, Any] = {}
@@ -339,13 +342,15 @@ def _engine_key(db: Session) -> str:
 
 def _precedent_marker(db: Session) -> tuple:
     p = db.execute(select(func.count(Protocol.id), func.max(Protocol.updated_at))
-                   .where(Protocol.protocol_no.is_not(None))).one()
-    d = db.execute(select(func.count(Decision.id), func.max(Decision.id))).one()
-    return (p[0], str(p[1]), d[0], d[1])
+                   .where(Protocol.status != ProtocolStatus.DRAFT)).one()
+    d = db.execute(select(func.count(Submission.id), func.max(Submission.result_date))
+                   .where(Submission.result.is_not(None))).one()
+    r = db.execute(select(func.count(RevisionItem.id), func.max(RevisionItem.responded_at))).one()
+    return (p[0], str(p[1]), d[0], str(d[1]), r[0], str(r[1]))
 
 
 def reindex_protocols(db: Session, force: bool = False) -> dict[str, int]:
-    """제출된 과제와 심의 결정을 선례 지식으로 색인(변경된 것만 갱신)."""
+    """IRB에 제출한 과제와 IRB 결과(보완 요청 포함)를 선례 지식으로 색인(변경된 것만 갱신)."""
     key = _engine_key(db)
     marker = _precedent_marker(db)
     if not force and _sync_memo.get(key) == marker:
@@ -354,7 +359,7 @@ def reindex_protocols(db: Session, force: bool = False) -> dict[str, int]:
     existing = {s.key: s for s in db.scalars(
         select(KnowledgeSource).where(KnowledgeSource.kind.in_(["protocol", "decision"])))}
     seen: set[str] = set()
-    for p in db.scalars(select(Protocol).where(Protocol.protocol_no.is_not(None))):
+    for p in db.scalars(select(Protocol).where(Protocol.status != ProtocolStatus.DRAFT)):
         heading, text = protocol_text(p)
         sig = hashlib.sha1(json.dumps([text, p.status.value], ensure_ascii=False).encode()).hexdigest()
         skey = f"protocol:{p.id}"
@@ -363,29 +368,33 @@ def reindex_protocols(db: Session, force: bool = False) -> dict[str, int]:
         if src is None:
             src = KnowledgeSource(key=skey, kind="protocol", title="", meta={})
             db.add(src)
-        if force or src.meta.get("signature") != sig or src.title != f"{p.protocol_no} {p.title}":
-            src.title = f"{p.protocol_no} {p.title}"[:300]
+        ptitle = f"{p.protocol_no or ''} {p.title}".strip()
+        if force or src.meta.get("signature") != sig or src.title != ptitle:
+            src.title = ptitle[:300]
             src.ref = p.protocol_no or ""
             src.url = f"/protocols/{p.id}"
             src.meta = {"protocol_id": p.id, "signature": sig}
             db.flush()
             _set_chunks(db, src, [(heading, text)])
             stats["protocols"] += 1
-    decisions = db.scalars(select(Decision).join(Submission)).all()
-    for d in decisions:
-        skey = f"decision:{d.id}"
+    for sub in db.scalars(select(Submission).where(Submission.result.is_not(None))):
+        items = list(db.scalars(select(RevisionItem).where(RevisionItem.submission_id == sub.id)
+                                .order_by(RevisionItem.seq)))
+        skey = f"decision:{sub.id}"
         seen.add(skey)
-        if skey in existing and not force:
+        title, heading, text = decision_text(sub, items)
+        sig = hashlib.sha1(text.encode()).hexdigest()
+        src = existing.get(skey)
+        if src is not None and not force and src.meta.get("signature") == sig:
             continue
-        title, heading, text = decision_text(d)
-        src = existing.get(skey) or KnowledgeSource(key=skey, kind="decision", title="", meta={})
-        if src.id is None:
+        if src is None:
+            src = KnowledgeSource(key=skey, kind="decision", title="", meta={})
             db.add(src)
-        p = d.submission.protocol
+        p = sub.protocol
         src.title = title[:300]
-        src.ref = d.letter_no
-        src.url = f"/protocols/{p.id}#review"
-        src.meta = {"protocol_id": p.id, "decision_id": d.id, "decision": d.decision.value}
+        src.ref = sub.external_ref or (p.protocol_no or "")
+        src.url = f"/protocols/{p.id}#history"
+        src.meta = {"protocol_id": p.id, "submission_id": sub.id, "decision": sub.result, "signature": sig}
         db.flush()
         _set_chunks(db, src, [(heading, text)])
         stats["decisions"] += 1

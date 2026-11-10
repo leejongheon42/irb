@@ -1,4 +1,4 @@
-"""웹 문서 제출 서비스: 제출 권한, 검증·저장·버전 등록, 문서별 검토, 의견, 검토 대기열, 제출 현황판."""
+"""연구팀 서류함: 업로드 검증·저장·버전 등록, 연구팀 의견, 서류 현황판(필요 서류 체크리스트)."""
 from __future__ import annotations
 
 import logging
@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..config import get_settings
 from ..engine.ruleset import get_ruleset
-from ..models import Document, Protocol, ProtocolStatus, Role, User
-from ..notifications import notify, staff
-from ..timeutil import now
+from ..models import Document, Protocol, ProtocolStatus, User
+from ..notifications import notify
 from ..workflow import service as wf
 from .hooks import after_document_saved
 from .models import DocumentComment
@@ -49,37 +48,21 @@ def doc_label(doc_type: str) -> str:
 
 
 # ------------------------------------------------------------------ 권한
-def can_review(db: Session, user: User, protocol: Protocol) -> bool:
-    if user.is_irb_staff:
-        return True
-    return user.role in (Role.REVIEWER, Role.CHAIR) and wf.is_assigned_reviewer(db, user, protocol)
-
-
 def can_participate(db: Session, user: User, protocol: Protocol) -> bool:
-    """문서 의견·합본 등 검토 참여 권한: 연구팀, 사무국, 배정 위원."""
-    return wf.is_member(user, protocol) or can_review(db, user, protocol)
+    """서류 열람·의견 권한: 연구팀과 관리자."""
+    return wf.is_member(user, protocol) or user.is_admin
 
 
 def can_upload(db: Session, user: User, protocol: Protocol, doc_type: str) -> tuple[bool, str]:
-    """심의 중 무단 교체를 막기 위한 제출 가능 여부."""
-    if user.is_irb_staff:
-        return True, ""
+    """IRB에 이미 승인된 서류가 몰래 바뀌지 않도록, 승인 이후에는 변경 준비 상태에서만 교체."""
     if not wf.is_member(user, protocol):
-        return False, "연구책임자·공동연구자만 서류를 제출할 수 있습니다."
-    label = doc_label(doc_type)
-    current = latest_by_type(list(protocol.documents)).get(doc_type)
-    if current is not None and current.status == "revision_requested":
+        return False, "연구책임자·공동연구자만 서류를 올릴 수 있습니다."
+    if protocol.is_editable or protocol.status == S.SUBMITTED:
         return True, ""
-    if protocol.is_editable:
-        return True, ""
-    if protocol.status in (S.SUBMITTED, S.UNDER_REVIEW):
-        if current is None:
-            return True, ""
-        return False, f"심의 중에는 보완 요청된 서류만 교체할 수 있습니다('{label}')."
     if doc_type in policy()["report_doc_types"]:
         return True, ""
-    return False, (f"'{protocol.status.label}' 상태에서는 '{label}'을(를) 새로 제출할 수 없습니다. "
-                   "변경 신청 후 제출하십시오.")
+    return False, (f"'{protocol.status.label}' 상태에서는 '{doc_label(doc_type)}'을(를) 교체할 수 없습니다. "
+                   "변경 준비를 시작한 뒤 올리십시오.")
 
 
 # ------------------------------------------------------------------ 저장
@@ -114,8 +97,6 @@ def store_document(
                       "errors": result.errors}, ip)
         raise SubmissionError(" ".join(result.errors), result)
 
-    previous = latest_by_type(list(protocol.documents)).get(doc_type)
-    previous_status = previous.status if previous else None
     folder = settings.upload_dir / str(protocol.id)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{uuid.uuid4().hex}_{result.safe_name}"
@@ -129,15 +110,6 @@ def store_document(
     db.add(doc)
     db.flush()
     register_new_version(db, doc)
-    if previous is not None and previous_status == "revision_requested":
-        db.add(DocumentComment(document_id=doc.id, protocol_id=protocol.id, author_id=user.id, kind="new_version",
-                               body=f"보완 요청(v{previous.version})에 대한 새 버전을 제출했습니다."))
-        targets = {u.id for u in staff(db)}
-        if previous.reviewed_by:
-            targets.add(previous.reviewed_by)
-        targets.discard(user.id)
-        notify(db, targets, f"{protocol.protocol_no or protocol.title} 보완 서류 제출: {doc_label(doc_type)} v{doc.version}",
-               f"/documents/{doc.id}/preview")
     audit.record(db, user, "document_upload", "protocol", protocol.id,
                  {"doc_id": doc.id, "doc_type": doc_type, "sha256": doc.sha256, "version": doc.version,
                   "source": source, "warnings": len(result.warnings)}, ip)
@@ -146,37 +118,7 @@ def store_document(
     return doc, result
 
 
-# ------------------------------------------------------------------ 문서별 검토
-def review_document(db: Session, user: User, doc: Document, action: str, note: str = "", ip: str = "") -> None:
-    protocol = doc.protocol
-    if not can_review(db, user, protocol):
-        raise wf.PermissionDenied("서류 검토 권한이 없습니다(IRB 사무국·배정 심의위원).")
-    latest = latest_by_type(list(protocol.documents)).get(doc.doc_type)
-    if doc.status == "superseded" or latest is None or latest.id != doc.id:
-        raise wf.WorkflowError("이전 버전은 검토할 수 없습니다. 최신 버전을 검토하십시오.")
-    note = note.strip()
-    if action == "accept":
-        doc.status = "accepted"
-    elif action == "request_revision":
-        if not note:
-            raise wf.WorkflowError("보완 요청 사유를 입력하십시오.")
-        doc.status = "revision_requested"
-    else:
-        raise wf.WorkflowError("알 수 없는 처리입니다.")
-    doc.review_note = note
-    doc.reviewed_by = user.id
-    doc.reviewed_at = now()
-    db.add(DocumentComment(document_id=doc.id, protocol_id=protocol.id, author_id=user.id,
-                           kind=action, body=note or "확인했습니다."))
-    audit.record(db, user, "document_review", "protocol", protocol.id,
-                 {"doc_id": doc.id, "doc_type": doc.doc_type, "version": doc.version, "action": action,
-                  "note": note[:200]}, ip)
-    if action == "request_revision":
-        notify(db, protocol.member_ids(),
-               f"{protocol.protocol_no or protocol.title} 서류 보완 요청: {doc_label(doc.doc_type)} - {note[:60]}",
-               f"/documents/{doc.id}/preview")
-
-
+# ------------------------------------------------------------------ 연구팀 의견
 def add_comment(db: Session, user: User, doc: Document, body: str, ip: str = "") -> DocumentComment:
     protocol = doc.protocol
     if not can_participate(db, user, protocol):
@@ -189,15 +131,7 @@ def add_comment(db: Session, user: User, doc: Document, body: str, ip: str = "")
     db.add(c)
     db.flush()
     audit.record(db, user, "document_comment", "protocol", protocol.id, {"doc_id": doc.id, "comment_id": c.id}, ip)
-    if wf.is_member(user, protocol):
-        targets = {u.id for u in staff(db)}
-        sub = protocol.current_submission
-        if sub:
-            targets |= {a.reviewer_id for a in sub.assignments}
-        if doc.reviewed_by:
-            targets.add(doc.reviewed_by)
-    else:
-        targets = set(protocol.member_ids())
+    targets = set(protocol.member_ids())
     targets.discard(user.id)
     notify(db, targets, f"{protocol.protocol_no or protocol.title} 서류 의견({doc_label(doc.doc_type)}): {body[:50]}",
            f"/documents/{doc.id}/preview")
@@ -214,27 +148,7 @@ def comments_for(db: Session, protocol: Protocol, doc_type: str) -> list[Documen
     ))
 
 
-# ------------------------------------------------------------------ 대기열·현황판
-def review_queue(db: Session, user: User) -> dict[str, list[Document]]:
-    docs = db.scalars(
-        select(Document).join(Protocol)
-        .where(Document.status.in_(["submitted", "revision_requested"]), Protocol.status != S.DRAFT)
-        .order_by(Document.uploaded_at)
-    ).all()
-    latest_cache: dict[int, dict[str, Document]] = {}
-    pending, waiting = [], []
-    for d in docs:
-        p = d.protocol
-        if p.id not in latest_cache:
-            latest_cache[p.id] = latest_by_type(list(p.documents))
-        if latest_cache[p.id].get(d.doc_type) is not d:
-            continue
-        if not user.is_irb_staff and not wf.is_assigned_reviewer(db, user, p):
-            continue
-        (pending if d.status == "submitted" else waiting).append(d)
-    return {"pending": pending, "waiting": waiting}
-
-
+# ------------------------------------------------------------------ 현황판
 def build_board(db: Session, protocol: Protocol, user: User) -> dict[str, Any]:
     """과제 서류 탭의 체크리스트형 제출 현황판."""
     docs = list(protocol.documents)
@@ -269,14 +183,20 @@ def build_board(db: Session, protocol: Protocol, user: User) -> dict[str, Any]:
     for doc_type in latest:
         if doc_type not in seen:
             rows.append(row(doc_type, doc_label(doc_type), False))
-    counts = Counter(r["current"].status for r in rows if r["current"] is not None)
+    counts: Counter = Counter()
     counts["missing"] = sum(1 for r in rows if r["required"] and r["current"] is None)
+    qc: Counter = Counter()
+    for r in rows:
+        if r["current"] is None:
+            continue
+        q = (r["current"].validation or {}).get("qc")
+        qc["unchecked" if not q else ("issues" if q.get("critical") or q.get("major") else "clean")] += 1
     upload_types = [(k, label) for k, label in get_ruleset().options("document_types")
                     if can_upload(db, user, protocol, k)[0]]
     return {
         "rows": rows,
         "counts": counts,
-        "can_review": can_review(db, user, protocol),
+        "qc": qc,
         "can_participate": can_participate(db, user, protocol),
         "upload_types": upload_types,
         "max_files": int(policy()["max_files_per_upload"]),

@@ -11,6 +11,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -33,6 +34,9 @@ GENERATABLE: dict[str, str] = {
     "security_pledge": "generated/security_pledge.html",
     "amendment_table": "generated/amendment_table.html",
     "site_list": "generated/site_list.html",
+    "protocol": "generated/protocol.html",
+    "consent_form": "generated/consent_form.html",
+    "revision_response": "generated/revision_response.html",
 }
 
 # 가명처리 계획서의 항목별 처리 기준(보건의료데이터 활용 가이드라인의 처리 방식 요약)
@@ -75,7 +79,7 @@ def _context(db: Session, protocol: Protocol) -> dict[str, Any]:
     co = [u for u in (db.get(User, int(uid)) for uid in protocol.co_investigators or []) if u]
     items = [x.strip() for x in protocol.data_items.splitlines() if x.strip()]
     result = wf.preview(db, protocol, kind="initial")
-    last_ok = wf._last_approved_snapshot(protocol, exclude=None)
+    last_ok = wf._last_approved_submission(protocol, exclude=None)
     changes = diff_snapshots(last_ok.snapshot, snapshot_protocol(protocol), rs) if last_ok else []
     return {
         "p": protocol,
@@ -91,6 +95,7 @@ def _context(db: Session, protocol: Protocol) -> dict[str, Any]:
         "result": result,
         "changes": changes,
         "base_version": last_ok.version if last_ok else None,
+        "revision_items": wf.open_revision_items(db, protocol),
     }
 
 
@@ -154,10 +159,42 @@ def build_document(db: Session, protocol: Protocol, doc_type: str, *, prefer_bui
     )
 
 
-def generate_and_attach(db: Session, user: User, protocol: Protocol, doc_type: str, ip: str = "") -> Document:
-    if not user.is_irb_staff:
+def to_office(generated: GeneratedDocument) -> GeneratedDocument:
+    """기본 HTML 서식을 편집 가능한 DOCX로 바꾼다(LibreOffice가 있을 때). 실패하면 원래 HTML을 그대로 쓴다.
+
+    e-IRB 업로드·연구자 수정·자동 교정이 모두 DOCX에서 가능하므로 첨부본은 DOCX를 우선한다.
+    """
+    if generated.source != "builtin" or generated.ext != "html":
+        return generated
+    from .docproc.office import soffice_available, soffice_convert
+
+    if not soffice_available():
+        return generated
+    css_path = Path(__file__).parent / "web" / "static" / "print.css"
+    html = generated.content.decode("utf-8")
+    css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
+    html = html.replace('<link rel="stylesheet" href="/static/print.css">', f"<style>{css}</style>")
+    html = html.replace('<script src="/static/app.js"></script>', "")
+    import re as _re
+
+    html = _re.sub(r'<div class="toolbar">(?:(?!<div).)*?</div>', "", html, count=1, flags=_re.S)
+    docx = soffice_convert(Path(generated.filename).with_suffix(".html").name, html.encode("utf-8"), "docx:MS Word 2007 XML")
+    if not docx:
+        return generated
+    return GeneratedDocument(
+        content=docx, filename=Path(generated.filename).with_suffix(".docx").name,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        source="builtin", ext="docx", warnings=generated.warnings,
+    )
+
+
+def generate_and_attach(db: Session, user: User, protocol: Protocol, doc_type: str, ip: str = "",
+                        office: bool = True) -> Document:
+    if not user.is_admin:
         wf.require_member(user, protocol)
     generated = build_document(db, protocol, doc_type)
+    if office:
+        generated = to_office(generated)
     settings = get_settings()
     folder = settings.upload_dir / str(protocol.id)
     folder.mkdir(parents=True, exist_ok=True)

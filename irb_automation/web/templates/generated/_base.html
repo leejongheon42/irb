@@ -2,9 +2,8 @@
 {% block title %}{{ doc_label }} · {{ p.title }}{% endblock %}
 {% block title2 %}{{ doc_label }} (자동 작성){% endblock %}
 {% block body %}
-<div class="doc-no">{{ p.protocol_no or "과제번호 미부여" }} · v{{ p.version }}<br>작성일 {{ today|fmt }}</div>
+<div class="doc-no">{% if p.protocol_no %}IRB 번호 {{ p.protocol_no }} · {% endif %}v{{ p.version }}.0<br>작성일 {{ today.strftime("%Y. %m. %d.") }}</div>
 <h1>{{ doc_label }}</h1>
 <div class="org">{{ settings.irb_name }} 귀중</div>
 {% block doc %}{% endblock %}
-<div class="note">본 서식은 IRB 자동화 시스템이 과제 입력 내용으로 자동 작성했습니다. 내용을 확인한 뒤 제출하십시오.</div>
 {% endblock %}

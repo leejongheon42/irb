@@ -6,22 +6,15 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
 from ..database import get_db
 from ..models import (
-    DeidJob,
-    DestructionRecord,
-    Meeting,
     Notification,
-    OutputRequest,
     Protocol,
     ProtocolStatus,
-    ReviewAssignment,
-    Role,
-    Submission,
     User,
 )
 from ..security import throttle, verify_password
@@ -78,70 +71,23 @@ def logout(request: Request):
 @router.get("/")
 def dashboard(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     t = today()
-    ctx: dict = {}
     soon = t + timedelta(days=60)
-
-    if user.is_irb_staff:
-        protocols = db.scalars(select(Protocol).where(Protocol.status != S.DRAFT)).all()
-        ctx["status_counts"] = Counter(p.status for p in protocols)
-        ctx["queue"] = sorted(
-            [p for p in protocols if p.status in (S.SUBMITTED, S.UNDER_REVIEW)],
-            key=lambda p: p.current_submission.submitted_at if p.current_submission else p.created_at,
-        )
-        ctx["expiring"] = sorted(
-            [p for p in protocols if p.status == S.APPROVED and p.expires_at and p.expires_at <= soon],
-            key=lambda p: p.expires_at,
-        )
-        ctx["overdue"] = db.scalars(
-            select(ReviewAssignment).join(Submission)
-            .where(ReviewAssignment.submitted_at.is_(None), ReviewAssignment.due_date < t, Submission.closed.is_(False))
-        ).all()
-        decided = [s for p in protocols for s in p.submissions if s.decision is not None]
-        if decided:
-            days = [(s.decision.decided_at - s.submitted_at).days for s in decided]
-            ctx["avg_turnaround"] = round(sum(days) / len(days), 1)
-        ctx["review_type_counts"] = Counter(p.review_type.label for p in protocols if p.review_type)
-        ctx["risk_counts"] = Counter(p.risk_level for p in protocols if p.risk_level)
-
-    if user.role in (Role.REVIEWER, Role.CHAIR, Role.COORDINATOR):
-        ctx["my_reviews"] = db.scalars(
-            select(ReviewAssignment).join(Submission)
-            .where(ReviewAssignment.reviewer_id == user.id, ReviewAssignment.submitted_at.is_(None), Submission.closed.is_(False))
-            .order_by(ReviewAssignment.due_date)
-        ).all()
-
-    if user.role in (Role.RESEARCHER, Role.ADMIN, Role.COORDINATOR):
-        mine = db.scalars(select(Protocol).order_by(Protocol.updated_at.desc())).all()
-        ctx["my_protocols"] = [p for p in mine if user.id in p.member_ids()]
-
-    if user.role in (Role.DATA_STEWARD, Role.ADMIN):
-        ctx["provision_targets"] = [
-            p for p in db.scalars(select(Protocol).where(Protocol.approved_at.is_not(None))).all() if p.is_active_approval
-        ]
-        ctx["deid_jobs"] = db.scalars(select(DeidJob).order_by(DeidJob.id.desc()).limit(10)).all()
-
-    if user.role == Role.RESEARCHER:
-        ctx["released"] = db.scalars(
-            select(DeidJob).where(DeidJob.released_to == user.id).order_by(DeidJob.released_at.desc())
-        ).all()
-
-    if user.role in (Role.REVIEWER, Role.CHAIR, Role.COORDINATOR, Role.ADMIN):
-        ctx["upcoming_meetings"] = db.scalars(
-            select(Meeting).where(Meeting.status != "closed").order_by(Meeting.scheduled_at).limit(3)
-        ).all()
-        ctx["drb_pending"] = db.scalar(
-            select(func.count(DeidJob.id)).where(DeidJob.drb_status == "pending", DeidJob.status.in_(["processed", "released"]))
-        ) or 0
-    if user.role in (Role.DATA_STEWARD, Role.ADMIN):
-        ctx["outputs_pending"] = db.scalar(select(func.count(OutputRequest.id)).where(OutputRequest.status == "submitted")) or 0
-    ctx["destruction_due"] = [
-        r for r in db.scalars(select(DestructionRecord).where(DestructionRecord.destroyed_at.is_(None)))
-        if (user.id in r.protocol.member_ids() or user.is_irb_staff) and (r.due_date - t).days <= 60
-    ]
-
-    ctx["notifications"] = db.scalars(
-        select(Notification).where(Notification.user_id == user.id).order_by(Notification.id.desc()).limit(8)
-    ).all()
+    mine = [p for p in db.scalars(select(Protocol).order_by(Protocol.updated_at.desc())) if user.id in p.member_ids()]
+    ctx: dict = {
+        "my_protocols": mine,
+        "drafts": [p for p in mine if p.is_editable],
+        "waiting": [p for p in mine if p.status == S.SUBMITTED],
+        "revisions": [p for p in mine if p.status == S.REVISION_REQUESTED],
+        "expiring": sorted([p for p in mine if p.status == S.APPROVED and p.expires_at and p.expires_at <= soon],
+                           key=lambda p: p.expires_at),
+        "notifications": db.scalars(
+            select(Notification).where(Notification.user_id == user.id).order_by(Notification.id.desc()).limit(8)
+        ).all(),
+    }
+    if user.is_admin:
+        everyone = db.scalars(select(Protocol)).all()
+        ctx["status_counts"] = Counter(p.status for p in everyone)
+        ctx["total_protocols"] = len(everyone)
     return render(request, "dashboard.html", db, user, **ctx)
 
 

@@ -43,27 +43,18 @@
 
   <div class="side-col">
     <div class="card">
-      <h2>검토</h2>
-      <p>{{ doc.status_label }}{% if doc.reviewer %} · {{ doc.reviewer.full_name }} · {{ doc.reviewed_at|fmt }}{% endif %}</p>
-      {% if doc.review_note %}<p class="pre-wrap {{ 'warn-text' if doc.status == 'revision_requested' else '' }}">{{ doc.review_note }}</p>{% endif %}
-      {% if can_review and is_latest and doc.status != "superseded" %}
-      <form method="post" action="/documents/{{ doc.id }}/review">
-        {{ csrf_input }}
-        <label for="note">의견 <span class="hint">보완 요청 시 필수</span></label>
-        <textarea id="note" name="note" placeholder="예: 동의서 3쪽 연락처가 누락되었습니다."></textarea>
-        <div class="actions">
-          <button class="btn-ok" type="submit" name="action" value="accept">확인</button>
-          <button class="btn-danger" type="submit" name="action" value="request_revision">보완 요청</button>
-        </div>
-      </form>
-      {% endif %}
-      {% if can_upload and is_latest and doc.status == "revision_requested" %}
-      <h3>새 버전 제출</h3>
+      <h2>서류 점검</h2>
+      {% set q = (doc.validation or {}).get("qc") %}
+      {% if q %}<p><a class="badge {{ 'b-danger' if q.critical else ('b-warn' if q.major else 'b-ok') }}" href="/qc/{{ q.run }}">Critical {{ q.critical }} · Major {{ q.major }} · Minor {{ q.minor }}</a> <span class="small muted">{{ q.at }}</span></p>
+      {% else %}<p class="muted">아직 점검하지 않았습니다.</p>{% endif %}
+      {% if can_upload and is_latest %}
+      <form method="post" action="/protocols/{{ p.id }}/qc">{{ csrf_input }}<input type="hidden" name="doc" value="{{ doc.id }}"><button class="btn-sm" type="submit">이 서류 점검</button></form>
+      <h3>새 버전 올리기</h3>
       <form method="post" action="/protocols/{{ p.id }}/documents" enctype="multipart/form-data">
         {{ csrf_input }}
         <input type="hidden" name="doc_type" value="{{ doc.doc_type }}">
         <input type="file" name="file" required>
-        <p><button class="btn-primary" type="submit">보완본 제출</button></p>
+        <p><button class="btn-primary" type="submit">올리기</button></p>
       </form>
       {% endif %}
     </div>

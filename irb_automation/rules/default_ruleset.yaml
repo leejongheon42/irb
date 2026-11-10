@@ -162,6 +162,7 @@ catalogs:
     external_irb_approval: "타기관(대표) IRB 승인서"
     site_list: "참여기관 목록 및 기관별 승인 현황"
     amendment_table: "변경 대비표"
+    revision_response: "보완 답변서(보완 대비표)"
     destruction_certificate: "자료 파기 확인서"
     other: "기타"
 
@@ -282,8 +283,8 @@ knowledge:
   snippet_chars: 220      # 검색 결과 발췌 길이
   answer_max_chunks: 6    # 질의응답에 사용할 최대 근거 수
   ai_answer_max_tokens: 4000
-  # 과거 과제·심의 선례를 전체 열람할 수 있는 역할(그 외 사용자는 본인이 열람 가능한 과제만)
-  precedent_roles: [coordinator, chair, admin, reviewer]
+  # 기관 전체의 과거 과제·IRB 결과 선례를 열람할 수 있는 역할(그 외 사용자는 본인 과제만)
+  precedent_roles: [admin]
 
 # === 웹 문서 제출 ===
 submission:

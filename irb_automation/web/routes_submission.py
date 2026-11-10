@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, object_session
 from .. import audit
 from ..database import get_db
 from ..engine.ruleset import get_ruleset
-from ..models import Document, Protocol, Role, User
+from ..models import Document, Protocol, User
 from ..submission import service
 from ..submission.bundle import build_pdf, build_zip
 from ..submission.compare import compare_documents
@@ -19,10 +19,9 @@ from ..submission.guess import guess_doc_type, guess_from_filename
 from ..submission.preview import converted_pdf, document_text, preview_kind
 from ..submission.versions import versions_of
 from ..workflow import service as wf
-from .deps import client_ip, current_user, flash, render, require_roles, templates, verify_csrf
+from .deps import client_ip, current_user, flash, render, templates, verify_csrf
 
 router = APIRouter()
-reviewers_only = require_roles(Role.COORDINATOR, Role.CHAIR, Role.REVIEWER)
 
 FRAME_HEADERS = {"X-Frame-Options": "SAMEORIGIN", "Content-Security-Policy": "frame-ancestors 'self'"}
 HTML_FRAME_CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
@@ -71,7 +70,7 @@ def guess(name: str = "", user: User = Depends(current_user)):
 @router.post("/protocols/{pid}/documents/bulk", dependencies=[Depends(verify_csrf)])
 async def bulk_upload(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _protocol(db, user, pid)
-    if not (wf.is_member(user, p) or user.is_irb_staff):
+    if not (wf.is_member(user, p) or user.is_admin):
         raise HTTPException(403, "서류 제출 권한이 없습니다.")
     form = await request.form()
     files = [f for f in form.getlist("files") if hasattr(f, "read") and getattr(f, "filename", "")]
@@ -116,13 +115,6 @@ async def bulk_upload(request: Request, pid: int, user: User = Depends(current_u
 
 
 # ------------------------------------------------------------------ 검토 대기열
-@router.get("/documents/review-queue")
-def review_queue(request: Request, user: User = Depends(reviewers_only), db: Session = Depends(get_db)):
-    q = service.review_queue(db, user)
-    return render(request, "submission/review_queue.html", db, user, pending=q["pending"], waiting=q["waiting"])
-
-
-# ------------------------------------------------------------------ 미리보기
 @router.get("/documents/{doc_id}/preview")
 def preview(request: Request, doc_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     doc = _doc(db, user, doc_id)
@@ -152,7 +144,6 @@ def preview(request: Request, doc_id: int, user: User = Depends(current_user), d
         doc=doc, p=p, mode=mode, text=text, versions=versions,
         is_latest=bool(versions) and versions[0].id == doc.id,
         comments=service.comments_for(db, p, doc.doc_type),
-        can_review=service.can_review(db, user, p),
         can_participate=service.can_participate(db, user, p),
         can_upload=service.can_upload(db, user, p, doc.doc_type)[0],
         validation=doc.validation or {},
@@ -210,25 +201,6 @@ def compare(request: Request, doc_id: int, with_id: int | None = Query(None, ali
 
 
 # ------------------------------------------------------------------ 문서별 검토·의견
-@router.post("/documents/{doc_id}/review", dependencies=[Depends(verify_csrf)])
-async def review(request: Request, doc_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    doc = _doc(db, user, doc_id)
-    form = await request.form()
-    try:
-        service.review_document(db, user, doc, str(form.get("action", "")), str(form.get("note", "")),
-                                client_ip(request))
-    except wf.PermissionDenied as e:
-        raise HTTPException(403, str(e)) from e
-    except wf.WorkflowError as e:
-        flash(request, str(e), "error")
-        return RedirectResponse(f"/documents/{doc.id}/preview", status_code=303)
-    db.commit()
-    flash(request, f"'{service.doc_label(doc.doc_type)}' v{doc.version}: {doc.status_label}", "success")
-    nxt = str(form.get("next", ""))
-    return RedirectResponse(nxt if nxt.startswith("/") and not nxt.startswith("//") else f"/documents/{doc.id}/preview",
-                            status_code=303)
-
-
 @router.post("/documents/{doc_id}/comments", dependencies=[Depends(verify_csrf)])
 async def comment(request: Request, doc_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     doc = _doc(db, user, doc_id)

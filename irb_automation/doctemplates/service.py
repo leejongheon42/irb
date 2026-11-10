@@ -36,7 +36,7 @@ class TemplateError(wf.WorkflowError):
 
 
 def require_template_admin(user: User) -> None:
-    if user.role not in (Role.ADMIN, Role.COORDINATOR):
+    if user.role != Role.ADMIN:
         raise wf.PermissionDenied("기관 서식 관리 권한이 없습니다(시스템관리자·IRB 간사).")
 
 

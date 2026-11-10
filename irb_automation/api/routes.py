@@ -6,12 +6,10 @@
 """
 from __future__ import annotations
 
-import os
-import secrets
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -109,7 +107,7 @@ def protocol_prereview(pid: int, user: User = Depends(current_user), db: Session
 
 @router.post("/deid/analyze")
 async def deid_analyze(
-    file: UploadFile = File(...), user: User = Depends(require_roles(Role.DATA_STEWARD))
+    file: UploadFile = File(...), user: User = Depends(require_roles(Role.RESEARCHER))
 ) -> dict[str, Any]:
     try:
         headers, rows, enc = read_csv_bytes(await file.read())
@@ -120,35 +118,6 @@ async def deid_analyze(
     return result
 
 
-def _integration_auth(x_irb_token: str | None = Header(default=None)) -> None:
-    expected = os.environ.get("IRB_INTEGRATION_TOKEN", "")
-    if not expected:
-        raise HTTPException(503, "연동 토큰이 설정되지 않았습니다(IRB_INTEGRATION_TOKEN).")
-    if not x_irb_token or not secrets.compare_digest(x_irb_token, expected):
-        raise HTTPException(401, "유효하지 않은 연동 토큰")
-
-
-@router.get("/integration/approval/{protocol_no}", dependencies=[Depends(_integration_auth)])
-def approval_status(protocol_no: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """CDW/데이터 추출 시스템용 승인 확인. 유효 승인 여부와 허용 범위를 반환한다."""
-    p = db.scalars(select(Protocol).where(Protocol.protocol_no == protocol_no)).first()
-    if p is None:
-        raise HTTPException(404, "과제번호를 찾을 수 없습니다.")
-    return {
-        **_summary(p),
-        "data_scope": {
-            "data_sources": p.data_sources,
-            "data_period_start": p.data_period_start,
-            "data_period_end": p.data_period_end,
-            "deid_level": p.deid_level,
-            "identifiers_allowed": p.identifiers_collected,
-            "expected_subjects": p.expected_subjects,
-            "data_items": [x.strip() for x in p.data_items.splitlines() if x.strip()],
-        },
-        "members": sorted(p.member_ids()),
-    }
-
-
 def _summary(p: Protocol) -> dict[str, Any]:
     return {
         "id": p.id,
@@ -157,7 +126,7 @@ def _summary(p: Protocol) -> dict[str, Any]:
         "pi": p.pi.full_name if p.pi else None,
         "status": p.status.value,
         "status_label": p.status.label,
-        "review_type": p.review_type.value if p.review_type else None,
+        "expected_review_type": p.review_type.value if p.review_type else None,
         "risk_score": p.risk_score,
         "approved_at": p.approved_at,
         "expires_at": p.expires_at,

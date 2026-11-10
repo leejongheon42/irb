@@ -4,19 +4,13 @@
 <div class="topbar"><h1>사용자 관리</h1></div>
 <div class="card">
   <div class="table-wrap"><table>
-    <tr><th>아이디</th><th>이름</th><th>부서</th><th>역할</th><th>교육 만료일</th><th>위원 속성</th><th>활성</th><th>비밀번호 재설정</th><th></th></tr>
+    <tr><th>아이디</th><th>이름</th><th>부서</th><th>역할</th><th>교육 만료일</th><th>활성</th><th>비밀번호 재설정</th><th></th></tr>
     {% for u in items %}{% set fid = "uf-%d"|format(u.id) %}
     <tr>
       <td>{{ u.username }}</td><td>{{ u.full_name }}</td><td>{{ u.department }}</td>
       <td><select name="role" form="{{ fid }}">{% for r in roles %}<option value="{{ r.value }}" {% if u.role == r %}selected{% endif %}>{{ r.label }}</option>{% endfor %}</select></td>
       <td><input type="date" name="training_expires_on" form="{{ fid }}" value="{{ u.training_expires_on or '' }}">
         {% if u.training_expires_on and u.training_expires_on < today %}<span class="badge b-danger">만료</span>{% endif %}</td>
-      <td class="small"><input type="hidden" name="_committee" value="1" form="{{ fid }}">
-        <label class="check"><input type="checkbox" name="is_committee_member" form="{{ fid }}" {% if u.is_committee_member %}checked{% endif %}> 위원</label>
-        <label class="check"><input type="checkbox" name="is_external_member" form="{{ fid }}" {% if u.is_external_member %}checked{% endif %}> 외부</label>
-        <label class="check"><input type="checkbox" name="is_lay_member" form="{{ fid }}" {% if u.is_lay_member %}checked{% endif %}> 사회·윤리</label>
-        <select name="gender" form="{{ fid }}"><option value="">성별</option><option value="M" {% if u.gender == "M" %}selected{% endif %}>남</option><option value="F" {% if u.gender == "F" %}selected{% endif %}>여</option></select>
-        <input type="date" name="term_end" form="{{ fid }}" value="{{ u.term_end or '' }}" title="임기 만료일"></td>
       <td>{% if u.id == user.id %}<input type="hidden" name="is_active" value="on" form="{{ fid }}"><span class="muted small">본인</span>{% else %}<input type="checkbox" name="is_active" form="{{ fid }}" {% if u.is_active %}checked{% endif %}>{% endif %}</td>
       <td><input type="password" name="password" form="{{ fid }}" autocomplete="new-password" placeholder="변경 시 입력"></td>
       <td><form id="{{ fid }}" method="post" action="/admin/users/{{ u.id }}">{{ csrf_input }}<button class="btn-sm" type="submit">저장</button></form></td>
@@ -35,12 +29,6 @@
       <div><label for="email">이메일</label><input id="email" name="email" type="email"></div>
       <div><label for="role">역할</label><select id="role" name="role">{% for r in roles %}<option value="{{ r.value }}">{{ r.label }}</option>{% endfor %}</select></div>
       <div><label for="training_expires_on">연구윤리 교육 만료일</label><input id="training_expires_on" name="training_expires_on" type="date"></div>
-      <div><label for="gender">성별</label><select id="gender" name="gender"><option value="">-</option><option value="M">남</option><option value="F">여</option></select></div>
-      <div><label for="term_end">위원 임기 만료일</label><input id="term_end" name="term_end" type="date"></div>
-      <div><label>위원 속성</label>
-        <label class="check"><input type="checkbox" name="is_committee_member"> 위원회 위원</label>
-        <label class="check"><input type="checkbox" name="is_external_member"> 기관 비종사(외부)</label>
-        <label class="check"><input type="checkbox" name="is_lay_member"> 사회적·윤리적 타당성 평가 위원</label></div>
       <div><label for="password">초기 비밀번호 <span class="hint">10자 이상, 영문·숫자·특수문자</span></label><input id="password" name="password" type="password" autocomplete="new-password" required></div>
     </div>
     <p><button class="btn-primary" type="submit">추가</button></p>

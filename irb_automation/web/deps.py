@@ -54,6 +54,14 @@ def _days_left(value: date | None) -> int | None:
 templates.env.filters["fmt"] = _fmt_date
 templates.env.filters["days_left"] = _days_left
 templates.env.filters["kjson"] = lambda v: json.dumps(v, ensure_ascii=False, default=str)
+def _file_version(name: str) -> str:
+    from ..qc.facts import version_from_filename
+
+    v = version_from_filename(name or "")
+    return f"v{v}" if v else ""
+
+
+templates.env.filters["file_version"] = _file_version
 templates.env.globals["ACTION_LABELS"] = ACTION_LABELS
 templates.env.globals["STATUS_LABELS"] = STATUS_LABELS
 templates.env.globals["ROLE_LABELS"] = ROLE_LABELS

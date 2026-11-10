@@ -1,7 +1,7 @@
-"""데이터 모델.
+"""데이터 모델 (연구자용 IRB 제출서류 자동완성).
 
-과제(Protocol) 하나에 여러 심의 신청건(Submission: 신규/재제출/변경/지속/종료)이
-누적되며, 각 신청건에는 자동 사전검토 결과(PreReview)와 심의결과(Decision)가 연결된다.
+과제(Protocol) 하나에 외부 IRB(병원 e-IRB)에 제출한 기록(Submission: 신규/재제출/변경/지속/종료)이
+누적된다. 제출 기록에는 제출 시점 스냅샷·자동 사전점검(PreReview)과 연구자가 입력한 IRB 결과가 남는다.
 """
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,10 +27,6 @@ from .timeutil import now
 
 class Role(str, enum.Enum):
     RESEARCHER = "researcher"
-    COORDINATOR = "coordinator"
-    REVIEWER = "reviewer"
-    CHAIR = "chair"
-    DATA_STEWARD = "data_steward"
     ADMIN = "admin"
 
     @property
@@ -41,11 +36,7 @@ class Role(str, enum.Enum):
 
 ROLE_LABELS = {
     Role.RESEARCHER: "연구자",
-    Role.COORDINATOR: "IRB 간사",
-    Role.REVIEWER: "심의위원",
-    Role.CHAIR: "위원장",
-    Role.DATA_STEWARD: "데이터관리자",
-    Role.ADMIN: "시스템관리자",
+    Role.ADMIN: "관리자(연구지원)",
 }
 
 
@@ -53,12 +44,10 @@ class ProtocolStatus(str, enum.Enum):
     DRAFT = "draft"
     SUBMITTED = "submitted"
     REVISION_REQUESTED = "revision_requested"
-    UNDER_REVIEW = "under_review"
     APPROVED = "approved"
     EXEMPT = "exempt"
     AMENDMENT = "amendment"
     DISAPPROVED = "disapproved"
-    SUSPENDED = "suspended"
     EXPIRED = "expired"
     CLOSED = "closed"
 
@@ -69,14 +58,12 @@ class ProtocolStatus(str, enum.Enum):
 
 STATUS_LABELS = {
     ProtocolStatus.DRAFT: "작성중",
-    ProtocolStatus.SUBMITTED: "접수",
-    ProtocolStatus.REVISION_REQUESTED: "보완요청",
-    ProtocolStatus.UNDER_REVIEW: "심의중",
+    ProtocolStatus.SUBMITTED: "IRB 제출함(심의중)",
+    ProtocolStatus.REVISION_REQUESTED: "보완요청 받음",
     ProtocolStatus.APPROVED: "승인",
     ProtocolStatus.EXEMPT: "심의면제",
-    ProtocolStatus.AMENDMENT: "변경작성중",
+    ProtocolStatus.AMENDMENT: "변경 준비중",
     ProtocolStatus.DISAPPROVED: "부결",
-    ProtocolStatus.SUSPENDED: "중지",
     ProtocolStatus.EXPIRED: "만료",
     ProtocolStatus.CLOSED: "종료",
 }
@@ -100,6 +87,17 @@ class SubmissionKind(str, enum.Enum):
         }[self.value]
 
 
+# 외부 IRB 결과(연구자가 통지서를 보고 입력)
+SUBMISSION_RESULTS = {
+    "approved": "승인",
+    "approved_with_conditions": "시정승인",
+    "exempt": "심의면제 확인",
+    "revision": "보완 후 재심의",
+    "disapproved": "부결",
+    "acknowledged": "종료보고 확인",
+}
+
+
 class ReviewType(str, enum.Enum):
     EXEMPT = "exempt"
     EXPEDITED = "expedited"
@@ -110,39 +108,6 @@ class ReviewType(str, enum.Enum):
         return {"exempt": "심의면제", "expedited": "신속심의", "full": "정규심의"}[self.value]
 
 
-class DecisionType(str, enum.Enum):
-    APPROVE = "approve"
-    APPROVE_WITH_CONDITIONS = "approve_with_conditions"
-    DEFER = "defer"
-    DISAPPROVE = "disapprove"
-    EXEMPT_CONFIRM = "exempt_confirm"
-    ACKNOWLEDGE = "acknowledge"
-    SUSPEND = "suspend"
-
-    @property
-    def label(self) -> str:
-        return {
-            "approve": "승인",
-            "approve_with_conditions": "시정승인",
-            "defer": "보완 후 재심의",
-            "disapprove": "부결",
-            "exempt_confirm": "심의면제 확인",
-            "acknowledge": "종료보고 확인",
-            "suspend": "연구 중지",
-        }[self.value]
-
-
-class Recommendation(str, enum.Enum):
-    APPROVE = "approve"
-    MODIFY = "modify"
-    DEFER = "defer"
-    DISAPPROVE = "disapprove"
-
-    @property
-    def label(self) -> str:
-        return {"approve": "승인", "modify": "시정승인", "defer": "보완", "disapprove": "부결"}[
-            self.value
-        ]
 
 
 class User(Base):
@@ -159,19 +124,15 @@ class User(Base):
     training_expires_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # 기관위원회 위원 구성 요건(생명윤리법 제11조) 점검용 속성
-    is_committee_member: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_external_member: Mapped[bool] = mapped_column(Boolean, default=False)  # 기관 비종사자
-    is_lay_member: Mapped[bool] = mapped_column(Boolean, default=False)  # 사회적·윤리적 타당성 평가 위원
-    gender: Mapped[str] = mapped_column(String(1), default="")  # M | F
-    term_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     def has_role(self, *roles: Role) -> bool:
         return self.role in roles
 
     @property
-    def is_irb_staff(self) -> bool:
-        return self.role in (Role.COORDINATOR, Role.CHAIR, Role.ADMIN)
+    def is_admin(self) -> bool:
+        """기관 설정(양식·서식·지식) 관리와 전체 과제 열람 권한."""
+        return self.role == Role.ADMIN
 
 
 class Protocol(Base):
@@ -291,7 +252,6 @@ class Protocol(Base):
         if self.approved_at is None:
             return False
         if self.status in (
-            ProtocolStatus.SUSPENDED,
             ProtocolStatus.EXPIRED,
             ProtocolStatus.CLOSED,
             ProtocolStatus.DISAPPROVED,
@@ -323,21 +283,25 @@ class Submission(Base):
     closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)  # revision_requested|decided
+    # 외부 IRB(병원 e-IRB) 정보 - 연구자가 입력
+    external_ref: Mapped[str] = mapped_column(String(64), default="")  # e-IRB 접수번호
+    result: Mapped[str | None] = mapped_column(String(30), nullable=True)  # SUBMISSION_RESULTS 키
+    result_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    approval_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    result_note: Mapped[str] = mapped_column(Text, default="")  # 시정 조건·IRB 의견 요지
 
     protocol: Mapped[Protocol] = relationship(back_populates="submissions")
     prereviews: Mapped[list[PreReview]] = relationship(
         back_populates="submission", order_by="PreReview.id", cascade="all, delete-orphan"
     )
-    assignments: Mapped[list[ReviewAssignment]] = relationship(
-        back_populates="submission", order_by="ReviewAssignment.id", cascade="all, delete-orphan"
-    )
-    decision: Mapped[Decision | None] = relationship(
-        back_populates="submission", uselist=False, cascade="all, delete-orphan"
-    )
 
     @property
     def latest_prereview(self) -> PreReview | None:
         return self.prereviews[-1] if self.prereviews else None
+
+    @property
+    def result_label(self) -> str:
+        return SUBMISSION_RESULTS.get(self.result or "", "결과 대기")
 
 
 class PreReview(Base):
@@ -358,46 +322,6 @@ class PreReview(Base):
     submission: Mapped[Submission] = relationship(back_populates="prereviews")
 
 
-class ReviewAssignment(Base):
-    __tablename__ = "review_assignments"
-    __table_args__ = (UniqueConstraint("submission_id", "reviewer_id"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), index=True)
-    reviewer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
-    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    recommendation: Mapped[Recommendation | None] = mapped_column(
-        Enum(Recommendation, native_enum=False, length=16), nullable=True
-    )
-    comments: Mapped[str] = mapped_column(Text, default="")
-    checklist: Mapped[dict] = mapped_column(JSON, default=dict)
-    coi_declared: Mapped[bool] = mapped_column(Boolean, default=False)
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-    submission: Mapped[Submission] = relationship(back_populates="assignments")
-    reviewer: Mapped[User] = relationship()
-
-
-class Decision(Base):
-    __tablename__ = "decisions"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"), unique=True)
-    decision: Mapped[DecisionType] = mapped_column(Enum(DecisionType, native_enum=False, length=32))
-    review_type: Mapped[ReviewType] = mapped_column(Enum(ReviewType, native_enum=False, length=16))
-    meeting_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    conditions: Mapped[str] = mapped_column(Text, default="")
-    comments: Mapped[str] = mapped_column(Text, default="")
-    letter_no: Mapped[str] = mapped_column(String(40))
-    decided_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    decided_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    approval_start: Mapped[date | None] = mapped_column(Date, nullable=True)
-    approval_end: Mapped[date | None] = mapped_column(Date, nullable=True)
-
-    submission: Mapped[Submission] = relationship(back_populates="decision")
-    decider: Mapped[User] = relationship()
 
 
 class Document(Base):
@@ -495,14 +419,9 @@ class DeidJob(Base):
     released_to: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     purpose: Mapped[str] = mapped_column(String(300), default="")  # 처리 목적(처리기록 대장)
-    drb_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|approved|rejected
-    drb_reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    drb_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    drb_comment: Mapped[str] = mapped_column(Text, default="")
 
     protocol: Mapped[Protocol | None] = relationship()
     creator: Mapped[User] = relationship(foreign_keys=[created_by])
-    drb_reviewer: Mapped[User | None] = relationship(foreign_keys=[drb_reviewer_id])
 
 
 class Notification(Base):
@@ -539,72 +458,9 @@ class AuditLog(Base):
 # =====================================================================
 # 위원회 회의
 # =====================================================================
-class Meeting(Base):
-    __tablename__ = "meetings"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    meeting_no: Mapped[str] = mapped_column(String(32), unique=True)
-    scheduled_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    location: Mapped[str] = mapped_column(String(200), default="")
-    status: Mapped[str] = mapped_column(String(20), default="scheduled")  # scheduled|in_progress|closed
-    notes: Mapped[str] = mapped_column(Text, default="")
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-    items: Mapped[list[MeetingItem]] = relationship(
-        back_populates="meeting", order_by="MeetingItem.order", cascade="all, delete-orphan"
-    )
-    attendance: Mapped[list[MeetingAttendance]] = relationship(
-        back_populates="meeting", cascade="all, delete-orphan"
-    )
-
-    @property
-    def present_ids(self) -> set[int]:
-        return {a.user_id for a in self.attendance if a.present}
-
-    @property
-    def label(self) -> str:
-        year, _, seq = self.meeting_no.partition("-")
-        return f"{year}년 제{int(seq)}차" if seq.isdigit() else self.meeting_no
 
 
-class MeetingAttendance(Base):
-    __tablename__ = "meeting_attendance"
-    __table_args__ = (UniqueConstraint("meeting_id", "user_id"),)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    present: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    meeting: Mapped[Meeting] = relationship(back_populates="attendance")
-    user: Mapped[User] = relationship()
-
-
-class MeetingItem(Base):
-    """회의 안건. review=심의 안건(정규심의), report=보고 안건(신속·면제 결과 보고)."""
-
-    __tablename__ = "meeting_items"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    meeting_id: Mapped[int] = mapped_column(ForeignKey("meetings.id"), index=True)
-    submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id"))
-    item_type: Mapped[str] = mapped_column(String(10), default="review")
-    order: Mapped[int] = mapped_column(Integer, default=0)
-    recused_ids: Mapped[list] = mapped_column(JSON, default=list)
-    votes: Mapped[dict] = mapped_column(JSON, default=dict)
-    discussion: Mapped[str] = mapped_column(Text, default="")
-    decision_id: Mapped[int | None] = mapped_column(ForeignKey("decisions.id"), nullable=True)
-
-    meeting: Mapped[Meeting] = relationship(back_populates="items")
-    submission: Mapped[Submission] = relationship()
-    decision: Mapped[Decision | None] = relationship()
-
-
-# =====================================================================
-# 전자서명 / 보완 요청 항목
-# =====================================================================
 class Signature(Base):
     """전자서명 기록: 서명자·의미·대상 내용 해시·시각 (서명 후 내용 변경 여부 검증 가능)."""
 
@@ -643,80 +499,7 @@ class RevisionItem(Base):
 # =====================================================================
 # 데이터 거버넌스
 # =====================================================================
-class OutputRequest(Base):
-    """분석 결과 반출 심사(airlock)."""
 
-    __tablename__ = "output_requests"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    protocol_id: Mapped[int] = mapped_column(ForeignKey("protocols.id"), index=True)
-    requested_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    requested_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    filename: Mapped[str] = mapped_column(String(255))
-    stored_path: Mapped[str] = mapped_column(String(500))
-    sha256: Mapped[str] = mapped_column(String(64))
-    description: Mapped[str] = mapped_column(Text, default="")
-    check: Mapped[dict] = mapped_column(JSON, default=dict)
-    status: Mapped[str] = mapped_column(String(20), default="submitted")  # submitted|approved|approved_suppressed|rejected
-    suppressed_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    reviewer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    review_comment: Mapped[str] = mapped_column(Text, default="")
-
-    protocol: Mapped[Protocol] = relationship()
-    requester: Mapped[User] = relationship(foreign_keys=[requested_by])
-    reviewer: Mapped[User | None] = relationship(foreign_keys=[reviewer_id])
-
-
-class Agreement(Base):
-    """자료 제공·이용 계약(DUA), 공동연구·결합·위탁 계약."""
-
-    __tablename__ = "agreements"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    protocol_id: Mapped[int | None] = mapped_column(ForeignKey("protocols.id"), nullable=True, index=True)
-    agreement_type: Mapped[str] = mapped_column(String(30))
-    counterparty: Mapped[str] = mapped_column(String(200))
-    title: Mapped[str] = mapped_column(String(300), default="")
-    permitted_use: Mapped[str] = mapped_column(Text, default="")
-    terms: Mapped[list] = mapped_column(JSON, default=list)
-    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    end_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
-    status: Mapped[str] = mapped_column(String(20), default="active")  # draft|active|terminated
-    document_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    document_name: Mapped[str] = mapped_column(String(255), default="")
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-    protocol: Mapped[Protocol | None] = relationship()
-
-    @property
-    def is_effective(self) -> bool:
-        today_ = date.today()
-        if self.status != "active":
-            return False
-        if self.start_date and self.start_date > today_:
-            return False
-        return self.end_date is None or self.end_date >= today_
-
-
-class DestructionRecord(Base):
-    """연구 자료 파기 관리."""
-
-    __tablename__ = "destruction_records"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    protocol_id: Mapped[int] = mapped_column(ForeignKey("protocols.id"), index=True)
-    due_date: Mapped[date] = mapped_column(Date, index=True)
-    destroyed_at: Mapped[date | None] = mapped_column(Date, nullable=True)
-    method: Mapped[str] = mapped_column(Text, default="")
-    certified_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    certificate_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    certificate_name: Mapped[str] = mapped_column(String(255), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-    protocol: Mapped[Protocol] = relationship()
-    certifier: Mapped[User | None] = relationship()
 
 
 class FeasibilityQuery(Base):

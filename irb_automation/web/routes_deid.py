@@ -1,4 +1,4 @@
-"""가명처리 도구 및 IRB 승인 연동 데이터 제공."""
+"""가명처리 도구(연구자용): 추출 자료의 개인정보 탐지·가명처리·적정성 자동평가, 처리 보고서를 IRB 서류 근거로 활용."""
 from __future__ import annotations
 
 import hashlib
@@ -17,22 +17,19 @@ from ..deid import pipeline
 from ..deid.detector import analyze_table
 from ..deid.transforms import ACTIONS
 from ..engine.ruleset import get_ruleset
-from ..governance import records
 from ..models import DeidJob, Protocol, Role, User
-from ..notifications import notify
 from ..timeutil import now
 from ..workflow import service as wf
 from .deps import client_ip, current_user, flash, render, require_roles, verify_csrf
 
 router = APIRouter()
-steward = require_roles(Role.DATA_STEWARD)
-DRB_ROLES = (Role.REVIEWER, Role.CHAIR, Role.COORDINATOR)
-drb_member = require_roles(*DRB_ROLES)
+researcher = require_roles(Role.RESEARCHER)
 
 
-def _job(db: Session, jid: int) -> DeidJob:
+def _job(db: Session, jid: int, user: User) -> DeidJob:
     job = db.get(DeidJob, jid)
-    if job is None:
+    if job is None or not (user.is_admin or job.created_by == user.id
+                           or (job.protocol and user.id in job.protocol.member_ids())):
         raise HTTPException(404)
     return job
 
@@ -43,19 +40,20 @@ def _salt(job: DeidJob) -> str:
 
 
 @router.get("/deid")
-def deid_list(request: Request, user: User = Depends(steward), db: Session = Depends(get_db)):
-    jobs = db.scalars(select(DeidJob).order_by(DeidJob.id.desc())).all()
+def deid_list(request: Request, user: User = Depends(researcher), db: Session = Depends(get_db)):
+    jobs = [j for j in db.scalars(select(DeidJob).order_by(DeidJob.id.desc()))
+            if user.is_admin or j.created_by == user.id or (j.protocol and user.id in j.protocol.member_ids())]
     return render(request, "deid/list.html", db, user, jobs=jobs)
 
 
 @router.get("/deid/new")
-def deid_new(request: Request, protocol_id: int | None = None, user: User = Depends(steward), db: Session = Depends(get_db)):
-    protocols = [p for p in db.scalars(select(Protocol).where(Protocol.approved_at.is_not(None))) if p.is_active_approval]
+def deid_new(request: Request, protocol_id: int | None = None, user: User = Depends(researcher), db: Session = Depends(get_db)):
+    protocols = [p for p in db.scalars(select(Protocol)) if wf.can_view(db, user, p)]
     return render(request, "deid/new.html", db, user, protocols=protocols, selected=protocol_id)
 
 
 @router.post("/deid/new", dependencies=[Depends(verify_csrf)])
-async def deid_upload(request: Request, user: User = Depends(steward), db: Session = Depends(get_db)):
+async def deid_upload(request: Request, user: User = Depends(researcher), db: Session = Depends(get_db)):
     form = await request.form()
     upload = form.get("file")
     if not hasattr(upload, "read") or not getattr(upload, "filename", ""):
@@ -73,6 +71,8 @@ async def deid_upload(request: Request, user: User = Depends(steward), db: Sessi
         return RedirectResponse("/deid/new", status_code=303)
     pid = form.get("protocol_id")
     protocol = db.get(Protocol, int(pid)) if pid and str(pid).isdigit() else None
+    if protocol is not None and not wf.can_view(db, user, protocol):
+        protocol = None
     analysis = analyze_table(headers, rows)
     job = DeidJob(
         protocol_id=protocol.id if protocol else None,
@@ -102,15 +102,15 @@ async def deid_upload(request: Request, user: User = Depends(steward), db: Sessi
 
 
 @router.get("/deid/{jid}")
-def deid_detail(request: Request, jid: int, user: User = Depends(steward), db: Session = Depends(get_db)):
-    job = _job(db, jid)
+def deid_detail(request: Request, jid: int, user: User = Depends(researcher), db: Session = Depends(get_db)):
+    job = _job(db, jid, user)
     return render(request, "deid/detail.html", db, user, job=job, actions=ACTIONS,
                   policy=get_ruleset().deid_policy)
 
 
 @router.post("/deid/{jid}/process", dependencies=[Depends(verify_csrf)])
-async def deid_process(request: Request, jid: int, user: User = Depends(steward), db: Session = Depends(get_db)):
-    job = _job(db, jid)
+async def deid_process(request: Request, jid: int, user: User = Depends(researcher), db: Session = Depends(get_db)):
+    job = _job(db, jid, user)
     if not job.input_path or not Path(job.input_path).exists():
         flash(request, "원본 파일이 파기되어 재처리할 수 없습니다.", "error")
         return RedirectResponse(f"/deid/{jid}", status_code=303)
@@ -159,9 +159,6 @@ async def deid_process(request: Request, jid: int, user: User = Depends(steward)
     result.report["processed_by"] = user.full_name
     job.report = result.report
     job.status = "processed"
-    job.released_to = None
-    job.released_at = None
-    records.reset_drb(job)  # 재처리 시 적정성 검토를 다시 받아야 함
     audit.record(db, user, "deid_process", "deid_job", job.id,
                  {"verdict": result.report["verdict"], "output_rows": result.report["output_rows"],
                   "k_min": result.report["k_anonymity"].get("min_k")}, client_ip(request))
@@ -180,56 +177,13 @@ def col_index(job: DeidJob, name: str) -> int:
 
 @router.get("/deid/{jid}/report")
 def deid_report(request: Request, jid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    job = _job(db, jid)
-    _check_download(job, user, report_only=True)
+    job = _job(db, jid, user)
     return render(request, "print/deid_report.html", db, user, job=job, actions=ACTIONS)
-
-
-@router.post("/deid/{jid}/release", dependencies=[Depends(verify_csrf)])
-def deid_release(request: Request, jid: int, user: User = Depends(steward), db: Session = Depends(get_db)):
-    job = _job(db, jid)
-    p = job.protocol
-    if job.status not in ("processed", "released") or not job.output_path:
-        flash(request, "가명처리가 완료된 작업만 제공할 수 있습니다.", "error")
-    elif p is None:
-        flash(request, "IRB 과제와 연결되지 않은 작업은 연구자에게 제공할 수 없습니다.", "error")
-    elif not p.is_active_approval:
-        flash(request, f"과제 {p.protocol_no}의 IRB 승인이 유효하지 않아 제공할 수 없습니다.", "error")
-    elif job.report.get("verdict") == "부적정":
-        flash(request, "적정성 판정이 '부적정'인 데이터는 제공할 수 없습니다. 처리 기준을 조정하십시오.", "error")
-    elif job.drb_status != "approved":
-        flash(request, "데이터심의위원회(DRB)의 적정성 검토 승인이 필요합니다.", "error")
-    elif gate := records.transfer_gate(db, p):
-        flash(request, gate, "error")
-    else:
-        job.status = "released"
-        job.released_to = p.pi_id
-        job.released_at = now()
-        audit.record(db, user, "deid_release", "deid_job", job.id,
-                     {"protocol": p.protocol_no, "to": p.pi_id, "sha256": job.report.get("output_sha256")}, client_ip(request))
-        notify(db, p.member_ids(), f"{p.protocol_no} 가명정보가 제공되었습니다 ({job.report.get('output_rows', 0):,}행)",
-               f"/deid/{job.id}/download")
-        db.commit()
-        flash(request, f"{p.protocol_no} 연구팀에 가명정보를 제공했습니다.", "success")
-    return RedirectResponse(f"/deid/{jid}", status_code=303)
-
-
-def _check_download(job: DeidJob, user: User, report_only: bool = False) -> None:
-    if user.role in (Role.DATA_STEWARD, Role.ADMIN):
-        return
-    if report_only and user.role in DRB_ROLES:
-        return
-    p = job.protocol
-    if job.status != "released" or p is None or user.id not in p.member_ids():
-        raise HTTPException(403, "제공된 가명정보만 해당 연구팀이 다운로드할 수 있습니다.")
-    if not p.is_active_approval:
-        raise HTTPException(403, "IRB 승인 기간이 유효하지 않아 다운로드할 수 없습니다.")
 
 
 @router.get("/deid/{jid}/download")
 def deid_download(request: Request, jid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    job = _job(db, jid)
-    _check_download(job, user)
+    job = _job(db, jid, user)
     if not job.output_path or not Path(job.output_path).exists():
         raise HTTPException(404, "처리 결과 파일이 없습니다.")
     audit.record(db, user, "deid_download", "deid_job", job.id, {"sha256": job.report.get("output_sha256")}, client_ip(request))
@@ -243,8 +197,8 @@ def deid_download(request: Request, jid: int, user: User = Depends(current_user)
 
 
 @router.post("/deid/{jid}/purge-input", dependencies=[Depends(verify_csrf)])
-def deid_purge(request: Request, jid: int, user: User = Depends(steward), db: Session = Depends(get_db)):
-    job = _job(db, jid)
+def deid_purge(request: Request, jid: int, user: User = Depends(researcher), db: Session = Depends(get_db)):
+    job = _job(db, jid, user)
     if job.input_path and Path(job.input_path).exists():
         Path(job.input_path).unlink()
         job.input_path = ""
@@ -258,24 +212,3 @@ def _quote(s: str) -> str:
     from urllib.parse import quote
 
     return quote(s)
-
-
-# --------------------------------------------------------------------- DRB 적정성 검토
-@router.get("/drb")
-def drb_queue(request: Request, user: User = Depends(drb_member), db: Session = Depends(get_db)):
-    jobs = db.scalars(select(DeidJob).where(DeidJob.status.in_(["processed", "released"])).order_by(DeidJob.id.desc())).all()
-    return render(request, "deid/drb.html", db, user, jobs=jobs)
-
-
-@router.post("/deid/{jid}/drb", dependencies=[Depends(verify_csrf)])
-async def drb_decide(request: Request, jid: int, user: User = Depends(drb_member), db: Session = Depends(get_db)):
-    job = _job(db, jid)
-    form = await request.form()
-    try:
-        records.drb_review(db, user, job, form.get("decision") == "approve", str(form.get("comment", "")), client_ip(request))
-    except wf.WorkflowError as e:
-        flash(request, str(e), "error")
-        return RedirectResponse("/drb", status_code=303)
-    db.commit()
-    flash(request, f"가명처리 #{job.id} 적정성 검토를 등록했습니다.", "success")
-    return RedirectResponse("/drb", status_code=303)

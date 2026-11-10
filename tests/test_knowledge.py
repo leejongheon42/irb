@@ -14,7 +14,7 @@ from irb_automation.knowledge import index as ix
 from irb_automation.knowledge import service as ks
 from irb_automation.knowledge import sources as kns
 from irb_automation.knowledge.models import KnowledgeQuery, KnowledgeSource
-from irb_automation.models import DecisionType, Protocol
+from irb_automation.models import Protocol, ProtocolStatus
 from irb_automation.workflow import service as wf
 
 from .conftest import csrf, good_facts, login
@@ -96,6 +96,7 @@ def _set_precedents(db, users):
     p2 = db.scalars(select(Protocol).where(Protocol.title.contains("자살"))).one()
     p1.protocol_no = "IRB-T-0001"
     p2.protocol_no = "IRB-T-0002"
+    p1.status = p2.status = ProtocolStatus.SUBMITTED
     p2.pi_id = users["researcher2"].id
     p2.co_investigators = []
     db.flush()
@@ -105,8 +106,8 @@ def _set_precedents(db, users):
 def test_precedent_visibility_policy(db, users):
     p1, p2 = _set_precedents(db, users)
     q = "정신건강의학과 경과기록 자살 위험 예측 언어모델"
-    by_reviewer = ks.search(db, q, k=5, kinds=["protocol"], user=users["reviewer1"])
-    assert any(h["title"].startswith("IRB-T-0002") for h in by_reviewer)  # 위원은 선례 전체
+    by_admin = ks.search(db, q, k=5, kinds=["protocol"], user=users["admin"])
+    assert any(h["title"].startswith("IRB-T-0002") for h in by_admin)  # 관리자는 기관 선례 전체
     by_pi = ks.search(db, q, k=5, kinds=["protocol"], user=users["researcher2"])
     assert any(h["title"].startswith("IRB-T-0002") for h in by_pi)  # 본인 과제
     by_other = ks.search(db, q, k=5, kinds=["protocol"], user=users["researcher"])
@@ -117,9 +118,12 @@ def test_precedent_visibility_policy(db, users):
 def test_decisions_indexed_incrementally(db, users):
     p = db.scalars(select(Protocol).where(Protocol.title.contains("SGLT2"))).one()
     assert ks.search(db, "SGLT2", k=5, kinds=["protocol"]) == []
-    wf.submit(db, users["researcher"], p)
-    wf.decide(db, users["coordinator"], p, DecisionType.EXEMPT_CONFIRM, comments="가명정보만 원내 분석")
-    hits = ks.search(db, "SGLT2 심의면제 확인", k=5, kinds=["decision", "protocol"])
+    wf.record_submission(db, users["researcher"], p, force=True)
+    items = wf.record_revision_request(db, users["researcher"], p, "1. 가명처리 주체를 명시하십시오.")
+    wf.respond_revision_items(db, users["researcher"], p, {items[0].id: "데이터관리자가 가명처리함을 명시하였습니다."})
+    wf.record_submission(db, users["researcher"], p, force=True)
+    wf.record_result(db, users["researcher"], p, "exempt", note="가명정보만 원내 분석")
+    hits = ks.search(db, "SGLT2 심의면제 확인 가명처리 주체", k=8, kinds=["decision", "protocol"])
     kinds = {h["kind"] for h in hits}
     assert {"decision", "protocol"} <= kinds
     assert any("심의면제 확인" in h["title"] for h in hits if h["kind"] == "decision")
@@ -160,17 +164,17 @@ def test_related_for_findings(db):
 # ------------------------------------------------------------------ 업로드 문서
 def test_upload_markdown_sop_lifecycle(db, users):
     raw = "# 제1조(목적)\n이 지침은 결과 반출 절차를 정한다.\n\n# 제2조(최소 셀)\n반출 결과표의 최소 셀 크기는 10으로 한다.".encode()
-    src = kns.add_uploaded_source(db, users["coordinator"], title="결과 반출 SOP", kind="sop", ref="SOP-07",
+    src = kns.add_uploaded_source(db, users["admin"], title="결과 반출 SOP", kind="sop", ref="SOP-07",
                                   filename="sop.md", raw=raw)
     assert len(src.chunks) == 2 and Path(src.file_path).exists()
     hits = ks.search(db, "최소 셀 크기 10", k=3, kinds=["sop"])
     assert hits and hits[0]["source_id"] == src.id and hits[0]["heading"].startswith("제2조")
-    kns.set_active(db, src, False, users["coordinator"])
+    kns.set_active(db, src, False, users["admin"])
     assert not ks.search(db, "최소 셀 크기 10", k=3, kinds=["sop"])
-    kns.set_active(db, src, True, users["coordinator"])
-    assert kns.reindex_source(db, src, users["coordinator"]) == 2
+    kns.set_active(db, src, True, users["admin"])
+    assert kns.reindex_source(db, src, users["admin"]) == 2
     path = src.file_path
-    kns.delete_source(db, src, users["coordinator"])
+    kns.delete_source(db, src, users["admin"])
     assert not Path(path).exists() and not ks.search(db, "최소 셀 크기 10", k=3, kinds=["sop"])
     with pytest.raises(kns.KnowledgeError):
         kns.add_uploaded_source(db, None, title="x", kind="sop", filename="a.exe", raw=b"MZ")
@@ -295,7 +299,7 @@ def test_web_pages_and_permissions(app):
         assert "제28조의2" in c.get(f"/knowledge/source/{sid}").text
         assert c.get("/admin/knowledge").status_code == 403
 
-        login(c, "coordinator")
+        login(c, "admin")
         assert c.get("/admin/knowledge").status_code == 200
         t = csrf(c)
         r = c.post("/admin/knowledge", data={"csrf_token": t, "title": "기관 FAQ", "kind": "faq",
@@ -320,6 +324,7 @@ def test_precedent_source_page_hidden_from_other_researchers(app, users):
     with SessionLocal() as db:
         p2 = db.scalars(select(Protocol).where(Protocol.title.contains("자살"))).one()
         p2.protocol_no = "IRB-T-0002"
+        p2.status = ProtocolStatus.SUBMITTED
         p2.pi_id = db.scalars(select(type(users["researcher2"])).where(
             type(users["researcher2"]).username == "researcher2")).one().id
         p2.co_investigators = []
@@ -330,7 +335,7 @@ def test_precedent_source_page_hidden_from_other_researchers(app, users):
     with TestClient(app) as c:
         login(c, "researcher")
         assert c.get(f"/knowledge/source/{sid}").status_code == 404
-        login(c, "reviewer1")
+        login(c, "admin")
         assert c.get(f"/knowledge/source/{sid}").status_code == 200
 
 

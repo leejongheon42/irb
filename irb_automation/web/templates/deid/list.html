@@ -15,7 +15,7 @@
       <td>{{ j.id }}</td><td><a href="/deid/{{ j.id }}">{{ j.original_filename }}</a></td>
       <td>{{ j.protocol.protocol_no if j.protocol else "-" }}</td>
       <td class="num">{{ "{:,}".format(j.row_count) }}</td>
-      <td>{{ {"analyzed": "분석완료", "processed": "처리완료", "released": "제공완료"}[j.status] }}</td>
+      <td>{{ {"analyzed": "분석완료", "processed": "처리완료", "released": "처리완료"}.get(j.status, j.status) }}</td>
       <td>{{ m.verdict_badge(j.report.verdict if j.report else None) }}</td>
       <td class="num">{{ j.report.k_anonymity.min_k if j.report and j.report.k_anonymity else "-" }}</td>
       <td class="nowrap small">{{ j.created_at|fmt }}</td>

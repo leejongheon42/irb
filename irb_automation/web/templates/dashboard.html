@@ -1,168 +1,62 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m %}
-{% block title %}대시보드{% endblock %}
+{% block title %}내 연구 현황{% endblock %}
 {% block content %}
 <div class="topbar">
-  <div><h1>대시보드</h1><div class="sub">{{ user.full_name }}님, {{ today|fmt }} 기준 현황입니다.</div></div>
+  <div><h1>내 연구 현황</h1>
+    <p class="muted mb0">과제 정보를 한 번 입력하면 IRB 제출 서류를 자동으로 만들고, 서류끼리 교차 점검해 제출 전에 고칩니다.</p></div>
   <div class="actions">
-    {% if user.role in (Role.RESEARCHER, Role.ADMIN) %}<a class="btn btn-primary" href="/protocols/new">+ 새 과제 작성</a>{% endif %}
-    {% if user.is_irb_staff %}
-    <form method="post" action="/admin/scheduler" class="inline-form">{{ csrf_input }}<button type="submit">만료·알림 점검 실행</button></form>
-    {% endif %}
+    <a class="btn btn-primary" href="/protocols/new">+ 새 과제</a>
+    <a class="btn" href="/protocols/import">기존 계획서로 시작</a>
+    <a class="btn" href="/qc">서류만 점검하기</a>
   </div>
+</div>
+<div class="grid-4">
+  <div class="card stat"><div class="label">작성·보완 중</div><div class="value">{{ drafts|length }}</div></div>
+  <div class="card stat"><div class="label">IRB 심의 대기</div><div class="value">{{ waiting|length }}</div></div>
+  <div class="card stat"><div class="label">보완 요청 받음</div><div class="value">{{ revisions|length }}</div></div>
+  <div class="card stat"><div class="label">60일 내 만료</div><div class="value">{{ expiring|length }}</div></div>
 </div>
 
-{% if user.is_irb_staff %}
-<div class="grid grid-4">
-  <div class="card stat"><div class="label">접수 대기</div><div class="value">{{ status_counts.get(S.SUBMITTED, 0) }}</div></div>
-  <div class="card stat"><div class="label">심의중</div><div class="value">{{ status_counts.get(S.UNDER_REVIEW, 0) }}</div></div>
-  <div class="card stat"><div class="label">승인·면제(진행)</div><div class="value">{{ status_counts.get(S.APPROVED, 0) + status_counts.get(S.EXEMPT, 0) }}</div></div>
-  <div class="card stat"><div class="label">평균 처리기간</div><div class="value">{{ avg_turnaround if avg_turnaround is defined else "-" }}<span class="small muted"> 일</span></div></div>
-</div>
-
-<div class="card">
-  <h2>심의 대기열 <span class="hint">자동 분류 결과 기준</span></h2>
-  {% if queue %}
-  <div class="table-wrap"><table>
-    <tr><th>과제번호</th><th>제목</th><th>신청</th><th>연구책임자</th><th>자동분류</th><th>위험도</th><th>상태</th><th>접수일</th></tr>
-    {% for p in queue %}{% set s = p.current_submission %}
-    <tr>
-      <td class="nowrap">{{ p.protocol_no }}</td>
-      <td><a href="/protocols/{{ p.id }}">{{ p.title }}</a></td>
-      <td>{{ s.kind.label if s else "-" }}</td>
-      <td>{{ p.pi.full_name }}</td>
-      <td>{{ m.review_badge(s.review_type if s else None) }}</td>
-      <td>{{ m.risk_badge(s.latest_prereview.risk_level if s and s.latest_prereview else None, s.latest_prereview.risk_score if s and s.latest_prereview else None) }}</td>
-      <td>{{ m.status_badge(p.status) }}</td>
-      <td class="nowrap">{{ s.submitted_at|fmt if s else "-" }}</td>
-    </tr>
-    {% endfor %}
-  </table></div>
-  {% else %}<p class="muted">대기 중인 신청건이 없습니다.</p>{% endif %}
-</div>
-
-<div class="grid grid-2">
-  <div class="card">
-    <h2>승인 만료 예정 (60일 이내)</h2>
-    {% for p in expiring %}
-    <p><a href="/protocols/{{ p.id }}">{{ p.protocol_no }}</a> {{ p.title|truncate(40) }}
-      <span class="badge {{ 'b-danger' if p.expires_at|days_left <= 7 else 'b-warn' }}">D-{{ p.expires_at|days_left }}</span></p>
-    {% else %}<p class="muted">없음</p>{% endfor %}
-  </div>
-  <div class="card">
-    <h2>심의 기한 초과</h2>
-    {% for a in overdue %}
-    <p><a href="/protocols/{{ a.submission.protocol_id }}">{{ a.submission.protocol.protocol_no }}</a> · {{ a.reviewer.full_name }}
-      <span class="badge b-danger">기한 {{ a.due_date|fmt }}</span></p>
-    {% else %}<p class="muted">없음</p>{% endfor %}
-  </div>
-</div>
-
-<div class="grid grid-2">
-  <div class="card">
-    <h2>심의유형 분포</h2>
-    <table>{% for k, v in review_type_counts.items() %}<tr><td>{{ k }}</td><td class="num">{{ v }}</td></tr>{% else %}<tr><td class="muted">데이터 없음</td></tr>{% endfor %}</table>
-  </div>
-  <div class="card">
-    <h2>위험도 분포</h2>
-    <table>{% for k, v in risk_counts.items() %}<tr><td>{{ m.risk_badge(k) }}</td><td class="num">{{ v }}</td></tr>{% else %}<tr><td class="muted">데이터 없음</td></tr>{% endfor %}</table>
-  </div>
-</div>
+{% if revisions %}
+<div class="card"><h2>보완 요청 대응 필요</h2>
+  {% for p in revisions %}<p><a href="/protocols/{{ p.id }}/revision">{{ p.title }}</a> <span class="small muted">{{ p.updated_at|fmt }}</span></p>{% endfor %}</div>
+{% endif %}
+{% if expiring %}
+<div class="card"><h2>승인 만료 임박 — 지속심의 서류 준비</h2>
+  {% for p in expiring %}<p><a href="/protocols/{{ p.id }}/package?kind=continuing">{{ p.title }}</a> · 만료 {{ p.expires_at|fmt }} ({{ p.expires_at|days_left }}일)</p>{% endfor %}</div>
 {% endif %}
 
-{% if my_reviews is defined and my_reviews %}
 <div class="card">
-  <h2>나의 심의 배정</h2>
-  <div class="table-wrap"><table>
-    <tr><th>과제번호</th><th>제목</th><th>유형</th><th>역할</th><th>기한</th></tr>
-    {% for a in my_reviews %}
-    <tr>
-      <td>{{ a.submission.protocol.protocol_no }}</td>
-      <td><a href="/protocols/{{ a.submission.protocol_id }}#review">{{ a.submission.protocol.title }}</a></td>
-      <td>{{ m.review_badge(a.submission.review_type) }}</td>
-      <td>{{ "주심" if a.is_primary else "부심" }}</td>
-      <td><span class="badge {{ 'b-danger' if a.due_date and a.due_date|days_left < 0 else '' }}">{{ a.due_date|fmt }}</span></td>
-    </tr>
-    {% endfor %}
-  </table></div>
-</div>
-{% endif %}
-
-{% if my_protocols is defined and (my_protocols or user.role == Role.RESEARCHER) %}
-<div class="card">
-  <h2>나의 연구과제</h2>
+  <h2>내 과제</h2>
   {% if my_protocols %}
   <div class="table-wrap"><table>
-    <tr><th>과제번호</th><th>제목</th><th>상태</th><th>심의유형</th><th>승인 만료</th></tr>
+    <tr><th>과제</th><th>상태</th><th>예상 심의</th><th>다음 할 일</th><th></th></tr>
     {% for p in my_protocols %}
     <tr>
-      <td class="nowrap">{{ p.protocol_no or "(미부여)" }}</td>
-      <td><a href="/protocols/{{ p.id }}">{{ p.title }}</a></td>
+      <td><a href="/protocols/{{ p.id }}">{{ p.title }}</a>{% if p.protocol_no %}<div class="small muted">{{ p.protocol_no }}</div>{% endif %}</td>
       <td>{{ m.status_badge(p.status) }}</td>
       <td>{{ m.review_badge(p.review_type) }}</td>
-      <td class="nowrap">{% if p.expires_at %}{{ p.expires_at|fmt }}{% set dl = p.expires_at|days_left %}{% if dl is not none and dl <= 60 %} <span class="badge {{ 'b-danger' if dl < 0 else 'b-warn' }}">D{{ '%+d'|format(-dl) if dl < 0 else '-' ~ dl }}</span>{% endif %}{% else %}-{% endif %}</td>
+      <td class="small">{% if p.status == S.DRAFT %}서류 자동 완성 → 점검 → e-IRB 제출
+        {% elif p.status == S.REVISION_REQUESTED %}보완 답변·서류 수정 후 재제출
+        {% elif p.status == S.SUBMITTED %}IRB 결과를 받으면 입력
+        {% elif p.status == S.AMENDMENT %}변경 내용 수정 → 변경 대비표·서류 갱신
+        {% elif p.status == S.EXPIRED %}지속심의 또는 종료보고
+        {% elif p.status in (S.APPROVED, S.EXEMPT) %}승인 유지 중{% else %}-{% endif %}</td>
+      <td class="nowrap">{% if p.is_editable %}<a class="btn btn-sm btn-primary" href="/protocols/{{ p.id }}/package">서류 패키지</a>{% else %}<a class="btn btn-sm" href="/protocols/{{ p.id }}">열기</a>{% endif %}</td>
     </tr>
     {% endfor %}
   </table></div>
   {% else %}
-  <p class="muted">작성한 과제가 없습니다. <a href="/protocols/new">새 과제 작성</a>을 시작하십시오.</p>
+  <p>아직 과제가 없습니다. <a href="/protocols/new">새 과제를 만들거나</a> <a href="/protocols/import">다른 병원 양식의 계획서를 올려</a> 시작하십시오.</p>
   {% endif %}
 </div>
+
+{% if status_counts is defined %}
+<div class="card"><h2>기관 전체 <span class="hint">관리자</span></h2>
+  <p>과제 {{ total_protocols }}건 · {% for st, n in status_counts.items() %}{{ st.label }} {{ n }}{% if not loop.last %} · {% endif %}{% endfor %}</p></div>
 {% endif %}
 
-{% if released is defined and released %}
-<div class="card">
-  <h2>제공받은 가명정보</h2>
-  <table>
-    <tr><th>과제</th><th>파일</th><th>행 수</th><th>제공일</th><th></th></tr>
-    {% for j in released %}
-    <tr><td>{{ j.protocol.protocol_no }}</td><td>{{ j.original_filename }}</td><td class="num">{{ j.report.output_rows }}</td>
-      <td>{{ j.released_at|fmt }}</td><td><a class="btn btn-sm" href="/deid/{{ j.id }}/download">다운로드</a> <a class="btn btn-sm" href="/deid/{{ j.id }}/report">검토보고서</a></td></tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
-
-{% if provision_targets is defined %}
-<div class="grid grid-2">
-  <div class="card">
-    <h2>데이터 제공 대상 (유효 승인 과제)</h2>
-    {% for p in provision_targets %}
-    <p><a href="/protocols/{{ p.id }}">{{ p.protocol_no }}</a> {{ p.title|truncate(36) }}
-      {{ m.status_badge(p.status) }} <a class="btn btn-sm" href="/deid/new?protocol_id={{ p.id }}">가명처리</a></p>
-    {% else %}<p class="muted">없음</p>{% endfor %}
-  </div>
-  <div class="card">
-    <h2>최근 가명처리 작업</h2>
-    {% for j in deid_jobs %}
-    <p><a href="/deid/{{ j.id }}">#{{ j.id }} {{ j.original_filename }}</a> {{ m.verdict_badge(j.report.verdict if j.report else None) }}
-      <span class="muted small">{{ j.created_at|fmt }}</span></p>
-    {% else %}<p class="muted">없음</p>{% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{% if (upcoming_meetings is defined and upcoming_meetings) or (drb_pending is defined and drb_pending) or (outputs_pending is defined and outputs_pending) or destruction_due %}
-<div class="grid grid-3">
-  {% if upcoming_meetings is defined %}
-  <div class="card"><h2>예정된 위원회 회의</h2>
-    {% for mt in upcoming_meetings %}<p><a href="/meetings/{{ mt.id }}">{{ mt.label }} · {{ mt.scheduled_at|fmt }}</a> <span class="muted small">안건 {{ mt.items|length }}건</span></p>{% else %}<p class="muted">없음</p>{% endfor %}
-    <p class="small"><a href="/drb">가명처리 적정성 검토 대기 {{ drb_pending }}건</a></p></div>
-  {% endif %}
-  {% if outputs_pending is defined %}
-  <div class="card"><h2>반출 심사 대기</h2><div class="result-big">{{ outputs_pending }}</div><a href="/outputs">심사하기</a></div>
-  {% endif %}
-  {% if destruction_due %}
-  <div class="card"><h2>자료 파기 기한 임박</h2>
-    {% for r in destruction_due %}<p><a href="/governance/destruction">{{ r.protocol.protocol_no }}</a> 기한 {{ r.due_date|fmt }}</p>{% endfor %}</div>
-  {% endif %}
-</div>
-{% endif %}
-
-<div class="card">
-  <h2>최근 알림</h2>
-  {% for n in notifications %}
-  <p>{% if not n.is_read %}<span class="badge b-primary">새 알림</span> {% endif %}<a href="/notifications/{{ n.id }}">{{ n.message }}</a> <span class="muted small">{{ n.created_at|fmt }}</span></p>
-  {% else %}<p class="muted">알림이 없습니다.</p>{% endfor %}
-</div>
+<div class="card"><h2>최근 알림</h2>
+  {% for n in notifications %}<p class="small"><a href="/notifications/{{ n.id }}">{{ n.message }}</a> <span class="muted">{{ n.created_at|fmt }}</span></p>{% else %}<p class="muted small">없음</p>{% endfor %}</div>
 {% endblock %}

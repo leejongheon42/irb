@@ -152,7 +152,7 @@ def seed_doctemplates(db: Session) -> list[DocumentTemplate]:
     """데모 데이터: 등록된 서식이 없을 때만 샘플 2종을 등록·활성화(멱등)."""
     if db.scalars(select(DocumentTemplate.id)).first():
         return []
-    user = db.scalars(select(User).where(User.role.in_([Role.ADMIN, Role.COORDINATOR])).order_by(User.id)).first()
+    user = db.scalars(select(User).where(User.role == Role.ADMIN).order_by(User.id)).first()
     if user is None:
         return []
     return create_samples(db, user, activate=True, ip="seed")

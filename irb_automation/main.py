@@ -21,10 +21,9 @@ from .web import (
     routes_deid,
     routes_doctemplates,
     routes_forms,
-    routes_governance,
     routes_knowledge,
     routes_main,
-    routes_meetings,
+    routes_package,
     routes_pipeline,
     routes_protocols,
     routes_reports,
@@ -97,13 +96,12 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     app.include_router(routes_main.router)
-    app.include_router(routes_submission.router)  # /documents/review-queue 가 /documents/{id} 보다 먼저 매칭되도록 선등록
+    app.include_router(routes_submission.router)  # /documents/{id}/preview 등 세부 경로를 먼저 등록
+    app.include_router(routes_package.router)
     app.include_router(routes_pipeline.router)  # /protocols/import 가 /protocols/{pid} 보다 먼저
     app.include_router(routes_protocols.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)
-    app.include_router(routes_meetings.router)
-    app.include_router(routes_governance.router)
     app.include_router(routes_reports.router)
     app.include_router(routes_doctemplates.router)
     app.include_router(routes_knowledge.router)

@@ -73,7 +73,7 @@ def test_docx_split_runs_tables_headers(db, users):
         t.rows[0].cells[1].text = "«연구책임자» {{동의방식=waiver}}면제"
         doc.add_paragraph("{{objectives}}")
 
-    tpl = upload(db, users["coordinator"], docx_bytes(build))
+    tpl = upload(db, users["admin"], docx_bytes(build))
     names = {ph["name"] for ph in tpl.placeholders}
     assert {"기관명", "연구제목", "작성일", "연구책임자", "동의방식", "objectives"} <= names
     assert service.unmapped(tpl) == []  # 모두 자동 매핑
@@ -96,7 +96,7 @@ def test_docx_row_and_paragraph_repeat(db, users):
         t.rows[1].cells[0].text = "{{#연구진}}{{item.성명}}"
         t.rows[1].cells[1].text = "{{item.역할}}"
 
-    tpl = upload(db, users["coordinator"], docx_bytes(build))
+    tpl = upload(db, users["admin"], docx_bytes(build))
     out = Document(BytesIO(service.fill(db, tpl, protocol(db)).content))
     rows = out.tables[0].rows
     assert len(rows) == 3
@@ -108,7 +108,7 @@ def test_docx_row_and_paragraph_repeat(db, users):
 
 def test_docx_mergefield_unwrapped(db, users):
     raw = sample_waiver_docx()
-    tpl = upload(db, users["coordinator"], raw, "waiver_request")
+    tpl = upload(db, users["admin"], raw, "waiver_request")
     assert "신청일" in {ph["name"] for ph in tpl.placeholders}
     assert tpl.mapping["동의면제사유"] == "waiver_impracticable_detail"
     text = docx_text(service.fill(db, tpl, protocol(db)).content)
@@ -121,7 +121,7 @@ def test_hwpx_fill_preserves_zip(db, users):
             + "</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>" + p_("{{methods}}"))
     raw = make_hwpx(body)
     assert service.sniff_format("a.hwpx", raw) == "hwpx"
-    tpl = upload(db, users["coordinator"], raw, filename="a.hwpx")
+    tpl = upload(db, users["admin"], raw, filename="a.hwpx")
     result = service.fill(db, tpl, protocol(db))
     assert result.filename.endswith(".hwpx")
     with zipfile.ZipFile(BytesIO(result.content)) as z:
@@ -135,7 +135,7 @@ def test_hwpx_fill_preserves_zip(db, users):
 
 def test_hwpx_newlines_become_linebreaks(db, users):
     raw = make_hwpx(p_("{{수집항목|줄바꿈}}"))
-    tpl = upload(db, users["coordinator"], raw, filename="b.hwpx")
+    tpl = upload(db, users["admin"], raw, filename="b.hwpx")
     with zipfile.ZipFile(BytesIO(service.fill(db, tpl, protocol(db)).content)) as z:
         xml = z.read("Contents/section0.xml").decode()
     assert xml.count("lineBreak") == 7
@@ -178,7 +178,7 @@ def test_rejects_invalid_files(db, users):
 
 
 def test_activation_requires_full_mapping_and_versions(db, users):
-    coord = users["coordinator"]
+    coord = users["admin"]
     tpl = upload(db, coord, sample_application_docx())
     assert service.unmapped(tpl) == ["서명"]
     with pytest.raises(service.TemplateError, match="서명"):
@@ -205,8 +205,8 @@ def test_generate_and_attach_prefers_institution_template(db, users):
     assert doc.filename == "심의의뢰서_v1.docx" and doc.stored_path.endswith(".docx")
     assert build_document(db, p, "application", prefer_builtin=True).source == "builtin"
     # 기본 서식에 없는 종류도 기관 서식이 있으면 생성 가능
-    tpl = upload(db, users["coordinator"], docx_bytes(lambda d: d.add_paragraph("{{연구제목}}")), "coi")
-    service.activate(db, users["coordinator"], tpl)
+    tpl = upload(db, users["admin"], docx_bytes(lambda d: d.add_paragraph("{{연구제목}}")), "coi")
+    service.activate(db, users["admin"], tpl)
     assert generatable_doc_types(db)["coi"] == "institution"
     assert "SGLT2" in docx_text(build_document(db, p, "coi").content)
 
@@ -229,7 +229,7 @@ def test_admin_pages_and_permissions(app):
         login(c, "researcher")
         assert c.get("/admin/templates").status_code == 403
         assert c.get("/doc-templates").status_code == 200
-        login(c, "coordinator")
+        login(c, "admin")
         t = csrf(c)
         r = c.post("/admin/templates", data={"csrf_token": t, "doc_type": "application", "name": "A"},
                    files={"file": ("x.hwp", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"0" * 64, "application/octet-stream")},

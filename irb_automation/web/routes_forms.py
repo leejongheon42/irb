@@ -32,7 +32,7 @@ from ..workflow import service as wf
 from .deps import client_ip, current_user, flash, render, require_roles, verify_csrf
 
 router = APIRouter()
-form_admin = require_roles(Role.COORDINATOR)  # 관리자 포함
+form_admin = require_roles(Role.ADMIN)  # 관리자 포함
 ONLINE_PREFIX = "f__"
 
 

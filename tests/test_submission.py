@@ -12,11 +12,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from irb_automation.models import DecisionType, Document, Protocol, ProtocolStatus
+from irb_automation.models import Document, Protocol, ProtocolStatus
 from irb_automation.submission import service as sub
 from irb_automation.submission.guess import guess_doc_type, guess_from_filename
 from irb_automation.submission.models import DocumentComment
-from irb_automation.submission.stamp import stamp_approved_documents, stamp_pdf
 from irb_automation.submission.validate import safe_filename, validate_upload
 from irb_automation.submission.versions import latest_by_type, register_new_version
 from irb_automation.workflow import service as wf
@@ -166,75 +165,30 @@ def test_hook_failure_does_not_block_upload(db, users, monkeypatch):
     assert db.get(Document, doc.id) is not None
 
 
-def test_document_review_flow_and_permissions(db, users):
-    p, r, coord, rev = sglt2(db), users["researcher"], users["coordinator"], users["reviewer1"]
-    doc, _ = sub.store_document(db, r, p, doc_type="consent_form", filename="동의서.pdf", raw=make_pdf())
-    with pytest.raises(wf.PermissionDenied):
-        sub.review_document(db, r, doc, "accept")
-    with pytest.raises(wf.PermissionDenied):
-        sub.review_document(db, rev, doc, "accept")  # 배정되지 않은 위원
-    with pytest.raises(wf.WorkflowError, match="사유"):
-        sub.review_document(db, coord, doc, "request_revision", "")
-    sub.review_document(db, coord, doc, "request_revision", "연락처 누락")
-    assert doc.status == "revision_requested" and doc.reviewed_by == coord.id
-    new, _ = sub.store_document(db, r, p, doc_type="consent_form", filename="동의서_보완.pdf", raw=make_pdf(2))
-    assert new.status == "submitted" and doc.status == "superseded"
-    thread = sub.comments_for(db, p, "consent_form")
-    assert [c.kind for c in thread] == ["request_revision", "new_version"]
-    with pytest.raises(wf.WorkflowError, match="이전 버전"):
-        sub.review_document(db, coord, doc, "accept")
-    sub.review_document(db, coord, new, "accept")
-    assert new.status == "accepted"
-    sub.add_comment(db, r, new, "감사합니다")
-    assert db.scalars(select(DocumentComment).where(DocumentComment.document_id == new.id)).all()
-
-
-def test_upload_restricted_during_review(db, users):
+def test_team_comments_and_versions(db, users):
     p, r = sglt2(db), users["researcher"]
-    p.status = S.UNDER_REVIEW
-    db.flush()
-    with pytest.raises(sub.SubmissionError, match="보완 요청된 서류만"):
-        sub.store_document(db, r, p, doc_type="protocol", filename="p.pdf", raw=make_pdf())
-    cur = latest_by_type(list(p.documents))["protocol"]
-    cur.status = "revision_requested"
+    doc, _ = sub.store_document(db, r, p, doc_type="consent_form", filename="동의서.pdf", raw=make_pdf())
+    new, _ = sub.store_document(db, r, p, doc_type="consent_form", filename="동의서_v2.pdf", raw=make_pdf(2))
+    assert new.version == doc.version + 1 and doc.status == "superseded" and new.is_current
+    sub.add_comment(db, r, new, "2쪽 연락처 확인 필요")
+    assert db.scalars(select(DocumentComment).where(DocumentComment.document_id == new.id)).all()
+    with pytest.raises(wf.PermissionDenied):
+        sub.add_comment(db, users["researcher2"].__class__(id=999999, username="x", full_name="x",
+                                                            role=users["researcher"].role, password_hash=""), new, "x")
+
+
+def test_upload_rules_by_status(db, users):
+    p, r = sglt2(db), users["researcher"]
+    p.status = S.SUBMITTED  # IRB 심의 중: IRB가 요청한 서류를 추가·교체할 수 있음
     db.flush()
     sub.store_document(db, r, p, doc_type="protocol", filename="p.pdf", raw=make_pdf())
-    # 사무국은 언제나 가능
-    sub.store_document(db, users["coordinator"], p, doc_type="coi", filename="c.pdf", raw=make_pdf())
-
-
-# ------------------------------------------------------------------ 승인 도장
-def test_stamp_pdf_adds_text():
-    from pypdf import PdfReader
-
-    out = stamp_pdf(make_pdf(2, "original body"), ["IRB APPROVED", "IRB-2026-0001", "2026-01-01 ~ 2027-01-01"])
-    reader = PdfReader(io.BytesIO(out))
-    assert len(reader.pages) == 2
-    for page in reader.pages:
-        text = page.extract_text()
-        assert "IRB APPROVED" in text and "IRB-2026-0001" in text and "original body" in text
-
-
-def test_approval_stamps_current_documents(db, users):
-    p, r, coord = sglt2(db), users["researcher"], users["coordinator"]
-    consent, _ = sub.store_document(db, r, p, doc_type="consent_form", filename="동의서.pdf", raw=make_pdf())
-    sub.store_document(db, r, p, doc_type="protocol", filename="계획서.docx", raw=docx_bytes())  # 비PDF → 건너뜀
-    wf.submit(db, r, p)
-    d = wf.decide(db, coord, p, DecisionType.EXEMPT_CONFIRM)
-    created = stamp_approved_documents(db, coord, p, d)
-    assert [c.doc_type for c in created] == ["consent_form"]
-    stamped = created[0]
-    assert stamped.source == "stamped" and stamped.is_current and stamped.status == "accepted"
-    assert consent.status == "superseded"  # 원본은 이전 버전으로 보존
-    assert stamped.validation["stamp"]["source_document_id"] == consent.id
-    from pypdf import PdfReader
-
-    with open(stamped.stored_path, "rb") as f:
-        text = PdfReader(f).pages[0].extract_text()
-    assert "IRB EXEMPTION CONFIRMED" in text and p.protocol_no in text
-    # 재실행 시 원본 기준으로 다시 찍는다(도장 중복 없음)
-    again = stamp_approved_documents(db, coord, p, d)
-    assert again[0].validation["stamp"]["source_document_id"] == consent.id
+    p.status = S.APPROVED
+    db.flush()
+    with pytest.raises(sub.SubmissionError, match="변경 준비"):
+        sub.store_document(db, r, p, doc_type="protocol", filename="p2.pdf", raw=make_pdf(2))
+    sub.store_document(db, r, p, doc_type="progress_report", filename="경과.pdf", raw=make_pdf())  # 보고 서류는 가능
+    with pytest.raises(sub.SubmissionError, match="연구책임자"):
+        sub.store_document(db, users["admin"], p, doc_type="coi", filename="c.pdf", raw=make_pdf())
 
 
 # ------------------------------------------------------------------ HTTP
@@ -256,7 +210,7 @@ def test_http_bulk_upload_preview_compare_bundle(app, db):
     p = sglt2(db)
     cv = latest_by_type(list(p.documents))["cv"]
     assert cv.filename == "홍길동_이력서.pdf" and cv.page_count == 1
-    assert "제출 서류 현황" in c.get(f"/protocols/{pid}").text
+    assert "서류함" in c.get(f"/protocols/{pid}").text
 
     # 미리보기: 페이지 + iframe용 inline 응답 헤더
     proto = latest_by_type(list(p.documents))["protocol"]
@@ -301,55 +255,23 @@ def test_http_bulk_upload_preview_compare_bundle(app, db):
     assert len(reader.pages) == expected
 
 
-def test_http_review_queue_and_permissions(app, db, users):
+def test_http_document_permissions(app, db, users):
     p = sglt2(db)
     doc, _ = sub.store_document(db, users["researcher"], p, doc_type="consent_form", filename="동의서.pdf",
                                 raw=make_pdf())
-    wf.submit(db, users["researcher"], p)
     db.commit()
     c = TestClient(app)
     login(c, "researcher")
-    assert c.get("/documents/review-queue").status_code == 403
-    t = csrf(c)
-    assert c.post(f"/documents/{doc.id}/review", data={"csrf_token": t, "action": "accept"}).status_code == 403
-
-    login(c, "coordinator")
-    q = c.get("/documents/review-queue")
-    assert q.status_code == 200 and "동의서.pdf" in q.text
-    t = csrf(c)
-    r = c.post(f"/documents/{doc.id}/review", data={"csrf_token": t, "action": "request_revision", "note": "서명란 누락"},
-               follow_redirects=True)
-    assert "보완 요청" in r.text and "서명란 누락" in r.text
-
-    # 배정되지 않은 위원은 과제·합본 접근 불가
-    login(c, "reviewer2")
-    assert c.get(f"/documents/{doc.id}/preview").status_code == 403
-    assert c.get(f"/protocols/{p.id}/bundle.zip").status_code == 403
-
-
-def test_http_decide_creates_stamped_copy(app, db, users):
-    p = sglt2(db)
-    sub.store_document(db, users["researcher"], p, doc_type="consent_form", filename="동의서.pdf", raw=make_pdf())
-    wf.submit(db, users["researcher"], p)
-    db.commit()
-    c = TestClient(app)
-    login(c, "coordinator")
-    t = csrf(c)
-    r = c.post(f"/protocols/{p.id}/decide", data={"csrf_token": t, "decision": "exempt_confirm"}, follow_redirects=True)
-    assert "승인 도장본 1건" in r.text
-    db.expire_all()
-    stamped = latest_by_type(list(sglt2(db).documents))["consent_form"]
-    assert stamped.source == "stamped"
+    assert c.get(f"/documents/{doc.id}/preview").status_code == 200
+    assert c.get("/documents/review-queue").status_code in (404, 422)  # IRB 측 검토 대기열 없음
+    login(c, "admin")
+    assert c.get(f"/documents/{doc.id}/preview").status_code == 200  # 관리자 열람
 
 
 def test_seed_submission_is_idempotent(db, users):
     from irb_automation.submission.seed import seed_submission
 
-    wf.submit(db, users["researcher"], sglt2(db))
-    wf.decide(db, users["coordinator"], sglt2(db), DecisionType.EXEMPT_CONFIRM)
     first = seed_submission(db)
     assert first > 0
-    stamped = [d for d in sglt2(db).documents if d.source == "stamped"]
-    assert stamped
+    assert all(d.has_file for d in sglt2(db).documents)
     assert seed_submission(db) == 0
-    assert len([d for d in sglt2(db).documents if d.source == "stamped"]) == len(stamped)

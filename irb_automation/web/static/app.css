@@ -193,3 +193,37 @@ tr.material td:first-child { font-weight: 700; }
 .item-card h3 { margin-top: 0; }
 @media (max-width: 960px) { .vote-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .topbar .actions input, .topbar .actions select { width: auto; }
+
+/* ---------------- v4: 연구자 흐름 · 서류 점검 ---------------- */
+.stepper { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 14px; flex-wrap: wrap; }
+.stepper li { flex: 1 1 140px; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; background: var(--surface); font-size: 13px; color: var(--muted); }
+.stepper li a { color: inherit; text-decoration: none; display: block; }
+.stepper li.done { background: var(--ok-weak); color: var(--ok); border-color: transparent; }
+.stepper li.now { background: var(--primary-weak); color: var(--primary); border-color: var(--primary); font-weight: 700; }
+.score-card { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.score { font-size: 44px; font-weight: 800; line-height: 1; }
+.score small { font-size: 15px; color: var(--muted); font-weight: 600; }
+.verdict-pass { color: var(--ok); }
+.verdict-fail { color: var(--danger); }
+.sev-counts { display: flex; gap: 10px; flex-wrap: wrap; }
+.sev-counts > div { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; min-width: 96px; background: var(--surface); }
+.sev-counts .n { font-size: 22px; font-weight: 800; }
+.sev-counts .critical .n { color: var(--danger); }
+.sev-counts .major .n { color: var(--warn); }
+.sev-counts .minor .n { color: var(--info); }
+.phase-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 760px) { .phase-list { grid-template-columns: 1fr; } }
+.phase { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; background: var(--surface-2); font-size: 13px; }
+.fix-row { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 13px; margin-top: 4px; }
+.fix-row del { color: var(--danger); }
+.fix-row ins { color: var(--ok); text-decoration: none; background: #fef9c3; padding: 0 2px; }
+.pkg-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.pkg-item:last-child { border-bottom: 0; }
+.pkg-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; background: #94a3b8; }
+.pkg-dot.ready, .pkg-dot.checked { background: var(--ok); }
+.pkg-dot.issues, .pkg-dot.stale { background: var(--warn); }
+.pkg-dot.missing { background: var(--danger); }
+.progress { height: 10px; background: var(--surface-2); border-radius: 999px; border: 1px solid var(--border); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--primary); }
+.drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 18px; background: var(--surface-2); text-align: center; }
+progress.progress-bar { width: 100%; height: 10px; margin: 0 0 14px; accent-color: var(--primary); }

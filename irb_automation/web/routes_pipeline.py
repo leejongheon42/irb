@@ -33,7 +33,7 @@ router = APIRouter()
 
 IMPORT_EXT = {".pdf", ".docx", ".hwp", ".hwpx", ".doc", ".rtf", ".odt", ".txt", ".md", ".html", ".htm",
               ".png", ".jpg", ".jpeg"}
-researcher_or_staff = require_roles(Role.RESEARCHER, Role.COORDINATOR, Role.CHAIR)
+researcher_or_staff = require_roles(Role.RESEARCHER)
 
 
 def _run(db: Session, user: User, run_id: int) -> PipelineRun:
@@ -115,13 +115,13 @@ def protocol_runs(request: Request, pid: int, user: User = Depends(current_user)
     rows = _field_rows(latest, p) if latest else []
     can_apply = wf.is_member(user, p) and p.is_editable
     return render(request, "pipeline/protocol.html", db, user, p=p, runs=runs, latest=latest, rows=rows,
-                  can_apply=can_apply, can_run=wf.is_member(user, p) or user.is_irb_staff, **_ctx_common())
+                  can_apply=can_apply, can_run=wf.is_member(user, p) or user.is_admin, **_ctx_common())
 
 
 @router.post("/protocols/{pid}/pipeline", dependencies=[Depends(verify_csrf)])
 def protocol_rerun(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _protocol(db, user, pid)
-    if not (wf.is_member(user, p) or user.is_irb_staff):
+    if not (wf.is_member(user, p) or user.is_admin):
         raise HTTPException(403, "재분석 권한이 없습니다.")
     run = ps.start_protocol_pipeline(db, user, p.id)
     db.commit()
@@ -254,7 +254,7 @@ def _quote(name: str) -> str:
 
 # ---------------------------------------------------------------------- 관리
 @router.get("/admin/ai")
-def admin_ai(request: Request, user: User = Depends(require_roles(Role.COORDINATOR, Role.CHAIR)),
+def admin_ai(request: Request, user: User = Depends(require_roles(Role.ADMIN)),
              db: Session = Depends(get_db)):
     s = get_settings()
     runs = list(db.scalars(select(PipelineRun).order_by(PipelineRun.id.desc()).limit(30)))

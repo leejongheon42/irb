@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}제출 서류 패키지{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="muted small"><a href="/protocols/{{ p.id }}">{{ p.title }}</a></div>
+    <h1>제출 서류 패키지 <span class="hint">{{ plan.kind.label }}</span></h1>
+    <div class="actions">{{ m.status_badge(p.status) }}
+      {% if plan.prereview %}<span class="badge">예상 {{ plan.prereview.review_type_label }}</span>{% endif %}
+      <span class="badge {{ 'b-ok' if plan.progress == 100 else 'b-warn' }}">필수 서류 {{ plan.done }}/{{ plan.required }}</span></div>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/protocols/{{ p.id }}/edit">과제 정보 수정</a>
+    <a class="btn btn-primary" href="/protocols/{{ p.id }}/package.zip?kind={{ plan.kind.value }}">e-IRB 업로드용 ZIP 받기</a>
+  </div>
+</div>
+<progress class="progress-bar" value="{{ plan.progress }}" max="100" aria-label="필수 서류 준비율">{{ plan.progress }}%</progress>
+
+{% if last %}
+<div class="callout">
+  <strong>자동 완성 결과</strong>
+  {% if last.drafted %}<div>초안 작성 항목: {{ last.drafted.values()|join(", ") }} — <a href="/protocols/{{ p.id }}/edit">과제 정보에서 반드시 검토·수정</a>하십시오.</div>{% endif %}
+  {% if last.generated %}<div>작성한 서류: {{ last.generated|join(", ") }}</div>{% endif %}
+  {% for f in last.failed %}<div class="small">작성 실패: {{ f }}</div>{% endfor %}
+  {% for msg in last.messages %}<div class="small muted">{{ msg }}</div>{% endfor %}
+  {% if last.qc %}<div><a class="btn btn-sm" href="/qc/{{ last.qc }}">점검 결과 보기</a></div>{% endif %}
+</div>
+{% endif %}
+
+{% if is_member %}
+<div class="card">
+  <h2>한 번에 자동 완성 <span class="hint">빈 항목 초안 → 필요 서류 자동 작성(기관 서식 우선) → 전체 서류 교차 점검</span></h2>
+  <form method="post" action="/protocols/{{ p.id }}/package/autocomplete">
+    {{ csrf_input }}
+    <input type="hidden" name="kind" value="{{ plan.kind.value }}">
+    <div class="checks">
+      <label class="check"><input type="checkbox" name="draft" value="on" checked {% if not p.is_editable %}disabled{% endif %}> 비어 있는 서술 항목 초안 작성{% if plan.empty_fields %} ({% for f in plan.empty_fields %}{{ draft_labels[f] }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}</label>
+      <label class="check"><input type="checkbox" name="regenerate"> 이미 있는 자동 작성 서류도 최신 내용으로 다시 작성</label>
+      <label class="check"><input type="checkbox" name="use_ai" {% if ai_on %}checked{% else %}disabled{% endif %}> AI 사용(초안 작성·심층 점검){% if not ai_on %} <span class="hint">관리자가 AI를 켜면 사용 가능 · 지금은 규칙 기반으로 동작</span>{% endif %}</label>
+    </div>
+    <p><button class="btn-primary" type="submit" {% if not p.is_editable %}disabled{% endif %}>자동 완성 실행</button>
+      {% if not p.is_editable %}<span class="small muted">작성중·보완요청 받음·변경 준비중 상태에서 사용할 수 있습니다. 점검만 하려면 아래 '서류 점검'을 쓰십시오.</span>{% endif %}</p>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>필요 서류 <span class="hint">{{ plan.kind.label }} 기준 · 과제 정보와 기관 양식으로 자동 산정</span></h2>
+  {% for it in plan["items"] %}
+  <div class="pkg-item">
+    <span class="pkg-dot {{ it.status }}">{{ loop.index }}</span>
+    <div>
+      <strong>{{ it.label }}</strong>
+      {% if it.required %}<span class="badge b-primary">필수</span>{% else %}<span class="badge">추가</span>{% endif %}
+      {% if it.condition and it.condition != "공통" %}<span class="small muted">{{ it.condition }}</span>{% endif %}
+      <div class="small">
+        {% if it.current %}
+          <a href="/documents/{{ it.current.id }}/preview">{{ it.current.filename }}</a> · v{{ it.current.version }} · {{ it.current.uploaded_at|fmt }}
+          {% if it.current.source == "generated" %}<span class="badge b-info">자동 작성</span>{% elif it.current.source == "autofix" %}<span class="badge b-ok">자동 교정본</span>{% endif %}
+          {% if it.stale %}<span class="badge b-warn">과제 정보 변경 후 갱신 필요</span>{% endif %}
+          {% if it.qc %}<span class="badge {{ 'b-danger' if it.qc.critical else ('b-warn' if it.qc.major else 'b-ok') }}">점검 C{{ it.qc.critical }} · M{{ it.qc.major }} · m{{ it.qc.minor }}</span>{% endif %}
+        {% else %}
+          <span class="muted">{% if it.how == "generate" %}자동 작성 가능{% if it.template == "institution" %} (기관 서식){% endif %}{% elif it.how == "online" %}웹 서식 작성 필요{% else %}직접 올려야 함{% endif %}</span>
+        {% endif %}
+        {% if it.hint %}<div class="muted">{{ it.hint }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="actions">
+      {% if is_member and p.is_editable and it.how == "generate" %}
+        <form method="post" action="/protocols/{{ p.id }}/generate/{{ it.doc_type }}" class="inline-form">{{ csrf_input }}<button class="btn-sm" type="submit">{{ "다시 작성" if it.current else "자동 작성" }}</button></form>
+      {% elif it.how == "online" %}<a class="btn btn-sm" href="/protocols/{{ p.id }}/online-forms/{{ it.doc_type }}">웹 서식</a>
+      {% elif is_member %}<a class="btn btn-sm" href="/protocols/{{ p.id }}#documents">올리기</a>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card" id="qc">
+  <h2>서류 점검 <span class="hint">교차 대조·버전·필수 기재사항·용어·오탈자·숫자 → 점수와 PASS/FAIL</span></h2>
+  {% if plan.last_qc %}
+    {% set q = plan.last_qc %}
+    <p>최근 점검 {{ q.created_at|fmt }} · <strong class="{{ 'verdict-pass' if q.passed else 'verdict-fail' }}">{{ q.score }}점 {{ q.verdict }}</strong>
+      · Critical {{ q.counts.critical }} · Major {{ q.counts.major }} · Minor {{ q.counts.minor }} <a class="btn btn-sm" href="/qc/{{ q.id }}">결과·자동 교정</a></p>
+  {% endif %}
+  {% if is_member %}
+  <form method="post" action="/protocols/{{ p.id }}/qc" class="inline-form">
+    {{ csrf_input }}
+    <label class="check"><input type="checkbox" name="use_ai" {% if ai_on %}checked{% else %}disabled{% endif %}> AI 심층 분석 포함</label>
+    <button type="submit">현재 서류 전체 점검</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if plan.prereview and plan.prereview.findings %}
+<div class="card">
+  <h2>과제 정보 사전점검 <span class="hint">서류 이전에 과제 입력값 자체의 문제</span></h2>
+  {% for f in plan.prereview.findings if f.severity in ("critical", "major") %}
+  <div class="finding {{ f.severity }}"><strong>{{ f.message }}</strong>{% if f.recommendation %}<div class="rec">→ {{ f.recommendation }}</div>{% endif %}</div>
+  {% else %}<p class="muted">필수·주요 보완 사항이 없습니다.</p>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

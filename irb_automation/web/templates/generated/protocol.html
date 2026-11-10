@@ -1,0 +1,58 @@
+{% extends "generated/_base.html" %}
+{% block doc %}
+<table>
+  <tr><th>연구 제목</th><td>{{ p.title }}</td></tr>
+  <tr><th>연구책임자</th><td>{{ pi.full_name }} ({{ pi.department }})</td></tr>
+  <tr><th>연구진</th><td>{% for u in team %}{{ u.full_name }}({{ u.department }}){% if not loop.last %}, {% endif %}{% endfor %}</td></tr>
+  <tr><th>버전</th><td>v{{ p.version }}.0 ({{ today.strftime("%Y. %m. %d.") }})</td></tr>
+</table>
+<h2>1. 연구 목적</h2>
+<p class="pre">{{ p.objectives or "(작성)" }}</p>
+<h2>2. 연구 배경 및 필요성</h2>
+<p class="pre">{{ p.background or "(작성)" }}</p>
+<h2>3. 연구 대상</h2>
+<p class="pre">{{ p.target_population or "(작성)" }}</p>
+<p><strong>선정 기준</strong></p><p class="pre">{{ p.inclusion_criteria or "(작성)" }}</p>
+<p><strong>제외 기준</strong></p><p class="pre">{{ p.exclusion_criteria or "(작성)" }}</p>
+<h2>4. 연구 방법(연구 설계)</h2>
+<p>연구 유형: {{ rs.label("study_types", p.study_type) }}{% if p.multicenter %} · 다기관 연구{% endif %}</p>
+<p class="pre">{{ p.methods or "(작성)" }}</p>
+<h2>5. 연구대상자 수 및 산출 근거</h2>
+<p>목표 연구대상자 수: 총 {{ "{:,}".format(p.expected_subjects) }}명</p>
+<p class="pre">{{ p.sample_size_justification or "(작성)" }}</p>
+<h2>6. 연구 기간</h2>
+<p>연구 기간: {{ p.study_start.strftime("%Y.%m.%d") if p.study_start else "(작성)" }} ~ {{ p.study_end.strftime("%Y.%m.%d") if p.study_end else "(작성)" }} (IRB 승인일 이후 개시)</p>
+{% if p.data_period_start or p.data_period_end %}<p>자료 수집 기간: {{ p.data_period_start.strftime("%Y.%m.%d") if p.data_period_start else "?" }} ~ {{ p.data_period_end.strftime("%Y.%m.%d") if p.data_period_end else "?" }}</p>{% endif %}
+<h2>7. 수집 자료(변수) 항목 및 자료원</h2>
+<p>자료원: {% for s in p.data_sources %}{{ rs.label("data_sources", s) }}{% if not loop.last %}, {% endif %}{% else %}(작성){% endfor %}</p>
+<table><tr><th>수집 항목</th><th>구분</th><th>처리 방법</th></tr>
+{% for name, kind, label, handling in items %}<tr><td>{{ name }}</td><td>{{ label }}</td><td>{{ handling }}</td></tr>{% else %}<tr><td colspan="3">(작성)</td></tr>{% endfor %}</table>
+<h2>8. 통계 분석 방법</h2>
+<p class="pre">{{ p.custom_fields.get("statistical_analysis") if p.custom_fields and p.custom_fields.get("statistical_analysis") else "연구 방법에 기술한 분석 계획에 따른다. 통계적 유의수준은 양측 5%로 한다." }}</p>
+<h2>9. 개인정보 보호 대책</h2>
+<table>
+  <tr><th>처리 수준</th><td>{{ rs.label("deid_levels", p.deid_level) }}</td></tr>
+  <tr><th>수집 식별정보</th><td>{% for name, how in identifiers %}{{ name }}({{ how }}){% if not loop.last %}; {% endif %}{% else %}수집하지 않음{% endfor %}</td></tr>
+  {% if p.identifier_justification %}<tr><th>식별정보 수집 사유</th><td>{{ p.identifier_justification }}</td></tr>{% endif %}
+  <tr><th>보관 장소</th><td>{{ rs.label("storage_locations", p.storage_location) }}</td></tr>
+  <tr><th>접근 통제·보안</th><td>{{ p.access_controls or "(작성)" }}</td></tr>
+  <tr><th>외부 제공</th><td>{{ ("있음 - " ~ p.external_recipient) if p.external_transfer else "없음" }}</td></tr>
+</table>
+<h2>10. 예상되는 위험과 이익</h2>
+<p>본 연구는 {{ "기존 자료를 이용하며 연구대상자와 직접 접촉하지 않으므로" if p.existing_data_only and not p.direct_contact else "연구대상자와 접촉하므로" }} 신체적 위험은 {{ "없다" if p.existing_data_only and not p.direct_contact else "최소화한다" }}.
+예상되는 주된 위험은 개인정보 노출이며, 9항의 보호 대책으로 위험을 최소화한다. 연구대상자 개인에게 직접적인 이익은 없으나 연구 결과는 진료 개선에 기여할 수 있다.</p>
+<h2>11. 동의 취득 방법 또는 동의 면제 사유</h2>
+{% if p.consent_plan == "waiver" %}
+<p>생명윤리법 제16조제3항에 따라 서면 동의 면제를 신청한다.</p>
+<ul>{% for r in p.waiver_impracticable_reasons %}<li>{{ rs.label("waiver_reasons", r) }}</li>{% endfor %}</ul>
+<p class="pre">{{ p.waiver_impracticable_detail }}</p>
+<p class="pre">{{ p.waiver_minimal_risk_detail }}</p>
+{% else %}
+<p>연구 참여 전 연구대상자{% if "children" in (p.vulnerable_populations or []) %}와 법정대리인{% endif %}에게 설명문을 제공하고 충분히 설명한 뒤 서면 동의를 받는다.</p>
+{% endif %}
+<h2>12. 자료 보관 및 파기</h2>
+<p>연구 관련 기록은 연구 종료 후 {{ p.retention_years }}년간 보관한다.</p>
+<p class="pre">{{ p.destruction_method or "보관 기간이 지나면 복구 불가능한 방법으로 파기한다." }}</p>
+<h2>13. 이해상충</h2>
+<p>{{ p.coi_detail if p.conflict_of_interest else "연구진에게 본 연구와 관련된 이해상충이 없다." }}</p>
+{% endblock %}

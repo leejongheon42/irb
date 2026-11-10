@@ -17,9 +17,9 @@
     <input id="irb_name" name="irb_name" type="text" value="{{ p.irb_name }}" required>
     <label for="protocol_no_format">과제번호 형식 <strong>*</strong> <span class="hint">예시: 올해 첫 과제 → <strong>{{ sample }}</strong></span></label>
     <input id="protocol_no_format" name="protocol_no_format" type="text" value="{{ p.protocol_no_format }}" required>
-    <label for="letter_footer">통지서 하단 문구</label>
+    <label for="letter_footer">자동 작성 서류 하단 문구</label>
     <textarea id="letter_footer" name="letter_footer">{{ p.letter_footer }}</textarea>
-    <label for="contact">사무국 연락처</label>
+    <label for="contact">IRB 사무국 연락처 <span class="hint">동의서 IRB 연락처에 사용</span></label>
     <textarea id="contact" name="contact">{{ p.contact }}</textarea>
     <p class="actions"><button class="btn-primary" type="submit">저장</button></p>
   </form>

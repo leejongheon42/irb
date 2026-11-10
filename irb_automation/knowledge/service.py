@@ -7,7 +7,7 @@
 
 노출 정책
 - 정책 지식(법령·지침·SOP·FAQ·검토 의견 가이드·등록 문서): 모든 로그인 사용자
-- 선례 지식(과거 과제·심의 결정): 규칙 세트 knowledge.precedent_roles(기본: 간사·위원장·관리자·심의위원)는
+- 선례 지식(과거 과제·심의 결정): 규칙 세트 knowledge.precedent_roles(기본: 관리자)는
   전체, 그 외 사용자(연구자·데이터관리자)는 자신이 열람할 수 있는 과제(workflow.can_view)의 것만.
   타 과제는 존재 여부도 노출하지 않는다.
 - user=None 호출(내부 파이프라인)은 필터 없이 검색한다. 연구자에게 보여줄 결과라면 user를 넘겨야 한다.
@@ -31,7 +31,7 @@ from .sources import builtin_loaded, index_stamp, reindex_protocols, seed_knowle
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PRECEDENT_ROLES = ("coordinator", "chair", "admin", "reviewer")
+DEFAULT_PRECEDENT_ROLES = ("admin",)
 
 
 def _policy() -> dict[str, Any]:
@@ -226,13 +226,13 @@ def similar_protocols(db: Session, protocol: Protocol, k: int = 5, user: User | 
         p = db.get(Protocol, pid) if pid else None
         if p is None or p.id == protocol.id:
             continue
-        last = next((s.decision for s in reversed(p.submissions) if s.decision), None)
+        last = next((s for s in reversed(p.submissions) if s.result), None)
         out.append({
             "protocol_id": p.id,
             "protocol_no": p.protocol_no,
             "title": p.title,
             "status": p.status.label,
-            "decision": last.decision.label if last else "",
+            "decision": last.result_label if last else "",
             "review_type": p.review_type.label if p.review_type else "",
             "score": h["score"],
             "url": f"/protocols/{p.id}",
