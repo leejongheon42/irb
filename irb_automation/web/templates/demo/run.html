@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}파이프라인 테스트 결과{% endblock %}
+{% block content %}
+{% set label = {"ok": "성공", "warn": "경고", "failed": "실패", "skipped": "건너뜀"} %}
+{% set cls = {"ok": "checked", "warn": "issues", "failed": "missing", "skipped": ""} %}
+<div class="topbar"><div>
+  <div class="muted small">{{ d.created_at|fmt }} · {{ "AI 사용" if d.summary.ai else "규칙 기반" }}</div>
+  <h1>전체 파이프라인 테스트 결과</h1>
+  <div class="actions">
+    <span class="badge b-ok">성공 {{ d.summary.ok }}</span><span class="badge b-warn">경고 {{ d.summary.warn }}</span>
+    <span class="badge b-danger">실패 {{ d.summary.failed }}</span><span class="badge">건너뜀 {{ d.summary.skipped }}</span>
+    {% if d.summary.qc_before is not none %}<span class="badge b-info">서류 점검 {{ d.summary.qc_before }}점 → 교정 후 {{ d.summary.qc_after }}점</span>{% endif %}
+  </div></div>
+  <div class="actions">{% if d.protocol_id %}<a class="btn btn-primary" href="/protocols/{{ d.protocol_id }}">만들어진 과제 열기</a>{% endif %}<a class="btn" href="/demo">다시 실행</a></div>
+</div>
+<div class="card">
+  {% for s in d.steps %}
+  <div class="demo-step">
+    <span class="pkg-dot {{ cls.get(s.status, '') }}">{{ s.n }}</span>
+    <div><strong>{{ s.title }}</strong> <span class="badge {{ {'ok': 'b-ok', 'warn': 'b-warn', 'failed': 'b-danger'}.get(s.status, '') }}">{{ label.get(s.status, s.status) }}</span> <span class="small muted">{{ s.seconds }}초</span>
+      <div class="small">{{ s.message }}</div></div>
+    <div>{% if s.link %}<a class="btn btn-sm" href="{{ s.link }}">결과 보기</a>{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

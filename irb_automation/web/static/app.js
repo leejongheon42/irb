@@ -79,3 +79,24 @@
     b.addEventListener("click", function () { history.back(); });
   });
 })();
+
+// 화면별 사용 가이드: 처음 방문한 화면에서 자동으로 열고, 닫으면 다시 자동으로 열지 않는다(브라우저에만 기억).
+(function () {
+  "use strict";
+  var g = document.getElementById("page-guide");
+  if (!g) return;
+  var key = "irb-guide-seen:" + g.getAttribute("data-guide-key");
+  function get(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function set(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* 저장 불가 환경 */ } }
+  var auto = get("irb-guide-auto") !== "off";
+  var box = g.querySelector("[data-guide-auto]");
+  if (box) {
+    box.checked = auto;
+    box.addEventListener("change", function () { set("irb-guide-auto", box.checked ? "on" : "off"); });
+  }
+  if (auto && !get(key)) g.open = true;
+  g.addEventListener("toggle", function () { if (!g.open) set(key, "1"); });
+  var close = g.querySelector("[data-guide-close]");
+  if (close) close.addEventListener("click", function () { g.open = false; set(key, "1"); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && g.open) { g.open = false; set(key, "1"); } });
+})();

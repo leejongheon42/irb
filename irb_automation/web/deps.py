@@ -155,6 +155,16 @@ def render(request: Request, name: str, db: Session | None = None, user: User | 
         "csrf_token": token,
         "csrf_input": Markup(f'<input type="hidden" name="csrf_token" value="{token}">'),
         "today": date.today(),
+        "page_guide": _page_guide(request.url.path, user),
         **ctx,
     }
     return templates.TemplateResponse(request, name, context, status_code=status)
+
+
+def _page_guide(path: str, user: User | None):
+    from ..help.guides import guide_for
+
+    g = guide_for(path)
+    if g is None or (g.admin_only and not (user and user.is_admin)):
+        return None
+    return g

@@ -154,4 +154,5 @@ ACTION_LABELS.update({
     "qc_run": "서류 품질 점검",
     "qc_autofix": "서류 자동 교정",
     "package_autocomplete": "제출 서류 자동 완성",
+    "demo_pipeline": "전체 파이프라인 테스트",
 })

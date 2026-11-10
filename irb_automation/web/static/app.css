@@ -227,3 +227,22 @@ tr.material td:first-child { font-weight: 700; }
 .progress > span { display: block; height: 100%; background: var(--primary); }
 .drop { border: 2px dashed var(--border); border-radius: var(--radius); padding: 18px; background: var(--surface-2); text-align: center; }
 progress.progress-bar { width: 100%; height: 10px; margin: 0 0 14px; accent-color: var(--primary); }
+
+/* ---------------- 화면별 사용 가이드(?) ---------------- */
+.guide { position: fixed; right: 20px; bottom: 20px; z-index: 50; }
+.guide-fab { list-style: none; width: 46px; height: 46px; border-radius: 50%; background: var(--primary); color: #fff; font-size: 22px; font-weight: 800; display: grid; place-items: center; cursor: pointer; box-shadow: 0 4px 12px rgba(15, 23, 42, .25); margin-left: auto; }
+.guide-fab::-webkit-details-marker { display: none; }
+.guide[open] .guide-fab { background: var(--nav); }
+.guide-panel { position: absolute; right: 0; bottom: 56px; width: min(420px, calc(100vw - 40px)); max-height: min(70vh, 640px); overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(15, 23, 42, .2); padding: 14px 16px; }
+.guide-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.guide-head .guide-close { margin-left: auto; }
+.guide-what { background: var(--primary-weak); border-radius: var(--radius); padding: 8px 10px; margin: 6px 0 10px; }
+.guide-panel h4 { margin: 10px 0 4px; font-size: 13px; }
+.guide-panel ol, .guide-panel ul { padding-left: 20px; margin: 4px 0; }
+.guide-panel li { margin: 3px 0; }
+.guide-foot { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media print { .guide { display: none; } }
+.help-steps { counter-reset: step; list-style: none; padding: 0; display: grid; gap: 8px; }
+.help-steps li { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface); }
+.demo-step { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); align-items: start; }
+.demo-step:last-child { border-bottom: 0; }

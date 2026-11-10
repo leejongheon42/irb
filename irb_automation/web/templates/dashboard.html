@@ -11,6 +11,15 @@
     <a class="btn" href="/qc">서류만 점검하기</a>
   </div>
 </div>
+<details class="card" id="getting-started" {% if not my_protocols or my_protocols|length < 4 %}open{% endif %}>
+  <summary><strong>처음 사용하시나요? 3단계로 시작하기</strong> <span class="hint">접기/펼치기</span></summary>
+  <ol class="help-steps">
+    <li><strong>1. <a href="/demo">전체 파이프라인 테스트</a></strong> — 버튼 하나로 AI 인식부터 서류 자동 완성·점검·교정·제출·보완·승인까지 전 과정을 실행해 결과를 봅니다.</li>
+    <li><strong>2. <a href="/qc">서류 점검 체험</a></strong> — '샘플 서류로 체험'을 누르면 오류가 든 계획서·동의서를 교차 점검하고 자동 교정합니다.</li>
+    <li><strong>3. 내 과제 시작</strong> — <a href="/protocols/new">새 과제</a> 또는 <a href="/protocols/import">기존 계획서 올리기</a> → '제출 서류 패키지' → '자동 완성 실행'.</li>
+  </ol>
+  <p class="small muted mb0">테스트용 파일은 <a href="/samples">샘플 데이터</a>에 있습니다. 화면마다 오른쪽 아래 <strong>?</strong> 버튼으로 사용법을 볼 수 있습니다.</p>
+</details>
 <div class="grid-4">
   <div class="card stat"><div class="label">작성·보완 중</div><div class="value">{{ drafts|length }}</div></div>
   <div class="card stat"><div class="label">IRB 심의 대기</div><div class="value">{{ waiting|length }}</div></div>

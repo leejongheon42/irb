@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}처음 시작하기{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>처음 시작하기 · 화면별 가이드</h1>
+  <p class="muted mb0">어느 화면에서든 오른쪽 아래 <strong>?</strong> 버튼을 누르면 그 화면의 사용법이 열립니다. 처음 들어간 화면에서는 자동으로 열립니다.</p></div>
+  <div class="actions"><a class="btn btn-primary" href="/demo">전체 파이프라인 테스트</a><a class="btn" href="/samples">샘플 데이터</a></div>
+</div>
+<div class="card">
+  <h2>이 도구로 하는 일</h2>
+  <p>과제 정보를 한 번 입력하면 <strong>IRB 제출 서류를 자동으로 만들고</strong>, 서류끼리 <strong>교차 점검해 틀린 곳을 찾아 고쳐</strong> 줍니다. 병원 e-IRB에 올린 뒤에는 보완 요청 대응과 승인 이후 관리(변경·지속·종료)를 돕습니다. 심의 자체는 병원 IRB가 합니다.</p>
+  <h3>추천 순서</h3>
+  <ol class="help-steps">
+    {% for title, desc, url in start %}<li><strong>{{ loop.index }}. <a href="{{ url }}">{{ title }}</a></strong><div class="small muted">{{ desc }}</div></li>{% endfor %}
+  </ol>
+</div>
+<div class="card">
+  <h2>화면별 가이드</h2>
+  {% for g in guides %}
+  <details class="item-card" id="{{ g.key }}">
+    <summary><strong>{{ g.title }}</strong>{% if g.admin_only %} <span class="badge">관리자</span>{% endif %} <span class="small muted">— {{ g.what[:70] }}{% if g.what|length > 70 %}…{% endif %}</span></summary>
+    <p>{{ g.what }}</p>
+    <h4>처음 하면 좋은 일</h4><ol>{% for s in g.first %}<li>{{ s }}</li>{% endfor %}</ol>
+    {% if g.tips %}<h4>알아 두면 좋아요</h4><ul class="small">{% for t in g.tips %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+  </details>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -19,6 +19,7 @@ from .database import SessionLocal, init_db
 from .web import (
     routes_admin,
     routes_deid,
+    routes_demo,
     routes_doctemplates,
     routes_forms,
     routes_knowledge,
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
 
     app.include_router(routes_main.router)
     app.include_router(routes_submission.router)  # /documents/{id}/preview 등 세부 경로를 먼저 등록
+    app.include_router(routes_demo.router)
     app.include_router(routes_package.router)
     app.include_router(routes_pipeline.router)  # /protocols/import 가 /protocols/{pid} 보다 먼저
     app.include_router(routes_protocols.router)

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}샘플 데이터{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>샘플 데이터</h1>
+  <p class="muted mb0">모든 기능을 바로 시험할 수 있는 가상 파일입니다. 실제 기관·인물·환자 정보는 없습니다. 내려받아 각 화면에 올려 보세요.</p></div>
+  <div class="actions"><a class="btn btn-primary" href="/demo">한 번에 전체 테스트</a></div>
+</div>
+{% for name, items in groups %}
+<div class="card">
+  <h2>{{ name }}</h2>
+  {% for s in items %}
+  <div class="pkg-item">
+    <span class="pkg-dot ready">{{ loop.index }}</span>
+    <div><strong>{{ s.title }}</strong> <span class="small muted">{{ s.filename }}</span>{% if s.purpose %}<div class="small">{{ s.purpose }}</div>{% endif %}</div>
+    <div class="actions"><a class="btn btn-sm" href="/samples/{{ s.key }}">내려받기</a><a class="btn btn-sm" href="{{ s.use_url }}">여기서 사용: {{ s.use_label }}</a></div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+<div class="card">
+  <h2>데모 계정에 미리 들어 있는 과제</h2>
+  <ul class="small">
+    <li><strong>SGLT2 급성 신손상 코호트</strong>(researcher) — IRB 심의면제 확인을 받은 과제: 승인 후 변경·지속·종료 흐름</li>
+    <li><strong>정신건강의학과 경과기록 자살 위험 예측 AI</strong>(researcher) — 작성 중, 위험 요소가 많은 과제: 패키지 자동 완성·사전점검</li>
+    <li><strong>소아 PICU PEWS 검증</strong>(researcher2, researcher 공동연구자) — IRB 보완 요청 3건을 받은 과제: 보완 대응</li>
+  </ul>
+</div>
+{% endblock %}

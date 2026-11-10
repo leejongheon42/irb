@@ -17,6 +17,10 @@
       <li><a href="/protocols/new">+ 새 과제 만들기</a></li>
       <li><a href="/protocols/import">기존 계획서로 시작(AI 인식)</a></li>
       <li><a href="/notifications">알림{% if unread_count %} <span class="badge b-danger">{{ unread_count }}</span>{% endif %}</a></li>
+      <li class="section">처음 사용</li>
+      <li><a href="/help">처음 시작하기·가이드</a></li>
+      <li><a href="/samples">샘플 데이터</a></li>
+      <li><a href="/demo">전체 파이프라인 테스트</a></li>
       <li class="section">서류</li>
       <li><a href="/qc">서류 품질 점검</a></li>
       <li><a href="/doc-templates">서식 자료실</a></li>
@@ -47,6 +51,24 @@
     {% for f in flashes %}<div class="flash {{ f.category }}">{{ f.message }}</div>{% endfor %}
     {% block content %}{% endblock %}
   </main>
+  {% if page_guide %}{% set g = page_guide %}
+  <details class="guide" id="page-guide" data-guide-key="{{ g.key }}">
+    <summary class="guide-fab" title="이 화면 사용 가이드" aria-label="이 화면 사용 가이드">?</summary>
+    <div class="guide-panel" role="dialog" aria-label="{{ g.title }} 가이드">
+      <div class="guide-head"><strong>{{ g.title }}</strong> <span class="hint">사용 가이드</span>
+        <button type="button" class="btn-sm guide-close" data-guide-close aria-label="닫기">닫기</button></div>
+      <p class="guide-what">{{ g.what }}</p>
+      <h4>처음 하면 좋은 일</h4>
+      <ol>{% for s in g.first %}<li>{{ s }}</li>{% endfor %}</ol>
+      {% if g.tips %}<h4>알아 두면 좋아요</h4><ul class="small">{% for t in g.tips %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+      {% if g.links %}<p class="small">{% for label, url in g.links %}<a class="btn btn-sm" href="{{ url }}">{{ label }}</a> {% endfor %}</p>{% endif %}
+      <div class="guide-foot small">
+        <label class="check"><input type="checkbox" data-guide-auto> 처음 들어온 화면에서 가이드 자동으로 열기</label>
+        <a href="/help">전체 가이드·처음 시작하기</a>
+      </div>
+    </div>
+  </details>
+  {% endif %}
 </div>
 <script src="/static/app.js"></script>
 </body>

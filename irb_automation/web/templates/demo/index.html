@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}전체 파이프라인 테스트{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>전체 파이프라인 테스트</h1>
+  <p class="muted mb0">샘플 계획서 하나로 연구자 흐름 전체를 자동 실행하고, 단계마다 실제로 만들어진 결과로 바로 가는 링크를 보여 줍니다.</p></div></div>
+<div class="card">
+  <h2>실행되는 단계</h2>
+  <ol class="small">
+    <li>다른 병원 양식 계획서(DOCX) AI 문서 인식 → 2. 추출 정보로 새 과제 생성 → 3. IRB 사전점검</li>
+    <li value="4">제출 서류 패키지 자동 완성(빈 항목 초안·서류 작성·점검) → 5. 개인 서류 첨부</li>
+    <li value="6">연구계획서에 오류 3종(대상자 수·용어·오탈자) 주입 → 교차 점검 → 7. 자동 교정 → 8. 재점검</li>
+    <li value="9">e-IRB 업로드용 ZIP → 10. 제출 기록 → 11. 보완 요청 4건 입력 → 12. 답변 초안 저장 → 13. 보완 답변서 → 14. 재제출 → 15. 승인 입력</li>
+  </ol>
+  <form method="post" action="/demo/run">
+    {{ csrf_input }}
+    <label class="check"><input type="checkbox" name="use_ai" {% if not ai_on %}disabled{% endif %}> AI 사용(초안·심층 점검){% if not ai_on %} <span class="hint">AI가 꺼져 있어 규칙 기반으로 실행</span>{% endif %}</label>
+    <p><button class="btn-primary" type="submit">전체 파이프라인 실행</button> <span class="small muted">약 10초~1분 · 결과 과제는 '[파이프라인 테스트]' 제목으로 내 과제 목록에 남습니다.</span></p>
+  </form>
+</div>
+<div class="card">
+  <h2>최근 실행</h2>
+  {% for r in runs %}
+  <p><a href="/demo/{{ r.id }}">#{{ r.id }} · {{ r.created_at|fmt }}</a>
+    <span class="badge {{ {'ok': 'b-ok', 'warn': 'b-warn', 'failed': 'b-danger'}.get(r.status, '') }}">{{ {'ok': '모두 성공', 'warn': '경고 있음', 'failed': '실패 있음', 'running': '실행 중'}.get(r.status, r.status) }}</span>
+    {% if r.summary.qc_before is not none %}<span class="small muted">점검 {{ r.summary.qc_before }} → {{ r.summary.qc_after }}점</span>{% endif %}</p>
+  {% else %}<p class="muted">아직 실행 기록이 없습니다.</p>{% endfor %}
+</div>
+{% endblock %}

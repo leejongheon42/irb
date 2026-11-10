@@ -133,13 +133,18 @@ def start_document_pipeline(db: Session, user: User | None, document_id: int) ->
     return run
 
 
-def start_import_pipeline(db: Session, user: User, filename: str, raw: bytes) -> PipelineRun:
+def start_import_pipeline(db: Session, user: User, filename: str, raw: bytes, *, sync: bool = False) -> PipelineRun:
     folder = get_settings().pipeline_dir / "imports"
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{uuid.uuid4().hex}_{safe_name(filename)}"
     path.write_bytes(raw)
     run = _create_run(db, user, "import", input_name=Path(filename).name, input_path=str(path),
                       input_sha256=hashlib.sha256(raw).hexdigest())
+    if sync:  # 호출한 쪽에서 즉시 결과가 필요할 때(전체 파이프라인 테스트 등)
+        db.commit()
+        run_pipeline(run.id)
+        db.expire_all()
+        return db.get(PipelineRun, run.id)
     _dispatch(db, run.id)
     return run
 

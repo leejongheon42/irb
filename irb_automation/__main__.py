@@ -5,6 +5,7 @@
   python -m irb_automation run-scheduler          만료 처리·알림 (cron 등록용)
   python -m irb_automation verify-audit           감사 로그 해시 체인 검증
   python -m irb_automation serve [--host --port]  웹 서버 실행
+  python -m irb_automation demo-pipeline         샘플로 전체 파이프라인 테스트(단계별 결과 출력)
 """
 from __future__ import annotations
 
@@ -47,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     p_user.add_argument("--name", default="")
     sub.add_parser("run-scheduler")
     sub.add_parser("verify-audit")
+    p_demo = sub.add_parser("demo-pipeline", help="샘플로 전체 파이프라인을 실행하고 단계별 결과 출력")
+    p_demo.add_argument("--user", default="researcher")
     p_serve = sub.add_parser("serve")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -99,6 +102,19 @@ def main(argv: list[str] | None = None) -> int:
             stats = run_scheduler(db)
             db.commit()
             print(stats)
+        elif args.cmd == "demo-pipeline":
+            from .demo.full import run_full_pipeline
+            from .models import User
+
+            u = db.query(User).filter_by(username=args.user).first()
+            if u is None:
+                print(f"사용자 {args.user}가 없습니다(init-db --demo 먼저 실행).")
+                return 1
+            d = run_full_pipeline(db, u)
+            for s_ in d.steps:
+                print(f"{s_['n']:>2}. [{s_['status']:7s}] {s_['title']} - {s_['message']}")
+            print("결과:", d.status, d.summary)
+            return 0 if d.status != "failed" else 2
         elif args.cmd == "verify-audit":
             from .audit import verify_chain
 
