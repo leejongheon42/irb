@@ -1,6 +1,21 @@
 services:
+  irb-data-init:
+    image: ${COMPOSE_PROJECT_NAME}-irb
+    pull_policy: never
+    user: "0:0"
+    # 기존 볼륨을 마운트하면 이미지의 /data 소유권이 가려진다.
+    entrypoint: ["chown", "-hR", "irb", "/data"]
+    healthcheck:
+      disable: true
+    volumes:
+      - irb-data:/data
+
   irb:
+    image: ${COMPOSE_PROJECT_NAME}-irb
     build: .
+    depends_on:
+      irb-data-init:
+        condition: service_completed_successfully
     env_file: .env
     environment:
       IRB_DATA_DIR: /data

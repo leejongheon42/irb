@@ -143,6 +143,23 @@ catalogs:
     contact_increases_risk: "동의를 위한 연락 자체가 개인정보 노출 위험을 증가"
 
   document_types:
+    result_notice: IRB 결과통지서
+    exemption_confirmation: 심의면제확인서
+    deviation_report: 연구계획 위반·이탈 보고서
+    adverse_event: 이상반응 보고서
+    early_termination: 조기종료 보고서
+    info_provision: 개인정보 제공 신청서
+    specimen_provision: 인체유래물 제공 신청서
+    disposal_transfer: 인체유래물 폐기·이관 신청서
+    specimen_consent: 인체유래물 연구 동의서
+    assent_form: 아동용 승낙서
+    questionnaire: 설문지·면담질문지
+    recruitment: 모집공고·안내문
+    pledge: 생명윤리준수서약
+    advisor_pledge: 지도교수서약서
+    mta: 검체 제공 협약
+    site_agreement: 수행기관 합의 증빙
+    external_staff_agreement: 외부 인력 협약서
     application: "심의의뢰서"
     protocol: "연구계획서"
     cv: "연구책임자 이력서"

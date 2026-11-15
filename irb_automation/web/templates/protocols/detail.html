@@ -3,6 +3,32 @@
 {% import "knowledge/_related.html" as kn %}
 {% block title %}{{ p.title[:30] }}{% endblock %}
 {% block content %}
+{% if p.committee == "public_irb" %}
+<p><a class="btn" href="/protocols/{{ p.id }}/public-irb">공용 IRB 제출 준비 및 평가점검표</a></p>
+{% if is_member and p.status.value in ("approved", "exempt", "expired", "amendment") %}
+<details class="card"><summary>공용 IRB 추가 보고</summary>
+  {% for key, label in public_reports %}<a class="btn" href="/protocols/{{ p.id }}/report/{{ key }}">{{ label }}</a>{% endfor %}
+</details>
+{% endif %}
+{% for report in p.submissions if report.kind.is_parallel %}
+<section class="card"><strong>{{ report.kind.label }}</strong> · {{ report.result_label }}
+  {% if is_member and not report.closed %}
+  <form method="post" action="/protocols/{{ p.id }}/result">{{ csrf_input }}
+    <input type="hidden" name="submission_id" value="{{ report.id }}">
+    <label>외부 결과 <select name="result"><option value="acknowledged">보고 확인</option><option value="revision">보완</option><option value="disapproved">반려</option></select></label>
+    <label>통지 일자 <input name="result_date" type="date"></label>
+    <label>통지서 <select name="source_id"><option value="">선택</option>{% for doc in p.documents if doc.doc_type in ("result_notice", "exemption_confirmation") %}<option value="{{ doc.id }}">{{ doc.filename }}</option>{% endfor %}</select></label>
+    <button type="submit">결과 기록</button>
+  </form>
+  <form method="post" action="/protocols/{{ p.id }}/revision-request">{{ csrf_input }}
+    <input type="hidden" name="submission_id" value="{{ report.id }}">
+    <label>외부 보완 요청 <textarea name="text" rows="2" required></textarea></label>
+    <button type="submit">보완 요청 등록</button>
+  </form>
+  {% endif %}
+</section>
+{% endfor %}
+{% endif %}
 <div class="topbar">
   <div>
     <div class="muted small">{% if p.protocol_no %}IRB 번호 {{ p.protocol_no }} · {% endif %}v{{ p.version }} · 연구책임자 {{ p.pi.full_name }} ({{ p.department }})</div>
@@ -25,13 +51,20 @@
         <form method="post" action="/protocols/{{ p.id }}/amend/cancel" class="inline-form" data-confirm="변경 내용을 버리고 승인된 내용으로 되돌립니다.">{{ csrf_input }}<button type="submit">변경 취소</button></form>
       {% endif %}
       {% if p.status in (S.APPROVED, S.EXEMPT) and p.is_active_approval %}
-        <form method="post" action="/protocols/{{ p.id }}/amend" class="inline-form">{{ csrf_input }}<button type="submit">변경 준비 시작</button></form>
+        <form method="post" action="/protocols/{{ p.id }}/amend" class="inline-form">{{ csrf_input }}
+          {% if p.committee == "public_irb" %}
+          <label>변경 내용을 이미 시행했습니까?
+            <select name="implemented" required><option value="">선택</option><option value="no">아니오</option><option value="yes">예</option></select>
+          </label>
+          {% endif %}
+          <button type="submit">변경 준비 시작</button>
+        </form>
       {% endif %}
       {% if p.status in (S.APPROVED, S.EXPIRED) %}<a class="btn" href="/protocols/{{ p.id }}/report/continuing">지속심의</a>{% endif %}
       {% if p.status in (S.APPROVED, S.EXEMPT, S.EXPIRED) %}<a class="btn" href="/protocols/{{ p.id }}/report/final_report">종료보고</a>{% endif %}
     {% endif %}
     <a class="btn" href="/protocols/{{ p.id }}/pipeline">AI 문서 분석</a>
-    <a class="btn" href="/protocols/{{ p.id }}/online-forms">웹 작성 서식</a>
+    {% if p.committee != "public_irb" %}<a class="btn" href="/protocols/{{ p.id }}/online-forms">웹 작성 서식</a>{% endif %}
   </div>
 </div>
 
@@ -62,6 +95,15 @@
           <div><label for="approval_end">승인 만료일 <span class="hint">비우면 기본 1년</span></label><input id="approval_end" name="approval_end" type="date"></div>
           <div><label for="irb_no">IRB 승인번호</label><input id="irb_no" name="irb_no" value="{{ p.protocol_no or '' }}"></div>
         </div>
+        {% if p.committee == "public_irb" %}
+        <label>첨부한 통지서
+          <select name="source_id"><option value="">선택</option>
+            {% for doc in p.documents if doc.has_file and doc.doc_type in ("result_notice", "exemption_confirmation") %}
+            <option value="{{ doc.id }}">{{ doc.filename }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
         <label for="note">시정 조건·IRB 의견 요지</label><textarea id="note" name="note" rows="2"></textarea>
         <p><button class="btn-primary" type="submit">결과 저장</button></p>
       </form>

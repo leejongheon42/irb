@@ -52,7 +52,13 @@ CONDITION_LABELS: dict[str, str] = {
 _REPORT_KIND_DOCS = {"continuing": {"progress_report"}, "final_report": {"final_report"}}
 
 
-def build_checklist(facts: ProtocolFacts, review_type: str, rs: Ruleset) -> list[dict[str, Any]]:
+def build_checklist(
+    facts: ProtocolFacts, review_type: str, rs: Ruleset, *, requirements_content: str | None = None,
+) -> list[dict[str, Any]]:
+    if facts.committee == "public_irb":
+        from ..public_irb.requirements import compute
+
+        return compute(facts, requirements_content)
     items: list[dict[str, Any]] = []
     only = _REPORT_KIND_DOCS.get(facts.submission_kind)
     for rule in rs.required_documents:

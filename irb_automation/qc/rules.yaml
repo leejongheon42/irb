@@ -1,0 +1,177 @@
+version: '2026.11.12'
+compatible_fields:
+  duration: [period_trial, period_individual, period_treatment]
+  dosage: [dose_unit, dose_daily]
+detectors:
+  M01: {rule: [파일명–본문 버전 불일치, 문서 내부 버전 불일치, 현재 버전 식별정보 누락, 버전 의미 충돌]}
+  M02: {rule: [약물 정체성 불일치], ai: [약물 역할 혼동, 약물 설명 누락, 이름·코드 연결 불일치]}
+  M03: {rule: [용량 불일치, 빈도 불일치, 경로 불일치, 용량–총량 모순], ai: [투여단계 불일치, 투여정보 누락]}
+  M04: {rule: [방문 횟수 불일치], ai: [방문 시점 불일치, 방문·절차 누락, 필수·선택 구분 불일치, 방문 부담 불일치]}
+  M05: {rule: [기간 길이 불일치, 기간 날짜 불일치], ai: [기산점 불일치, 개인 참여기간 누락, 기간 구분 오류]}
+  M06: {rule: [필수항목 누락, 필수항목 불완전, 철회 권리 누락, 권리 설명 모순], ai: [대상자 설명 부적합]}
+  M07: {rule: [동일 개념 명칭 혼용, 의미가 다른 용어 혼동], ai: [비표준 용어 사용, 약어 정의 누락, 약어 다의 사용]}
+  M08: {rule: [일반 오탈자, 단어 중복·탈락, 사실값 변경 가능 오기], ai: [의학용어 철자 오류, 기호·서식 오류]}
+  M09: {rule: [반복 수치 불일치, 합계 불일치, 날짜 값 오류, 날짜 순서 오류], ai: [범위 경계 오류, 표–본문 불일치, 숫자–단위 불일치]}
+  M10: {ai: [서술 모순, 조건·예외 모순, 적용 기준 불충족, 설명 불명확, 전문용어 미설명, 과장·오해 유발 표현]}
+  E01: {rule: [연구·기관 식별]}
+  E02: {rule: [대상자 수]}
+  E03: {rule: [선정·제외 기준]}
+  E04: {rule: [동의 경로]}
+  E05: {rule: [수행 절차·검체]}
+  E06: {rule: [개인정보·이용·제공]}
+  E07: {rule: [보관·폐기]}
+  E08: {rule: [비용·보상]}
+  E09: {rule: [문의처]}
+  E10: {rule: [제출 묶음 구성]}
+  R00: {rule: [과제 입력값 불일치]}
+rules:
+  M01:
+    label: "파일 버전"
+    source: velivo
+    flags:
+      "파일명–본문 버전 불일치": {severity: critical, source: mira_public}
+      "문서 내부 버전 불일치": {severity: major, source: velivo, escalate: critical}
+      "현재 버전 식별정보 누락": {severity: major, source: velivo}
+      "버전 의미 충돌": {severity: major, source: velivo, escalate: critical}
+  M02:
+    label: "약물명"
+    source: velivo
+    flags:
+      "약물 정체성 불일치": {severity: critical, source: velivo}
+      "약물 역할 혼동": {severity: critical, source: velivo}
+      "약물 설명 누락": {severity: major, source: velivo, escalate: critical}
+      "이름·코드 연결 불일치": {severity: major, source: velivo, escalate: critical}
+  M03:
+    label: "용량·횟수·경로"
+    source: velivo
+    flags:
+      "용량 불일치": {severity: critical, source: mira_public}
+      "빈도 불일치": {severity: critical, source: velivo}
+      "경로 불일치": {severity: critical, source: velivo}
+      "투여단계 불일치": {severity: major, source: velivo, escalate: critical}
+      "투여정보 누락": {severity: major, source: velivo, escalate: critical}
+      "용량–총량 모순": {severity: major, source: velivo, escalate: critical}
+  M04:
+    label: "방문 일정"
+    source: velivo
+    flags:
+      "방문 횟수 불일치": {severity: major, source: velivo}
+      "방문 시점 불일치": {severity: major, source: velivo, escalate: critical}
+      "방문·절차 누락": {severity: major, source: velivo, escalate: critical}
+      "필수·선택 구분 불일치": {severity: major, source: velivo, escalate: critical}
+      "방문 부담 불일치": {severity: major, source: velivo}
+  M05:
+    label: "기간"
+    source: velivo
+    flags:
+      "기간 길이 불일치": {severity: major, source: velivo}
+      "기간 날짜 불일치": {severity: major, source: velivo}
+      "기산점 불일치": {severity: major, source: velivo}
+      "개인 참여기간 누락": {severity: major, source: velivo}
+      "기간 구분 오류": {severity: major, source: velivo}
+  M06:
+    label: "필수 설명 내용"
+    source: velivo
+    flags:
+      "필수항목 누락": {severity: major, source: velivo}
+      "필수항목 불완전": {severity: major, source: velivo, escalate: critical}
+      "철회 권리 누락": {severity: critical, source: mira_public}
+      "권리 설명 모순": {severity: critical, source: velivo}
+      "대상자 설명 부적합": {severity: major, source: velivo, escalate: critical}
+  M07:
+    label: "용어 통일"
+    source: velivo
+    flags:
+      "동일 개념 명칭 혼용": {severity: major, source: mira_public}
+      "비표준 용어 사용": {severity: major, source: velivo}
+      "약어 정의 누락": {severity: null, source: velivo}
+      "약어 다의 사용": {severity: major, source: velivo}
+      "의미가 다른 용어 혼동": {severity: major, source: velivo}
+  M08:
+    label: 의학용어·일반 오탈자
+    source: velivo
+    flags:
+      "일반 오탈자": {severity: minor, source: mira_public}
+      "의학용어 철자 오류": {severity: minor, source: velivo}
+      "단어 중복·탈락": {severity: minor, source: velivo}
+      "기호·서식 오류": {severity: minor, source: velivo}
+      "사실값 변경 가능 오기": {severity: null, source: velivo}
+  M09:
+    label: "숫자·날짜·내부 일관성"
+    source: velivo
+    flags:
+      "반복 수치 불일치": {severity: major, source: velivo}
+      "합계 불일치": {severity: major, source: velivo}
+      "날짜 순서 오류": {severity: major, source: velivo}
+      "범위 경계 오류": {severity: major, source: velivo}
+      "날짜 값 오류": {severity: major, source: velivo}
+      "표–본문 불일치": {severity: major, source: velivo}
+      "숫자–단위 불일치": {severity: major, source: velivo}
+  M10:
+    label: 문맥·규정·가독성
+    source: velivo
+    flags:
+      "서술 모순": {severity: major, source: velivo, escalate: critical}
+      "조건·예외 모순": {severity: major, source: velivo}
+      "적용 기준 불충족": {severity: major, source: velivo}
+      "설명 불명확": {severity: null, source: velivo}
+      "전문용어 미설명": {severity: null, source: velivo}
+      "과장·오해 유발 표현": {severity: major, source: velivo}
+  E01:
+    label: "연구·기관 식별"
+    source: public_irb
+    flags:
+      "연구·기관 식별": {severity: major, source: public_irb}
+  E02:
+    label: "대상자 수"
+    source: public_irb
+    flags:
+      "대상자 수": {severity: major, source: public_irb}
+  E03:
+    label: "선정·제외 기준"
+    source: public_irb
+    flags:
+      "선정·제외 기준": {severity: major, source: public_irb, escalate: critical}
+  E04:
+    label: "동의 경로"
+    source: public_irb
+    flags:
+      "동의 경로": {severity: critical, source: public_irb}
+  E05:
+    label: "수행 절차·검체"
+    source: public_irb
+    flags:
+      "수행 절차·검체": {severity: major, source: public_irb, escalate: critical}
+  E06:
+    label: "개인정보·이용·제공"
+    source: public_irb
+    flags:
+      "개인정보·이용·제공": {severity: major, source: public_irb, escalate: critical}
+  E07:
+    label: "보관·폐기"
+    source: public_irb
+    flags:
+      "보관·폐기": {severity: major, source: public_irb}
+  E08:
+    label: "비용·보상"
+    source: public_irb
+    flags:
+      "비용·보상": {severity: major, source: public_irb}
+  E09:
+    label: "문의처"
+    source: public_irb
+    flags:
+      "문의처": {severity: major, source: public_irb}
+  E10:
+    label: "제출 묶음 구성"
+    source: public_irb
+    flags:
+      "제출 묶음 구성": {severity: major, source: public_irb}
+  R00:
+    label: 과제 입력값 대조
+    source: record
+    flags:
+      "과제 입력값 불일치": {severity: major, source: record}
+  irb_checklist:
+    source: irb_checklist
+    flags: {}

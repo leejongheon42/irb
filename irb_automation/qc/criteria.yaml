@@ -1,19 +1,37 @@
 # =====================================================================
 #  IRB 제출 서류 품질 점검 기준 (기관별로 복사·수정 가능: IRB_QC_CRITERIA_PATH)
 # ---------------------------------------------------------------------
-#  근거: 생명윤리 및 안전에 관한 법률 제16조(동의), 같은 법 시행규칙 별지 제34호(인간대상연구 동의서),
-#        개인정보 보호법 제28조의2~5(가명정보), ICH E6(R3) GCP 동의서 필수 기재사항.
-#  각 항목은 any(하나라도 있으면 충족) / all(모두 있어야 충족) 키워드 또는 정규식(re:)으로 판정한다.
+#  운영용 점검 기준이며 법령 원문 검수가 완료된 기준은 아니다.
+#  항목별 basis에는 기관이 원문과 대조한 근거만 기입한다.
+#  any/all은 후보 문단 탐색에 쓰고, 최소 분량·must·reject 조건으로 내용을 점검한다.
 #  when: 과제 조건(children, identifiable, waiver, obtain, clinical, ai_ml, external_transfer)
 # =====================================================================
-version: "2026.11"
+version: "2026.11.11"
+required_min_chars: 15   # 서술 문장 한 개(공백 제외 15자 이상)면 항목을 기재한 것으로 본다. 키워드 나열은 길이와 무관하게 불충분
 
 scoring:
   critical: 15
   major: 7
   minor: 2
-  pass_score: 80          # Critical 0건이어도 이 점수 미만이면 FAIL
   critical_fails: true    # Critical 1건 이상이면 점수와 무관하게 FAIL
+  pass_score: 80
+  notice: "운영용 점검 기준이며 법령 원문 검수가 완료된 기준은 아닙니다."
+  severities:
+    critical: {label: Critical, description: "필수 요건을 위반하거나 연구대상자 보호에 중대한 영향을 주는 문제"}
+    major: {label: Major, description: "제출 전에 보완이 필요한 주요 누락 또는 불일치"}
+    minor: {label: Minor, description: "내용의 이해나 서식에 영향을 주는 경미한 문제"}
+  areas:
+    required: {label: "필수 기재사항", points: 35, categories: [required, placeholder], description: "필수 항목의 누락과 미기입 표시를 점검합니다."}
+    consistency: {label: "문서 간 일치", points: 25, categories: [cross, record], description: "같은 연구 정보가 제출 서류 전반에서 일치하는지 점검합니다."}
+    regulatory: {label: "규제·윤리 준수", points: 20, categories: [regulatory], description: "연구대상자 보호와 개인정보 처리에 관한 기재 내용을 점검합니다."}
+    format: {label: "형식·버전", points: 10, categories: [version, numbers], description: "서류의 버전, 숫자와 날짜 표기를 점검합니다."}
+    readability: {label: "표현·가독성", points: 10, categories: [terminology, typo, context], description: "용어, 오탈자와 문맥을 점검합니다."}
+
+record_reference: true
+required_unverified: candidate
+review:
+  auto_confirm: []
+  ai_dismiss: [major, minor]   # AI 재검토에서 오탐으로 확인되면 자동 철회할 등급(그 외 등급은 사람 확인)
 
 categories:
   required: "필수 기재사항"
@@ -32,39 +50,39 @@ required:
   consent_form:
     - {id: purpose, label: "연구 목적", severity: critical, any: ["연구 목적", "연구의 목적", "목적"]}
     - {id: procedure, label: "연구 방법·절차", severity: critical, any: ["연구 방법", "연구방법", "절차", "진행 방법", "참여 방법", "참여하게 되면"]}
-    - {id: duration, label: "참여 기간", severity: major, any: ["참여 기간", "연구 기간", "연구기간", "참여기간"]}
-    - {id: subjects, label: "예상 연구대상자 수", severity: minor, any: ["re:\\d[\\d,]*\\s*명", "대상자 수", "참여 인원"]}
+    - {id: duration, label: "참여 기간", severity: major, any: ["참여 기간", "연구 기간", "연구기간", "참여기간"], structured: true, must: ["re:\\d+\\s*(?:일|주|개월|년|[./-])"]}
+    - {id: subjects, label: "예상 연구대상자 수", severity: minor, any: ["re:\\d[\\d,]*\\s*명", "대상자 수", "참여 인원"], structured: true, min_chars: 3, must: ["re:\\d[\\d,]*\\s*명"]}
     - {id: risk, label: "예측되는 위험·불편", severity: critical, any: ["위험", "불편", "이상반응", "부작용"]}
     - {id: benefit, label: "예상되는 이익", severity: major, any: ["이익", "혜택", "도움"]}
     - {id: alternative, label: "다른 치료 방법(대안)", severity: minor, any: ["다른 치료", "대안", "대체 치료"], when: [clinical]}
     - {id: privacy, label: "개인정보 보호·비밀 보장", severity: critical, any: ["개인정보", "비밀", "기밀"]}
-    - {id: voluntary, label: "자발적 참여 및 언제든 철회할 권리", severity: critical, all: ["자발", "re:철회|중단|그만"]}
-    - {id: no_penalty, label: "참여 거부·철회 시 불이익 없음", severity: major, any: ["불이익"]}
+    - {id: voluntary, label: "자발적 참여 및 언제든 철회할 권리", severity: critical, min_chars: 20, all: ["자발", "re:철회|중단|그만"], must: ["언제든", "re:연락|알리|요청|말씀"], reject: ['re:철회(?:는|가|할\s*수(?:는|가)?)?\s*(?:없|불가|금지)'], rubric: "언제든 참여를 철회할 수 있다는 권리와 연구자에게 알리는 방법을 설명하십시오."}
+    - {id: no_penalty, label: "참여 거부·철회 시 불이익 없음", severity: major, any: ["불이익"], must: ["re:불이익.{0,10}(?:없|않)"]}
     - {id: compensation, label: "연구 관련 손상 시 보상", severity: major, any: ["보상", "배상"]}
     - {id: cost, label: "비용 부담·사례비", severity: minor, any: ["비용", "사례", "부담"]}
-    - {id: researcher_contact, label: "연구자 연락처", severity: major, any: ["re:연구책임자|담당 연구자|연구자 연락처", "re:\\d{2,4}-\\d{3,4}-\\d{4}"]}
-    - {id: irb_contact, label: "IRB 연락처", severity: major, any: ["기관생명윤리위원회", "IRB", "생명윤리위원회"]}
+    - {id: researcher_contact, label: "연구자 연락처", severity: major, any: ["re:연구책임자|담당 연구자|연구자 연락처"], structured: true, must: ["re:\\d{2,4}-\\d{3,4}-\\d{4}|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"]}
+    - {id: irb_contact, label: "IRB 연락처", severity: major, any: ["기관생명윤리위원회", "IRB", "생명윤리위원회"], must: ["re:\\d{2,4}-\\d{3,4}-\\d{4}|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"], structured: true, min_chars: 10}
     - {id: records_access, label: "기록 열람(모니터링·점검) 허용", severity: minor, any: ["열람", "모니터링", "점검", "실태조사"]}
     - {id: retention, label: "자료 보관 기간·폐기", severity: major, any: ["보관", "폐기", "파기"]}
     - {id: new_info, label: "새로운 정보 제공", severity: minor, any: ["새로운 정보", "알려 드", "알려드"]}
-    - {id: signature, label: "서명·날짜란", severity: major, all: ["서명", "re:날짜|일자|년\\s*월\\s*일"]}
+    - {id: signature, label: "서명·날짜란", severity: major, all: ["서명", "re:날짜|일자|년\\s*월\\s*일"], structured: true, min_chars: 8}
     - {id: guardian, label: "법정대리인 동의", severity: critical, any: ["법정대리인"], when: [children]}
     - {id: assent, label: "아동 동의(assent) 절차", severity: major, any: ["아동 동의", "assent", "어린이 동의", "아동용"], when: [children]}
   protocol:
-    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "과제명", "연구 과제명"]}
+    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "과제명", "연구 과제명"], structured: true, min_chars: 12}
     - {id: objective, label: "연구 목적", severity: critical, any: ["연구 목적", "연구의 목적", "목적"]}
     - {id: background, label: "연구 배경·필요성", severity: major, any: ["배경", "필요성", "이론적 근거"]}
-    - {id: population, label: "연구 대상(선정·제외 기준)", severity: critical, all: ["re:선정\\s*기준|포함\\s*기준", "re:제외\\s*기준"]}
+    - {id: population, label: "연구 대상(선정·제외 기준)", severity: critical, structured: true, min_chars: 20, all: ["re:선정\\s*기준|포함\\s*기준", "re:제외\\s*기준"]}
     - {id: design, label: "연구 방법·설계", severity: critical, any: ["연구 방법", "연구방법", "연구 설계", "연구설계"]}
-    - {id: sample_size, label: "대상자 수 및 산출 근거", severity: major, all: ["re:\\d[\\d,]*\\s*명", "re:산출|근거|검정력|전수"]}
-    - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간"]}
+    - {id: sample_size, label: "대상자 수 및 산출 근거", severity: major, quantified: true, all: ["re:\\d[\\d,]*\\s*명", "re:산출|근거|검정력|전수"]}
+    - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간"], structured: true, must: ["re:\\d+\\s*(?:일|주|개월|년|[./-])"]}
     - {id: variables, label: "수집 자료(변수) 항목", severity: major, any: ["수집 항목", "수집 자료", "변수", "자료 항목", "수집 정보"]}
     - {id: analysis, label: "통계 분석 방법", severity: major, any: ["통계", "분석 방법", "분석방법"]}
     - {id: privacy, label: "개인정보 보호 대책", severity: critical, any: ["개인정보", "가명처리", "가명 처리", "보안"]}
     - {id: risk_benefit, label: "위험과 이익 평가", severity: major, any: ["위험", "이익"]}
     - {id: retention, label: "자료 보관 및 파기", severity: major, all: ["보관", "re:파기|폐기|삭제"]}
     - {id: consent, label: "동의 취득 방법 또는 면제 사유", severity: critical, any: ["동의"]}
-    - {id: investigators, label: "연구책임자·연구진", severity: major, any: ["연구책임자", "책임연구자", "연구진"]}
+    - {id: investigators, label: "연구책임자·연구진", severity: major, any: ["연구책임자", "책임연구자", "연구진"], structured: true}
   waiver_request:
     - {id: impracticable, label: "동의 취득 불가능·현저히 곤란 사유", severity: critical, any: ["불가능", "곤란", "현실적으로"]}
     - {id: no_refusal, label: "거부 의사 추정 사유 없음", severity: critical, any: ["거부"]}
@@ -79,22 +97,23 @@ required:
     - {id: no_reid, label: "재식별 금지", severity: major, any: ["재식별"]}
     - {id: destruction, label: "보관 기간 및 파기", severity: major, any: ["파기", "폐기", "삭제"]}
   application:
-    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "과제명"]}
-    - {id: pi, label: "연구책임자", severity: critical, any: ["연구책임자", "책임연구자"]}
-    - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간"]}
-    - {id: subjects, label: "연구대상자 수", severity: major, any: ["대상자 수", "re:\\d[\\d,]*\\s*명"]}
+    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "과제명"], structured: true, min_chars: 12}
+    - {id: pi, label: "연구책임자", severity: critical, any: ["연구책임자", "책임연구자"], structured: true}
+    - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간"], structured: true, must: ["re:\\d+\\s*(?:일|주|개월|년|[./-])"]}
+    - {id: subjects, label: "연구대상자 수", severity: major, any: ["대상자 수", "re:\\d[\\d,]*\\s*명"], structured: true, min_chars: 3, must: ["re:\\d[\\d,]*\\s*명"]}
   exemption_request:
     - {id: basis, label: "면제 근거(시행규칙 제13조)", severity: major, any: ["제13조", "면제"]}
     - {id: identifiers, label: "개인식별정보 수집 여부", severity: major, any: ["식별", "개인정보"]}
   security_pledge:
     - {id: purpose_limit, label: "목적 외 이용 금지", severity: major, any: ["목적 외", "목적외"]}
     - {id: no_reid, label: "재식별 금지", severity: major, any: ["재식별"]}
-    - {id: signature, label: "서명란", severity: major, any: ["서명"]}
+    - {id: signature, label: "서명란", severity: major, any: ["서명"], structured: true, min_chars: 4}
 
 # ------------------------------------------------------------------ 용어 표준 (앞의 표현이 표준)
 terminology:
   - {preferred: "연구대상자", variants: ["피험자", "시험대상자", "연구 대상자"]}
-  - {preferred: "이상반응", variants: ["부작용", "이상 반응"]}
+  - {preferred: "이상반응", variants: ["부작용"], kind: distinct}
+  - {preferred: "이상반응", variants: ["이상 반응"], kind: synonym}
   - {preferred: "연구책임자", variants: ["책임연구자", "주임연구자", "연구 책임자"]}
   - {preferred: "가명처리", variants: ["비식별화", "비식별 조치", "비식별조치", "가명 처리"]}
   - {preferred: "기관생명윤리위원회", variants: ["기관 생명윤리 위원회", "생명윤리 심의위원회"]}
@@ -142,16 +161,25 @@ placeholders:
 
 # ------------------------------------------------------------------ 교차 대조 항목과 중요도
 cross_fields:
-  subjects: {label: "연구대상자 수", severity: critical}
-  dosage: {label: "투여 용량·횟수", severity: critical}
-  visits: {label: "방문 횟수", severity: critical}
-  duration: {label: "참여(시험) 기간", severity: critical}
-  study_period: {label: "연구 기간", severity: critical}
-  drug: {label: "시험약 명칭", severity: major}
-  data_period: {label: "자료 수집 기간", severity: major}
-  retention: {label: "자료 보관 기간", severity: major}
-  pi: {label: "연구책임자", severity: major}
-  title: {label: "연구 제목", severity: major}
+  subjects: {label: "연구대상자 수"}
+  dosage: {label: "투여 용량·횟수"}
+  visits: {label: "방문 횟수"}
+  duration: {label: "참여(시험) 기간"}
+  study_period: {label: "연구 기간"}
+  drug: {label: "시험약 명칭"}
+  data_period: {label: "자료 수집 기간"}
+  retention: {label: "자료 보관 기간"}
+  pi: {label: "연구책임자"}
+  title: {label: "연구 제목"}
+  dose_freq: {label: "투여 빈도"}
+  dose_route: {label: "투여 경로"}
+  study_no: {label: "연구번호"}
+  site: {label: "수행기관"}
+  age_range: {label: "선정 연령"}
+  sample_volume: {label: "검체 채취량"}
+  deid_level: {label: "가명·익명 처리 수준"}
+  expense: {label: "비용·보상"}
+  contact: {label: "문의처"}
 
 regulatory:
-  min_retention_years: 3   # 생명윤리법 시행규칙 제15조: 기록 보관 3년
+  min_retention_years: 3   # 원문과 적용 근거를 확인하기 위한 검토 기준

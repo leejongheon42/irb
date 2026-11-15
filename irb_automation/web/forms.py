@@ -14,6 +14,7 @@ TEXT_FIELDS = (
     "access_controls", "external_recipient", "linkage_target", "destruction_method", "consent_plan",
     "waiver_impracticable_detail", "waiver_minimal_risk_detail", "coi_detail",
     "review_model", "participating_sites", "external_irb",
+    "committee", "access_route", "research_category", "application_route",
 )
 INT_FIELDS = ("expected_subjects", "retention_years")
 DATE_FIELDS = ("study_start", "study_end", "data_period_start", "data_period_end")
@@ -74,6 +75,13 @@ def parse_protocol_form(form: FormData, custom_fields: list[Any] | None = None) 
             data[f] = [str(v) for v in form.getlist(f) if str(v).strip()]
     if "co_investigators" in form:
         data["co_investigators"] = sorted({int(v) for v in form.getlist("co_investigators") if str(v).isdigit()})
+    if "_public_profile" in form:
+        for key in ("research_method", "consent_routes"):
+            data[key] = list(dict.fromkeys(str(v) for v in form.getlist(key) if v))
+        for key in ("subject_age_min", "subject_age_max"):
+            value = str(form.get(key) or "").strip()
+            data[key] = int(value) if value.isascii() and value.isdecimal() and len(value) <= 3 else (-1 if value else None)
+        data["proxy_consent"] = form.get("proxy_consent") == "on"
     if data.get("title") == "":
         data.pop("title")
     return data

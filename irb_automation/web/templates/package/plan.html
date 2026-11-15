@@ -46,12 +46,22 @@
 {% endif %}
 
 <div class="card">
-  <h2>필요 서류 <span class="hint">{{ plan.kind.label }} 기준 · 과제 정보와 기관 양식으로 자동 산정</span></h2>
+  <h2>필요 서류 <span class="hint">{{ plan.kind.label }} 기준 · {{ "공용 IRB" if p.committee == "public_irb" else "자체 IRB" }}</span></h2>
+  {% if p.committee == "public_irb" %}<p class="small">심의비 청구 대상이면 e-IRB에서 납부 절차를 확인하세요.</p>{% endif %}
   {% for it in plan["items"] %}
   <div class="pkg-item">
     <span class="pkg-dot {{ it.status }}">{{ loop.index }}</span>
     <div>
       <strong>{{ it.label }}</strong>
+      {% if it.requirement and it.requirement.forms %}<div class="small">{{ it.requirement.forms|join(" · ") }}</div>{% endif %}
+      {% if it.requirement and it.requirement.channel in ("external_eirb", "eirb_or_file") %}
+        <div class="small"><a href="/protocols/{{ p.id }}/public-irb?kind={{ plan.kind.value }}">e-IRB 입력 상태 기록</a></div>
+      {% endif %}
+      {% if it.originals %}
+      <div class="small">{% for source in it.originals %}<a href="/public-irb/sources/{{ source.id }}/download">{{ source.title }} 원본 ({{ source.version }})</a>{% endfor %}</div>
+      {% elif p.committee == "public_irb" and it.how == "upload" and (it.requirement.forms or it.requirement.source_keys) %}
+      <div class="small">원문 현행 확인 대기 · <a href="https://public.irb.or.kr/">공용위원회 자료실</a></div>
+      {% endif %}
       {% if it.required %}<span class="badge b-primary">필수</span>{% else %}<span class="badge">추가</span>{% endif %}
       {% if it.condition and it.condition != "공통" %}<span class="small muted">{{ it.condition }}</span>{% endif %}
       <div class="small">
@@ -59,7 +69,7 @@
           <a href="/documents/{{ it.current.id }}/preview">{{ it.current.filename }}</a> · v{{ it.current.version }} · {{ it.current.uploaded_at|fmt }}
           {% if it.current.source == "generated" %}<span class="badge b-info">자동 작성</span>{% elif it.current.source == "autofix" %}<span class="badge b-ok">자동 교정본</span>{% endif %}
           {% if it.stale %}<span class="badge b-warn">과제 정보 변경 후 갱신 필요</span>{% endif %}
-          {% if it.qc %}<span class="badge {{ 'b-danger' if it.qc.critical else ('b-warn' if it.qc.major else 'b-ok') }}">점검 C{{ it.qc.critical }} · M{{ it.qc.major }} · m{{ it.qc.minor }}</span>{% endif %}
+          {% if it.qc %}<span class="badge {{ 'b-danger' if it.qc.critical else ('b-warn' if it.qc.major or it.qc.status in ('HOLD', 'MINOR') else 'b-ok') }}">점검 {{ it.qc.status or "" }} · C{{ it.qc.critical }} · M{{ it.qc.major }} · m{{ it.qc.minor }}</span>{% endif %}
         {% else %}
           <span class="muted">{% if it.how == "generate" %}자동 작성 가능{% if it.template == "institution" %} (기관 서식){% endif %}{% elif it.how == "online" %}웹 서식 작성 필요{% else %}직접 올려야 함{% endif %}</span>
         {% endif %}

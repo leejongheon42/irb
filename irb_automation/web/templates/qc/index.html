@@ -15,6 +15,8 @@
         <input id="files" name="files" type="file" multiple required accept=".docx,.hwpx,.hwp,.pdf,.txt,.doc">
         <p class="small muted mb0">서류 종류는 파일명·내용으로 자동 판별합니다. 자동 교정은 DOCX·HWPX·TXT 원본에서 가능합니다.</p>
       </div>
+      {% set selected = {} %}
+      {% include "qc/profile_fields.html" %}
       <div class="form-row">
         <div><label for="protocol_id">과제 정보와도 대조 <span class="hint">선택</span></label>
           <select id="protocol_id" name="protocol_id"><option value="">선택 안 함</option>{% for p in protocols %}<option value="{{ p.id }}">{{ p.title[:50] }}</option>{% endfor %}</select></div>
@@ -31,7 +33,7 @@
       {% for k, v in criteria.categories.items() %}<li>{{ v }}</li>{% endfor %}
     </ul>
     <p class="small">감점: Critical −{{ criteria.scoring.critical }} · Major −{{ criteria.scoring.major }} · Minor −{{ criteria.scoring.minor }}.
-      Critical이 1건이라도 있으면 점수와 무관하게 <strong>FAIL</strong>, {{ criteria.scoring.pass_score }}점 미만도 FAIL.</p>
+      검토자가 확정한 이슈만 감점합니다. 확정 Critical이 있으면 <strong>FAIL</strong>입니다.</p>
     <p class="small muted">3단계 스캔: ① 규칙 기반(필수항목·버전·용어·교차 대조) ② AI 심층 분석(문맥·규제, 선택) ③ 오탈자·숫자·날짜 검증</p>
   </div>
 </div>

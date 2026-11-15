@@ -1,6 +1,8 @@
-"""Claude API 클라이언트 래퍼.
+"""공통 AI 클라이언트 래퍼.
 
-모든 AI 기능(사전검토 보조, 문서 OCR, 정보 추출, 분류, 요약, 지식 질의응답)이 이 모듈만 거쳐 Claude를 호출한다.
+모든 AI 기능(사전검토 보조, 문서 OCR, 정보 추출, 분류, 요약, 지식 질의응답)이 이 모듈만 거쳐 선택한 공급자를 호출한다.
+
+아래의 모델·폴백·스트리밍 설정은 Anthropic 경로에 적용한다.
 
 - 모델: settings.ai_model (기본 claude-opus-5-5), thinking 파라미터는 생략(적응형), effort는 호출마다 명시
 - 서버측 폴백: betas=["server-side-fallback-2026-07-01"] + fallbacks="default" (안전 분류기 거절 시 권장 모델로 재시도)
@@ -17,6 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -82,7 +85,12 @@ def _client() -> Any:
 
 def ai_enabled() -> bool:
     """AI 기능 사용 가능 여부(설정 + SDK 설치 또는 주입된 클라이언트)."""
-    if not get_settings().ai_enabled:
+    settings = get_settings()
+    if not settings.ai_enabled:
+        return False
+    if settings.ai_provider == "openrouter":
+        return bool(settings.openrouter_api_key)
+    if settings.ai_provider != "anthropic":
         return False
     if _client_factory is not None:
         return True
@@ -124,10 +132,31 @@ def create_message(
     effort: str = "medium",
     output_schema: dict | None = None,
     purpose: str = "",
+    json_object: bool = False,
 ):
-    """Claude Messages API 호출. BetaMessage 를 반환한다."""
-    if not get_settings().ai_enabled:
+    """선택한 공급자를 호출하고 공통 메시지 속성을 반환한다."""
+    settings = get_settings()
+    if not settings.ai_enabled:
         raise AIUnavailable("AI 기능이 비활성화되어 있습니다(IRB_AI_ENABLED=true 로 활성화, 기관 승인 필요).")
+    if settings.ai_provider == "openrouter":
+        from . import openrouter
+
+        started = time.monotonic()
+        model = openrouter.FREE_ROUTER
+        try:
+            route = openrouter.route_for(purpose)
+            model = route.models[0]
+            response = openrouter.create_message(
+                api_key=settings.openrouter_api_key, route=route, system=system, messages=messages,
+                max_tokens=max_tokens, output_schema=output_schema, json_object=json_object,
+            )
+        except AIError as e:
+            _record_usage(purpose, model, False, time.monotonic() - started, error=str(e))
+            raise
+        return _checked_response(response, purpose, model, started)
+    if settings.ai_provider != "anthropic":
+        raise AIUnavailable("IRB_AI_PROVIDER는 anthropic 또는 openrouter여야 합니다.")
+
     try:
         import anthropic
     except ImportError:
@@ -160,6 +189,10 @@ def create_message(
         _record_usage(purpose, model, False, time.monotonic() - started, error=str(err))
         raise err from e
 
+    return _checked_response(response, purpose, model, started)
+
+
+def _checked_response(response: Any, purpose: str, model: str, started: float) -> Any:
     stop = getattr(response, "stop_reason", None)
     if stop == "refusal":
         _record_usage(purpose, model, False, time.monotonic() - started, response, "refusal")
@@ -177,24 +210,24 @@ def _normalize_exception(e: Exception, anthropic: Any) -> AIError:
         return e
     if anthropic is not None:
         if isinstance(e, anthropic.AuthenticationError):
-            return AIUnavailable("Claude API 인증 실패 - ANTHROPIC_API_KEY 등 자격증명을 확인하십시오.")
+            return AIUnavailable("AI API 인증 실패 - ANTHROPIC_API_KEY 등 자격증명을 확인하십시오.")
         if isinstance(e, anthropic.PermissionDeniedError):
-            return AIError("Claude API 권한 없음 - 조직·워크스페이스 설정을 확인하십시오.")
+            return AIError("AI API 권한 없음 - 조직·워크스페이스 설정을 확인하십시오.")
         if isinstance(e, anthropic.NotFoundError):
             return AIError(f"모델 또는 엔드포인트를 찾을 수 없습니다({get_settings().ai_model}).")
         if isinstance(e, anthropic.RateLimitError):
-            return AIError("Claude API 요청 한도 초과 - 잠시 후 다시 시도하십시오.")
+            return AIError("AI API 요청 한도 초과 - 잠시 후 다시 시도하십시오.")
         if isinstance(e, anthropic.BadRequestError):
-            return AIError(f"Claude API 요청 오류: {getattr(e, 'message', e)}")
+            return AIError(f"AI API 요청 오류: {getattr(e, 'message', e)}")
         if isinstance(e, anthropic.APIStatusError):
-            log.warning("Claude API status error %s (request_id=%s)", e.status_code, getattr(e, "request_id", None))
-            return AIError(f"Claude API 오류({e.status_code})")
+            log.warning("AI API status error %s (request_id=%s)", e.status_code, getattr(e, "request_id", None))
+            return AIError(f"AI API 오류({e.status_code})")
         if isinstance(e, anthropic.APITimeoutError):
-            return AIError("Claude API 응답 시간 초과")
+            return AIError("AI API 응답 시간 초과")
         if isinstance(e, anthropic.APIConnectionError):
-            return AIError("Claude API 연결 실패 - 네트워크(망분리·프록시)를 확인하십시오.")
+            return AIError("AI API 연결 실패 - 네트워크(망분리·프록시)를 확인하십시오.")
     if isinstance(e, TypeError) and "authentication" in str(e).lower():
-        return AIUnavailable("Claude API 자격증명이 설정되지 않았습니다(ANTHROPIC_API_KEY).")
+        return AIUnavailable("AI API 자격증명이 설정되지 않았습니다(ANTHROPIC_API_KEY).")
     log.exception("unexpected AI client error")
     return AIError(f"AI 호출 실패: {type(e).__name__}")
 
@@ -217,14 +250,47 @@ def structured_call_with_response(
         system=system, messages=[{"role": "user", "content": _content(content)}], max_tokens=max_tokens,
         effort=effort, output_schema=schema, purpose=purpose,
     )
-    text = response_text(response)
+    if get_settings().ai_provider == "openrouter":
+        return _openrouter_structured_result(response, system, content, schema, max_tokens, purpose)
+    return _json_object(response_text(response)), response
+
+
+def _json_object(text: str) -> dict:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
         raise AIError("AI 응답 형식 오류(JSON 아님)") from e
     if not isinstance(data, dict):
         raise AIError("AI 응답 형식 오류(객체 아님)")
-    return data, response
+    return data
+
+
+def _openrouter_structured_result(
+    response: Any, system: str, content: str | list[dict], schema: dict, max_tokens: int, purpose: str,
+) -> tuple[dict, Any]:
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as e:
+        raise AIUnavailable("jsonschema 패키지를 설치하십시오 (pip install -r requirements-ai.txt).") from e
+
+    validator = Draft202012Validator(schema)
+    for attempt in range(2):
+        text = response_text(response)
+        fence = re.fullmatch(r"\s*```(?:json)?\s*(.*?)\s*```\s*", text, re.IGNORECASE | re.DOTALL)
+        try:
+            data = _json_object(fence[1] if fence else text)
+        except AIError:
+            data = None
+        if data is not None and validator.is_valid(data):
+            return data, response
+        if attempt == 0:
+            retry_system = system + "\nJSON 객체 하나만 반환하십시오. 다음 JSON 스키마를 따르십시오.\n"
+            response = create_message(
+                system=retry_system + json.dumps(schema, ensure_ascii=False),
+                messages=[{"role": "user", "content": _content(content)}],
+                max_tokens=max_tokens, purpose=purpose, json_object=True,
+            )
+    raise AIError("AI 응답이 JSON 스키마와 일치하지 않습니다.")
 
 
 def structured_call(

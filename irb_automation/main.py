@@ -24,9 +24,11 @@ from .web import (
     routes_forms,
     routes_knowledge,
     routes_main,
+    routes_mvp,
     routes_package,
     routes_pipeline,
     routes_protocols,
+    routes_public_irb,
     routes_reports,
     routes_submission,
 )
@@ -97,11 +99,13 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     app.include_router(routes_main.router)
+    app.include_router(routes_mvp.router)
     app.include_router(routes_submission.router)  # /documents/{id}/preview 등 세부 경로를 먼저 등록
     app.include_router(routes_demo.router)
     app.include_router(routes_package.router)
     app.include_router(routes_pipeline.router)  # /protocols/import 가 /protocols/{pid} 보다 먼저
     app.include_router(routes_protocols.router)
+    app.include_router(routes_public_irb.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)
     app.include_router(routes_reports.router)

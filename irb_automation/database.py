@@ -4,9 +4,9 @@ import json
 import logging
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy import String, create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import get_settings
 
@@ -15,6 +15,12 @@ log = logging.getLogger(__name__)
 
 class Base(DeclarativeBase):
     pass
+
+
+class SchemaRevision(Base):
+    __tablename__ = "schema_meta"
+
+    revision: Mapped[str] = mapped_column(String(80), primary_key=True)
 
 
 _engine: Engine | None = None
@@ -66,7 +72,11 @@ def init_db() -> None:
     from .doctemplates import models as _doctemplates_models  # noqa: F401
     from .forms import models as _forms_models  # noqa: F401
     from .knowledge import models as _knowledge_models  # noqa: F401
+    from .mvp import models as _mvp_models  # noqa: F401
     from .pipeline import models as _pipeline_models  # noqa: F401
+    from .public_irb import checklist_models as _checklist_models  # noqa: F401
+    from .public_irb import records as _public_records  # noqa: F401
+    from .public_irb import source_models as _source_models  # noqa: F401
     from .qc import models as _qc_models  # noqa: F401
     from .submission import models as _submission_models  # noqa: F401
 
@@ -75,6 +85,10 @@ def init_db() -> None:
     added = migrate_columns(engine)
     if added:
         log.info("added columns: %s", ", ".join(added))
+    with Session(engine) as db:
+        if db.get(SchemaRevision, "public-irb-v1") is None:
+            db.add(SchemaRevision(revision="public-irb-v1"))
+            db.commit()
 
 
 def migrate_columns(engine: Engine) -> list[str]:

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}공용 IRB 준비{% endblock %}
+{% block content %}
+<h1>공용 IRB 준비</h1>
+<p><a href="/protocols/{{ p.id }}">{{ p.title }}</a> · <a href="/protocols/{{ p.id }}/package">제출 서류 패키지</a></p>
+{% if p.submissions %}<p><a href="/protocols/{{ p.id }}/public-irb">현재 준비</a>
+{% for sub in p.submissions %} · <a href="/protocols/{{ p.id }}/public-irb?submission_id={{ sub.id }}">{{ sub.kind.label }} #{{ sub.id }}</a>{% endfor %}</p>{% endif %}
+{% if user.is_admin %}
+<section class="card">
+ <h2>사전검토자 배정</h2>
+ <form method="post" action="/protocols/{{ p.id }}/public-irb/reviewers">{{ csrf_input }}
+ {% for reviewer in reviewers if reviewer.id not in p.member_ids() %}
+ <label><input type="checkbox" name="reviewer_id" value="{{ reviewer.id }}" {% if reviewer.id in p.reviewer_ids %}checked{% endif %}> {{ reviewer.full_name }}</label>
+ {% endfor %}
+ <button type="submit">배정 저장</button>
+ </form>
+</section>
+{% endif %}
+<section class="card">
+ <h2>e-IRB 입력 상태</h2>
+ {% for item in requirements if item.channel in ("external_eirb", "eirb_or_file") %}
+ <p>{{ item.label }} · {{ {"prepared":"내부 준비됨","declared_submitted":"제출했다고 표시","not_applicable":"해당 없음","provided":"파일 확인","missing":"미입력"}.get(item.status, item.status) }}</p>
+ {% if can_edit and not submission_id %}
+ <form method="post" action="/protocols/{{ p.id }}/public-irb/requirement">{{ csrf_input }}
+  <input type="hidden" name="doc_type" value="{{ item.doc }}">
+  <input type="hidden" name="kind" value="{{ kind }}">
+  <button name="status" value="prepared">내부 준비됨</button>
+  <button name="status" value="declared_submitted">e-IRB 제출 기록</button>
+  <button name="status" value="not_applicable">해당 없음</button>
+ </form>
+ {% endif %}
+ {% else %}<p>이 신청 유형에 기록할 e-IRB 항목이 없습니다.</p>{% endfor %}
+</section>
+<section class="card">
+ <h2>내부 사전검토 및 자가점검</h2>
+ {% for form, rows, can_decide, verified in forms %}
+ <h3>{{ form.source.title }}</h3>
+ <p>{{ form.source.series }} 제{{ form.source.number }}호 · {{ form.source.version }} · {{ "검수 완료" if verified else "원문 또는 항목 검수 대기" }}</p>
+ {% for row in rows %}
+ <div class="finding"><strong>{{ row.item.label }}</strong>
+ <p>{{ row.item.interpretation }}</p>
+ <p class="small">자동 후보 {{ answers[row.candidate] }}{% if row.response %} · 기록 {{ answers[row.response.answer] }} · {{ directions[row.response.direction] }} · {{ row.response.evidence_ref }}{% endif %}</p>
+ {% if can_decide and verified %}
+ <form method="post" action="/protocols/{{ p.id }}/public-irb/answer">{{ csrf_input }}
+  <input type="hidden" name="form_id" value="{{ form.id }}"><input type="hidden" name="item_key" value="{{ row.item.key }}">
+  {% if submission_id %}<input type="hidden" name="submission_id" value="{{ submission_id }}">{% endif %}
+  <label>항목 판정 <select name="answer">{% for value, label in answers.items() %}<option value="{{ value }}" {% if (row.response and row.response.answer == value) or (not row.response and value == 'unknown') %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <label>근거 위치 또는 사유 <input name="evidence_ref" value="{{ row.response.evidence_ref if row.response else '' }}"></label>
+  <button type="submit">판정 저장</button>
+ </form>
+ {% endif %}
+ </div>
+ {% endfor %}
+ {% else %}<p>이 과제에 적용할 등록 점검표가 없습니다. 원문과 항목 정의를 등록하면 여기에 표시됩니다.</p>{% endfor %}
+</section>
+{% endblock %}

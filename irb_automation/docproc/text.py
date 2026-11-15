@@ -1,12 +1,12 @@
 """문서 텍스트 인식.
 
 지원 형식
-- PDF: pypdf 텍스트층 추출. 텍스트층이 없으면 스캔본 경고 → allow_ai_ocr 이면 Claude PDF OCR
+- PDF: pypdf 텍스트층 추출. 텍스트층이 없으면 스캔본 경고 → allow_ai_ocr 이면 AI OCR
 - DOCX / HWPX: ZIP 안의 XML(w:p·hp:p 문단, tbl/tr/tc 표)을 문서 순서대로 읽음. 표의 행은 "항목 | 내용" 한 줄
 - HWP(HWP5): OLE 컨테이너의 BodyText/Section* 레코드(PARA_TEXT) 해석. 배포용·암호 문서는 미리보기 텍스트
 - XLSX: 공유 문자열·셀 값을 행 단위로
 - HTML / TXT / CSV / MD: 태그 제거, 인코딩 자동 판별(UTF-8, CP949)
-- 이미지(PNG·JPEG·GIF·WEBP): Claude OCR (allow_ai_ocr) - 그 외에는 경고
+- 이미지(PNG·JPEG·GIF·WEBP): AI OCR (allow_ai_ocr) - 그 외에는 경고
 - DOC·RTF·ODT·PPTX 등: LibreOffice로 PDF 변환 후 추출
 """
 from __future__ import annotations
@@ -173,7 +173,13 @@ def _pdf(raw: bytes, allow_ai_ocr: bool) -> ExtractedText:
     if len(text.strip()) < 30 * max(pages, 1):
         warnings.append("텍스트층이 거의 없는 스캔본 PDF로 보입니다.")
         if allow_ai_ocr:
-            ocr = _ai_ocr([_ai().pdf_block(raw)], "PDF 문서", warnings)
+            from ..config import get_settings
+
+            settings = get_settings()
+            if settings.ai_provider == "openrouter":
+                ocr = _openrouter_pdf_ocr(raw, pages, settings.ai_ocr_max_pages, warnings)
+            else:
+                ocr = _ai_ocr([_ai().pdf_block(raw)], "PDF 문서", warnings)
             if ocr:
                 return ExtractedText(ocr, pages, "ai_ocr", warnings)
         else:
@@ -200,6 +206,33 @@ def _ai_ocr(blocks: list[dict], label: str, warnings: list[str]) -> str:
     except client.AIError as e:
         warnings.append(f"AI OCR 실패: {e}")
         return ""
+
+
+def _openrouter_pdf_ocr(raw: bytes, pages: int, max_pages: int, warnings: list[str]) -> str:
+    from .pdf_images import render_pdf_pages
+
+    if pages > max_pages:
+        warnings.append(f"OpenRouter PDF OCR은 {max_pages}쪽 이하만 지원합니다(현재 {pages}쪽).")
+        return ""
+    if not _ai().ai_enabled():
+        warnings.append("OpenRouter AI OCR을 사용할 수 없습니다. 활성화 설정과 API 키를 확인하십시오.")
+        return ""
+
+    parts: list[str] = []
+    batch_size = 3
+    for start in range(0, pages, batch_size):
+        stop = min(start + batch_size, pages)
+        try:
+            blocks = [_ai().image_block(png, "image/png") for png in render_pdf_pages(raw, start, stop)]
+        except _ai().AIError as e:
+            warnings.append(str(e))
+            return ""
+        part = _ai_ocr(blocks, f"PDF 문서 {start + 1}~{stop}쪽", warnings)
+        if not part or part == "[판독 불가]":
+            warnings.append(f"{start + 1}~{stop}쪽 OCR을 완료하지 못했습니다.")
+            return ""
+        parts.append(part)
+    return "\n\n".join(parts)
 
 
 def _image(raw: bytes, media_type: str, allow_ai_ocr: bool) -> ExtractedText:

@@ -18,11 +18,15 @@ from pathlib import Path
 from typing import Any
 
 ALLOWED_EXT = {".pdf", ".doc", ".docx", ".hwp", ".hwpx", ".xls", ".xlsx", ".csv", ".txt", ".jpg", ".jpeg", ".png", ".zip"}
+ALLOWED_EXT |= {".pptx", ".rtf", ".odt"}
 
 KIND_LABELS = {
     "pdf": "PDF 문서",
     "docx": "Word 문서(DOCX)",
     "xlsx": "Excel 문서(XLSX)",
+    "pptx": "PowerPoint 문서(PPTX)",
+    "rtf": "서식 있는 텍스트(RTF)",
+    "odt": "OpenDocument 문서(ODT)",
     "hwpx": "한글 문서(HWPX)",
     "hwp": "한글 문서(HWP)",
     "doc": "Word 97-2003 문서(DOC)",
@@ -42,6 +46,9 @@ MIME = {
     "pdf": "application/pdf",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "rtf": "application/rtf",
+    "odt": "application/vnd.oasis.opendocument.text",
     "hwpx": "application/hwp+zip",
     "hwp": "application/x-hwp",
     "doc": "application/msword",
@@ -58,11 +65,14 @@ EXPECTED_KINDS: dict[str, set[str]] = {
     ".pdf": {"pdf"},
     ".docx": {"docx"},
     ".xlsx": {"xlsx"},
+    ".pptx": {"pptx"},
+    ".rtf": {"rtf"},
+    ".odt": {"odt"},
     ".hwpx": {"hwpx"},
     ".hwp": {"hwp", "ole"},
     ".doc": {"doc", "ole"},
     ".xls": {"xls", "ole"},
-    ".zip": {"zip", "docx", "xlsx", "hwpx"},
+    ".zip": {"zip", "docx", "xlsx", "hwpx", "pptx", "odt"},
     ".jpg": {"jpeg"},
     ".jpeg": {"jpeg"},
     ".png": {"png"},
@@ -150,6 +160,8 @@ def detect_kind(raw: bytes) -> tuple[str, dict[str, Any]]:
         return _ole_kind(raw, info), info
     if raw[:4] in (b"PK\x03\x04", b"PK\x05\x06"):
         return _zip_kind(raw, info), info
+    if re.match(rb"\{\\rtf\d", raw[:16]):
+        return "rtf", info
     lowered = raw[:512].lstrip().lower()
     if lowered.startswith((b"<!doctype html", b"<html", b"<script", b"<svg")):
         return "html", info
@@ -207,19 +219,25 @@ def _zip_kind(raw: bytes, info: dict[str, Any]) -> str:
         info["ooxml_macro"] = any(n.lower().endswith("vbaproject.bin") for n in names)
         if "mimetype" in names:
             try:
-                mt = zf.read("mimetype")[:64].decode("ascii", "ignore").strip()
+                with zf.open("mimetype") as entry:
+                    mt = entry.read(64).decode("ascii", "ignore").strip()
             except (KeyError, zipfile.BadZipFile, RuntimeError):
                 mt = ""
             if mt.startswith("application/hwp"):
                 return "hwpx"
+            if mt == MIME["odt"] and "content.xml" in names:
+                return "odt"
         if any(n.startswith("Contents/section") for n in names) and ("Contents/content.hpf" in names or "version.xml" in names):
             return "hwpx"
         if "[Content_Types].xml" in names:
-            if "word/document.xml" in names:
+            if "word/document.xml" in names and not info["zip_bomb"]:
                 info["docx_pages"] = _ooxml_pages(zf, names)
+            if "word/document.xml" in names:
                 return "docx"
             if "xl/workbook.xml" in names:
                 return "xlsx"
+            if "ppt/presentation.xml" in names:
+                return "pptx"
         return "zip"
 
 
@@ -276,6 +294,7 @@ def validate_upload(
     raw: bytes,
     *,
     max_bytes: int | None = None,
+    size: int | None = None,
     existing: Iterable[tuple[str, str]] = (),
     policy: dict[str, Any] | None = None,
     allowed_ext: set[str] | None = None,
@@ -286,21 +305,22 @@ def validate_upload(
     name = Path((filename or "").replace("\\", "/")).name
     ext = Path(name).suffix.lower()
     result = ValidationResult(
-        filename=name, safe_name=safe_filename(name), ext=ext, size=len(raw),
-        sha256=hashlib.sha256(raw).hexdigest(),
+        filename=name, safe_name=safe_filename(name), ext=ext, size=len(raw) if size is None else size,
+        sha256="",
     )
     if not name:
         result.errors.append("파일 이름이 없습니다.")
     if ext not in allowed:
         result.errors.append(f"허용되지 않는 파일 형식입니다({ext or '확장자 없음'}). "
-                             "PDF, HWP/HWPX, DOC/DOCX, XLS/XLSX, CSV/TXT, JPG/PNG, ZIP만 제출할 수 있습니다.")
+                             f"{', '.join(e[1:].upper() for e in sorted(allowed))} 형식을 지원합니다.")
+    if max_bytes is not None and result.size > max_bytes:
+        result.errors.append(f"파일 크기({result.size / 1024 / 1024:.1f}MB)가 제한({max_bytes // 1024 // 1024}MB)을 초과했습니다.")
+        return result
+    result.sha256 = hashlib.sha256(raw).hexdigest()
     if not raw:
         result.kind = "empty"
         result.errors.append("빈 파일입니다.")
         return result
-    if max_bytes is not None and len(raw) > max_bytes:
-        result.errors.append(f"파일 크기({len(raw) / 1024 / 1024:.1f}MB)가 제한({max_bytes // 1024 // 1024}MB)을 초과했습니다.")
-
     kind, info = detect_kind(raw)
     result.kind = kind
     result.info.update(info)
@@ -316,7 +336,7 @@ def validate_upload(
 
     if kind == "pdf" and not result.errors:
         _check_pdf(raw, result, policy)
-    if kind in ("docx", "xlsx", "hwpx", "zip"):
+    if kind in ("docx", "xlsx", "hwpx", "pptx", "odt", "zip"):
         if info.get("zip_error"):
             result.errors.append("손상된 압축(OOXML/HWPX) 파일입니다.")
         if info.get("zip_bomb"):

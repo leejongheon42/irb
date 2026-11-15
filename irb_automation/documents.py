@@ -117,39 +117,72 @@ class GeneratedDocument:
     ext: str
     template_id: int | None = None
     template_version: int | None = None
+    template_sha256: str = ""
+    source_document_id: int | None = None
+    source_sha256: str = ""
     warnings: list[str] = field(default_factory=list)
 
 
-def generatable_doc_types(db: Session) -> dict[str, str]:
+def generatable_doc_types(db: Session, protocol: Protocol | None = None) -> dict[str, str]:
     """자동 작성 가능한 서류 종류 → 'institution' | 'builtin'.
 
     기관 서식(DOCX/HWPX)이 활성화된 종류는 기관 서식을 쓰고, 기본 HTML 서식에 없는 종류도 생성할 수 있다.
     """
-    out: dict[str, str] = {dt: "builtin" for dt in GENERATABLE}
+    public = protocol is not None and protocol.committee == "public_irb"
+    out: dict[str, str] = {} if public else {dt: "builtin" for dt in GENERATABLE}
     try:
         from .doctemplates.service import active_templates
     except ImportError:  # pragma: no cover - 패키지 누락 시 기본 서식만
         return out
     order = list(get_ruleset().catalog("document_types"))
     for tpl in sorted(active_templates(db), key=lambda t: order.index(t.doc_type) if t.doc_type in order else 999):
-        out[tpl.doc_type] = "institution"
+        if not public and tpl.committee == "institution" and not tpl.variant:
+            out[tpl.doc_type] = "institution"
+        elif public and protocol is not None and _public_template(db, protocol, tpl.doc_type) is not None:
+            out[tpl.doc_type] = "public_irb"
     return out
+
+
+def _public_template(db: Session, protocol: Protocol, doc_type: str):
+    from .doctemplates.service import active_template
+    from .public_irb.source_models import SourceDocument
+
+    variants = {""}
+    if doc_type == "protocol":
+        variants = set(protocol.research_method or []) & {"survey", "intervention", "records", "specimen", "stem_cell"}
+        if protocol.research_category in ("specimen", "both", "stem_cell"):
+            variants.add("stem_cell" if protocol.research_category == "stem_cell" else "specimen")
+    elif doc_type in ("consent_form", "assent_form"):
+        variants = {"human", "specimen"} if protocol.research_category == "both" else {protocol.research_category}
+    if len(variants) != 1:
+        return None
+    tpl = active_template(db, doc_type, "public_irb", next(iter(variants)))
+    source = db.get(SourceDocument, tpl.source_document_id) if tpl and tpl.source_document_id else None
+    if tpl and source and source.verified and tpl.derived_from_sha == source.sha256:
+        return tpl
+    return None
 
 
 def build_document(db: Session, protocol: Protocol, doc_type: str, *, prefer_builtin: bool = False) -> GeneratedDocument:
     """서류 내용을 만든다. 활성 기관 서식이 있으면 우선 사용하고, 없으면 기본 HTML 서식."""
     label = get_ruleset().label("document_types", doc_type)
-    if not prefer_builtin:
+    public = protocol.committee == "public_irb"
+    if doc_type in ("result_notice", "exemption_confirmation"):
+        raise ValueError("IRB 통지서는 발행된 파일을 첨부하십시오.")
+    if public or not prefer_builtin:
         from .doctemplates import service as tpl_service
 
-        tpl = tpl_service.active_template(db, doc_type)
+        tpl = _public_template(db, protocol, doc_type) if public else tpl_service.active_template(db, doc_type)
         if tpl is not None:
             result = tpl_service.fill(db, tpl, protocol)
             return GeneratedDocument(
                 content=result.content, filename=result.filename, media_type=result.media_type,
-                source="institution", ext=result.fmt, template_id=tpl.id, template_version=tpl.version,
+                source="public_irb" if public else "institution", ext=result.fmt, template_id=tpl.id, template_version=tpl.version,
+                template_sha256=tpl.sha256, source_document_id=tpl.source_document_id, source_sha256=tpl.derived_from_sha,
                 warnings=result.warnings,
             )
+    if public:
+        raise tpl_service.TemplateError("검수된 공용 서식이 없습니다. 공용 e-IRB 원본을 내려받아 직접 작성하십시오.")
     if doc_type not in GENERATABLE:
         raise ValueError(f"자동 작성할 수 없는 서류입니다: {doc_type}")
     html = render(db, protocol, doc_type).encode("utf-8")
@@ -206,6 +239,10 @@ def generate_and_attach(db: Session, user: User, protocol: Protocol, doc_type: s
         sha256=hashlib.sha256(generated.content).hexdigest(), size=len(generated.content), version=version,
         uploaded_by=user.id,
     )
+    if generated.template_id is not None:
+        doc.validation = {"template": {"id": generated.template_id, "version": generated.template_version,
+                                       "sha256": generated.template_sha256, "source_id": generated.source_document_id,
+                                       "source_sha256": generated.source_sha256}}
     db.add(doc)
     db.flush()
     from .submission.hooks import finalize_system_document

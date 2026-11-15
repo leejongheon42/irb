@@ -1,0 +1,27 @@
+prereview:
+  models: [nvidia/nemotron-3.5-super-vl:free, baidu/ernie-5.5-flash-preview:free]
+  max_tokens: 16000
+qc:
+  models: [nvidia/nemotron-3.5-super-vl:free, inclusionai/ling-3.2-flash:free]
+  max_tokens: 16000
+draft:
+  models: [inclusionai/ling-3.2-flash:free, baidu/ernie-5.5-flash-preview:free]
+  max_tokens: 8000
+revision:
+  models: [baidu/ernie-5.5-flash-preview:free, inclusionai/ling-3.2-flash:free]
+  max_tokens: 8000
+ocr:
+  models: [dots-studio/dots-3-note-preview:free, inclusionai/ling-3.2-flash:free]
+  max_tokens: 8000
+classify:
+  models: [inclusionai/ling-3.2-flash:free, liquid/lfm-3-1.7b:free]
+  max_tokens: 2000
+extract:
+  models: [baidu/ernie-5.5-flash-preview:free, inclusionai/ling-3.2-flash:free]
+  max_tokens: 16000
+summary:
+  models: [nvidia/nemotron-3.5-super-vl:free, particle-ai/particle-1:free]
+  max_tokens: 16000
+knowledge:
+  models: [google/gemma-4-26b-a4b-it:free, google/gemma-4-31b-it:free]
+  max_tokens: 4000

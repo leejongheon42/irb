@@ -66,7 +66,7 @@ def generate_findings(
 
     # ---------------------------------------------------------------- 서류
     for item in checklist:
-        if not item["provided"]:
+        if item.get("required", True) and not item["provided"]:
             c.add(
                 "critical",
                 "DOC_MISSING",

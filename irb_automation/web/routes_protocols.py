@@ -74,10 +74,19 @@ def list_protocols(request: Request, status: str = "", q: str = "", user: User =
 
 
 @router.get("/protocols/new")
-def new_protocol_form(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def new_protocol_form(request: Request, institution: str = "", user: User = Depends(current_user),
+                      db: Session = Depends(get_db)):
     if user.role not in (Role.RESEARCHER, Role.ADMIN):
         raise HTTPException(403, "연구자만 과제를 생성할 수 있습니다.")
-    return render(request, "protocols/form.html", db, user, protocol=None, v=ProtocolFacts(), researchers=_users(db, Role.RESEARCHER))
+    source, matched = None, False
+    institution = institution.strip()[:160]
+    if institution and get_settings().public_irb_enabled:
+        from ..public_irb.sources import agreement_lookup
+
+        source, matched = agreement_lookup(db, institution)
+    return render(request, "protocols/form.html", db, user, protocol=None, v=ProtocolFacts(),
+                  researchers=_users(db, Role.RESEARCHER), institution_query=institution,
+                  agreement_source=source, agreement_match=matched)
 
 
 @router.post("/protocols/new", dependencies=[Depends(verify_csrf)])
@@ -86,8 +95,10 @@ async def create_protocol(request: Request, user: User = Depends(current_user), 
     data["co_investigators"] = [i for i in data.get("co_investigators", []) if i != user.id]
     try:
         p = wf.create_protocol(db, user, data, client_ip(request))
-    except wf.WorkflowError as e:
+    except wf.PermissionDenied as e:
         raise HTTPException(403, str(e)) from e
+    except wf.WorkflowError as e:
+        raise HTTPException(422, str(e)) from e
     db.commit()
     flash(request, "과제가 생성되었습니다. '제출 서류 패키지'에서 필요한 서류를 자동으로 완성하십시오.", "success")
     return RedirectResponse(f"/protocols/{p.id}/package", status_code=303)
@@ -127,13 +138,14 @@ def detail(request: Request, pid: int, user: User = Depends(current_user), db: S
     related, similar = _knowledge_context(db, user, p, preview, sub)
     result_options = []
     if sub and not sub.closed and p.status == S.SUBMITTED:
-        result_options = [(k, SUBMISSION_RESULTS[k]) for k in wf.RESULTS_BY_KIND[sub.kind]]
+        result_options = [(k, SUBMISSION_RESULTS[k]) for k in wf.result_options(p, sub)]
     return render(
         request, "protocols/detail.html", db, user,
         p=p, sub=sub, preview=preview, related=related, similar=similar,
-        diff=diff, revision_items=revision_items, generatable=generatable_doc_types(db),
+        diff=diff, revision_items=revision_items, generatable=generatable_doc_types(db, p),
         co_names=[u for u in co_names if u], is_member=wf.is_member(user, p), logs=logs,
         result_options=result_options, ai_enabled=get_settings().ai_review_enabled,
+        public_reports=[(kind.value, kind.label) for kind in SubmissionKind if kind.is_parallel],
     )
 
 
@@ -233,9 +245,16 @@ async def submit(request: Request, pid: int, user: User = Depends(current_user),
 
 
 @router.post("/protocols/{pid}/amend", dependencies=[Depends(verify_csrf)])
-def amend(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def amend(request: Request, pid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
     try:
+        if p.committee == "public_irb":
+            wf.require_member(user, p)
+            implemented = (await request.form()).get("implemented")
+            if implemented == "yes":
+                return RedirectResponse(f"/protocols/{pid}/report/deviation", status_code=303)
+            if implemented != "no":
+                raise wf.WorkflowError("변경 내용을 이미 시행했는지 선택하십시오.")
         wf.start_amendment(db, user, p, client_ip(request))
     except wf.WorkflowError as e:
         flash(request, str(e), "error")
@@ -261,14 +280,14 @@ def cancel_amend(request: Request, pid: int, user: User = Depends(current_user),
 @router.get("/protocols/{pid}/report/{kind}")
 def report_form(request: Request, pid: int, kind: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
-    k = SubmissionKind(kind)
+    k = _report_kind(kind)
     return render(request, "protocols/report_form.html", db, user, p=p, kind=k)
 
 
 @router.post("/protocols/{pid}/report/{kind}", dependencies=[Depends(verify_csrf)])
 async def report_submit(request: Request, pid: int, kind: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
-    k = SubmissionKind(kind)
+    k = _report_kind(kind)
     form = await request.form()
     report = {
         "progress_summary": str(form.get("progress_summary", "")).strip(),
@@ -280,8 +299,14 @@ async def report_submit(request: Request, pid: int, kind: str, user: User = Depe
         "publications": str(form.get("publications", "")).strip(),
         "data_destroyed": form.get("data_destroyed") == "on",
         "destruction_date": str(form.get("destruction_date", "")).strip(),
+        "event_on": str(form.get("event_on", "")).strip(),
     }
     try:
+        if form.get("action") == "track":
+            wf.track_report_deadline(db, user, p, k, parse_date(report["event_on"]))
+            db.commit()
+            flash(request, "보고 기한 확인 알림을 등록했습니다.", "success")
+            return _back(pid)
         sub = wf.submit_report(db, user, p, k, report, client_ip(request),
                                external_ref=str(form.get("external_ref", "")))
     except wf.WorkflowError as e:
@@ -300,13 +325,24 @@ async def revision_request(request: Request, pid: int, user: User = Depends(curr
     p = _get(db, user, pid)
     form = await request.form()
     try:
-        items = wf.record_revision_request(db, user, p, str(form.get("text", "")), client_ip(request))
+        submission_id = _form_id(form.get("submission_id"))
+        items = wf.record_revision_request(db, user, p, str(form.get("text", "")), client_ip(request),
+                                           submission_id=submission_id)
     except wf.WorkflowError as e:
         flash(request, str(e), "error")
         return _back(pid)
     db.commit()
+    if submission_id is not None:
+        return _back(pid)
     flash(request, f"보완 요청 {len(items)}개 항목을 등록했습니다. 'AI 답변 초안'으로 답변서를 작성하십시오.", "success")
     return RedirectResponse(f"/protocols/{pid}/revision", status_code=303)
+
+
+def _report_kind(kind: str) -> SubmissionKind:
+    try:
+        return SubmissionKind(kind)
+    except ValueError as exc:
+        raise HTTPException(404) from exc
 
 
 @router.post("/protocols/{pid}/result", dependencies=[Depends(verify_csrf)])
@@ -317,7 +353,8 @@ async def record_result(request: Request, pid: int, user: User = Depends(current
         sub = wf.record_result(
             db, user, p, str(form.get("result", "")), result_date=parse_date(str(form.get("result_date", ""))),
             approval_end=parse_date(str(form.get("approval_end", ""))), irb_no=str(form.get("irb_no", "")),
-            note=str(form.get("note", "")), ip=client_ip(request))
+            note=str(form.get("note", "")), ip=client_ip(request),
+            submission_id=_form_id(form.get("submission_id")), source_id=_form_id(form.get("source_id")))
     except wf.WorkflowError as e:
         db.rollback()
         flash(request, str(e), "error")
@@ -325,6 +362,15 @@ async def record_result(request: Request, pid: int, user: User = Depends(current
     db.commit()
     flash(request, f"IRB 결과 '{sub.result_label}'을(를) 기록했습니다.", "success")
     return _back(pid)
+
+
+def _form_id(value: object) -> int | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if not raw.isascii() or not raw.isdecimal() or len(raw) > 12:
+        raise wf.WorkflowError("유효하지 않은 기록 번호입니다.")
+    return int(raw)
 
 
 @router.post("/protocols/{pid}/comments", dependencies=[Depends(verify_csrf)])
@@ -400,7 +446,7 @@ def preview_generated(request: Request, pid: int, doc_type: str, fmt: str = "", 
     ``?fmt=pdf`` 는 PDF 변환기가 있을 때 PDF로, ``?source=builtin`` 은 기본 HTML 서식으로 본다.
     """
     p = _get(db, user, pid)
-    if doc_type not in generatable_doc_types(db):
+    if p.committee != "public_irb" and doc_type not in generatable_doc_types(db, p):
         raise HTTPException(404)
     from urllib.parse import quote
 
@@ -429,12 +475,12 @@ def preview_generated(request: Request, pid: int, doc_type: str, fmt: str = "", 
 @router.post("/protocols/{pid}/generate/{doc_type}", dependencies=[Depends(verify_csrf)])
 def attach_generated(request: Request, pid: int, doc_type: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _get(db, user, pid)
-    if doc_type not in generatable_doc_types(db):
+    if doc_type not in generatable_doc_types(db, p):
         raise HTTPException(404)
     if not (p.is_editable and wf.is_member(user, p)):
         flash(request, "작성중·보완요청 받음·변경 준비중 상태에서 연구팀만 서류를 첨부할 수 있습니다.", "error")
         return _back(pid, "#documents")
-    source = generatable_doc_types(db)[doc_type]
+    source = generatable_doc_types(db, p)[doc_type]
     try:
         doc = generate_and_attach(db, user, p, doc_type, client_ip(request))
     except wf.WorkflowError as e:

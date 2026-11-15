@@ -28,6 +28,7 @@ from .timeutil import now
 class Role(str, enum.Enum):
     RESEARCHER = "researcher"
     ADMIN = "admin"
+    REVIEWER = "reviewer"
 
     @property
     def label(self) -> str:
@@ -37,6 +38,7 @@ class Role(str, enum.Enum):
 ROLE_LABELS = {
     Role.RESEARCHER: "연구자",
     Role.ADMIN: "관리자(연구지원)",
+    Role.REVIEWER: "사전검토자",
 }
 
 
@@ -75,6 +77,18 @@ class SubmissionKind(str, enum.Enum):
     AMENDMENT = "amendment"
     CONTINUING = "continuing"
     FINAL_REPORT = "final_report"
+    DEVIATION = "deviation"
+    ADVERSE_EVENT = "adverse_event"
+    EARLY_TERMINATION = "early_termination"
+    COI_UPDATE = "coi_update"
+    INFO_PROVISION = "info_provision"
+    SPECIMEN_PROVISION = "specimen_provision"
+    DISPOSAL_TRANSFER = "disposal_transfer"
+
+    @property
+    def is_parallel(self) -> bool:
+        return self.value in ("deviation", "adverse_event", "early_termination", "coi_update", "info_provision",
+                              "specimen_provision", "disposal_transfer")
 
     @property
     def label(self) -> str:
@@ -84,6 +98,13 @@ class SubmissionKind(str, enum.Enum):
             "amendment": "변경심의",
             "continuing": "지속심의",
             "final_report": "종료보고",
+            "deviation": "연구계획 위반·이탈 보고",
+            "adverse_event": "이상반응 보고",
+            "early_termination": "조기종료 보고",
+            "coi_update": "이해상충 변경 보고",
+            "info_provision": "개인정보 제공 심의",
+            "specimen_provision": "인체유래물 제공 심의",
+            "disposal_transfer": "인체유래물 폐기·이관 심의",
         }[self.value]
 
 
@@ -95,6 +116,7 @@ SUBMISSION_RESULTS = {
     "revision": "보완 후 재심의",
     "disapproved": "부결",
     "acknowledged": "종료보고 확인",
+    "expedited_recheck": "수정 후 신속심의",
 }
 
 
@@ -143,6 +165,16 @@ class Protocol(Base):
     title: Mapped[str] = mapped_column(String(300))
     pi_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     co_investigators: Mapped[list] = mapped_column(JSON, default=list)  # [user_id, ...]
+    reviewer_ids: Mapped[list] = mapped_column(JSON, default=list)
+    committee: Mapped[str] = mapped_column(String(20), default="institution")
+    access_route: Mapped[str] = mapped_column(String(24), default="")
+    research_category: Mapped[str] = mapped_column(String(20), default="")
+    research_method: Mapped[list] = mapped_column(JSON, default=list)
+    consent_routes: Mapped[list] = mapped_column(JSON, default=list)
+    subject_age_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    subject_age_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proxy_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    application_route: Mapped[str] = mapped_column(String(20), default="new")
     department: Mapped[str] = mapped_column(String(100), default="")
     funding_source: Mapped[str] = mapped_column(String(200), default="")
 
@@ -236,7 +268,7 @@ class Protocol(Base):
 
     @property
     def current_submission(self) -> Submission | None:
-        return self.submissions[-1] if self.submissions else None
+        return next((sub for sub in reversed(self.submissions) if not sub.kind.is_parallel), None)
 
     @property
     def is_editable(self) -> bool:
@@ -273,6 +305,7 @@ class Submission(Base):
     kind: Mapped[SubmissionKind] = mapped_column(Enum(SubmissionKind, native_enum=False, length=20))
     version: Mapped[int] = mapped_column(Integer, default=1)
     snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    basis: Mapped[dict] = mapped_column(JSON, default=dict)
     report: Mapped[dict] = mapped_column(JSON, default=dict)  # 지속심의/종료보고 경과 보고 내용
     submitted_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     submitted_at: Mapped[datetime] = mapped_column(DateTime, default=now)
@@ -289,6 +322,9 @@ class Submission(Base):
     result_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     approval_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     result_note: Mapped[str] = mapped_column(Text, default="")  # 시정 조건·IRB 의견 요지
+    result_source: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)
+    result_issued_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    result_entered_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     protocol: Mapped[Protocol] = relationship(back_populates="submissions")
     prereviews: Mapped[list[PreReview]] = relationship(

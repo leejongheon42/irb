@@ -17,13 +17,15 @@ ENGINE_VERSION = "1.0.0"
 REVIEW_TYPE_LABELS = {"exempt": "심의면제", "expedited": "신속심의", "full": "정규심의"}
 
 
-def run_prereview(facts: ProtocolFacts, rs: Ruleset | None = None) -> dict[str, Any]:
+def run_prereview(
+    facts: ProtocolFacts, rs: Ruleset | None = None, *, requirements_content: str | None = None,
+) -> dict[str, Any]:
     rs = rs or get_ruleset()
     risk = assess_risk(facts, rs)
     classification = classify(facts, risk, rs)
     review_type = classification["review_type"]
     consent = assess_consent(facts, risk, rs)
-    checklist = build_checklist(facts, review_type, rs)
+    checklist = build_checklist(facts, review_type, rs, requirements_content=requirements_content)
     findings = generate_findings(facts, risk, classification, consent, checklist, rs)
 
     summary = {sev: 0 for sev in ("critical", "major", "minor", "info")}

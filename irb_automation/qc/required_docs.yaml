@@ -1,0 +1,52 @@
+# 근거 표기는 저장소 참고 대응표의 인용이며 지침 원문을 직접 검수하지 않았다.
+version: '2026.11.14'
+committee: public_irb
+documents:
+  - {doc: exemption_self_check, label: "심의면제 자가점검표 (권고 · 현행 확인 필요)", level: conditional, when: [exemption], form: {exemption: '권고 제3호'}, verified: false}
+  - {doc: waiver_self_check, label: "서면동의면제 자가점검표 (권고 · 현행 확인 필요)", level: conditional, when: [waiver_request], form: {waiver_request: '권고 제11호'}, verified: false}
+  - {doc: institution_agreement_evidence, label: 기관협약 확인 자료, level: evidence, when: [agreement]}
+  - {doc: individual_agreement_evidence, label: 개인연구자 이용 자격 확인 자료, level: evidence, when: [individual]}
+  - {doc: heads_agreement_evidence, label: 수행기관장 합의 증빙, level: evidence, when: [heads_agreement]}
+  - {doc: protocol, label: 연구계획서, level: required, when: [], basis: '표준운영지침 제21조', form: {survey: '권고 제39호', intervention: '권고 제38호', records: '권고 제43호', specimen: '권고 제40호', stem_cell: '권고 제41호'}}
+  - {doc: consent_form, label: 설명문 및 동의서, level: required, when: [obtain], form: {human: '권고 제44호', specimen: '권고 제45호'}}
+  - {doc: specimen_consent, label: 인체유래물 연구 동의서, level: required, when: [specimen, direct_collection, obtain], basis: '시행규칙 별지 제34호 (직접 채취 시)', source_keys: [['시행규칙 별지', '34']]}
+  - {doc: waiver_request, label: 서면동의면제 신청 근거, level: required, when: [waiver_request], channel: eirb_or_file}
+  - {doc: exemption_request, label: 심의면제 신청 근거, level: required, when: [exemption], channel: eirb_or_file}
+  - {doc: questionnaire, label: 설문지·면담질문지, level: required, when: [survey]}
+  - {doc: crf, label: 증례기록서·평가지, level: conditional, when: [intervention], pattern: '증례기록서|실험일지|평가지|CRF'}
+  - {doc: recruitment, label: 모집공고·안내문, level: conditional, when: [collect], pattern: '모집\s*(?:공고|게시물|안내문)'}
+  - {doc: assent_form, label: 아동용 승낙서, level: conditional, when: [children, obtain], pattern: '만\s*7\s*[~∼–-]\s*12세|아동용.{0,12}승낙서', form: {human: '권고 제46호', specimen: '권고 제47호'}}
+  - {doc: training_cert, label: 연구윤리 교육이수증, level: required, when: [new], basis: '표준운영지침 제21조②6'}
+  - {doc: coi, label: 연구자 이해상충공개, level: eirb_input, when: [new]}
+  - {doc: pledge, label: 생명윤리준수서약, level: eirb_input, when: [new]}
+  - {doc: advisor_pledge, label: 지도교수서약서, level: required, when: [student_pi, new], basis: '표준운영지침 제21조②7 (박사학위 학생)'}
+  - {doc: mta, label: 검체 제공 협약, level: evidence, when: [specimen, external]}
+  - {doc: transfer_agreement, label: 자료 이용·제공 협약, level: evidence, when: [external]}
+  - {doc: external_irb_approval, label: 제공기관 심의 증빙, level: evidence, when: [external]}
+  - {doc: stem_cell_registration, label: 배아줄기세포주 등록증 사본, level: evidence, when: [stem_cell]}
+  - {doc: site_agreement, label: 수행기관 합의 증빙, level: evidence, when: [multicenter]}
+reports:
+  amendment:
+    - {doc: amendment_table, label: 변경대비표, level: required, channel: eirb_or_file, forms: ['권고 제8호', '권고 제4-1호']}
+  continuing:
+    - {doc: progress_report, label: 지속심의 보고, level: required, channel: eirb_or_file}
+  final_report:
+    - {doc: final_report, label: 종료·결과보고, level: required, channel: eirb_or_file, forms: ['권고 제57호']}
+  early_termination:
+    - {doc: early_termination, label: 조기종료 보고, level: required, channel: eirb_or_file}
+  deviation:
+    - {doc: deviation_report, label: 연구계획 위반·이탈 보고, level: required, channel: eirb_or_file, source_keys: [['별지', '8']]}
+  adverse_event:
+    - {doc: adverse_event, label: 이상반응 보고, level: required, channel: eirb_or_file}
+  coi_update:
+    - {doc: coi, label: 이해상충 변경 보고, level: required, channel: eirb_or_file, source_keys: [['별지', '10-1']]}
+  info_provision:
+    - {doc: info_provision, label: 개인정보 제공 신청, level: required, channel: eirb_or_file}
+  specimen_provision:
+    - {doc: specimen_provision, label: 인체유래물 제공 신청, level: required, channel: eirb_or_file}
+  disposal_transfer:
+    - {doc: disposal_transfer, label: 인체유래물 폐기·이관 신청, level: required, channel: eirb_or_file, source_keys: [['공용위원회 별지', '28-3']]}
+    - {doc: disposal_plan, label: 폐기·이관 계획서, level: conditional, basis: 위원회 요청 시}
+    - {doc: consent_copy, label: 설명문·동의서 사본, level: conditional, basis: 위원회 요청 시}
+    - {doc: specimen_log, label: 인체유래물 관리대장, level: conditional, basis: 위원회 요청 시}
+    - {doc: committee_requested, label: 위원회 요청 자료, level: conditional, basis: 위원회 요청 시}

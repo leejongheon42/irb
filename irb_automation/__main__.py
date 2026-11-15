@@ -48,12 +48,19 @@ def main(argv: list[str] | None = None) -> int:
     p_user.add_argument("--name", default="")
     sub.add_parser("run-scheduler")
     sub.add_parser("verify-audit")
+    p_eval = sub.add_parser("qc-eval", help="합성 문장으로 규칙 기반 사실 추출 성능 평가")
+    p_eval.add_argument("--json", dest="json_output", help="평가 JSON 저장 경로")
     p_demo = sub.add_parser("demo-pipeline", help="샘플로 전체 파이프라인을 실행하고 단계별 결과 출력")
     p_demo.add_argument("--user", default="researcher")
     p_serve = sub.add_parser("serve")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
+
+    if args.cmd == "qc-eval":
+        from .qc.eval import main as evaluate
+
+        return evaluate(args.json_output)
 
     from .database import SessionLocal, init_db
 

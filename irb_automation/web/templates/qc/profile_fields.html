@@ -1,0 +1,29 @@
+      <fieldset>
+        <legend>신청 경로 <span class="hint">선택 입력</span></legend>
+        <div class="form-row">
+          {% for key, label, options in (
+            ("study_type", "연구 유형", {"human":"인간대상", "specimen":"인체유래물", "both":"둘 다"}),
+            ("application", "심의 신청", {"new":"신규심의", "exemption":"심의면제 신청"}),
+            ("committee", "위원회 기준", {"public_irb":"공용 IRB", "institution":"기관 IRB"}),
+            ("multicenter", "다기관 연구", {"yes":"예", "no":"아니요"}),
+            ("student_pi", "박사학위 학생 연구책임자", {"yes":"예", "no":"아니요"}),
+            ("compare_only", "점검 범위", {"yes":"이 파일들만 서로 대조", "no":"제출 묶음도 점검"}),
+            ("drug", "약물 투여", {"yes":"있음", "no":"없음"}),
+            ("visits", "방문 일정", {"yes":"있음", "no":"없음"})
+          ) %}
+          <div><label for="qc-{{ key }}">{{ label }}</label>
+            <select id="qc-{{ key }}" name="{{ key }}"><option value="">미정</option>
+            {% for value, text in options.items() %}<option value="{{ value }}"{% if selected.get(key) == value or (value in ("yes", "no") and selected.get(key) is boolean and selected[key] == (value == "yes")) %} selected{% endif %}>{{ text }}</option>{% endfor %}</select></div>
+          {% endfor %}
+        </div>
+        {% for key, label, options in (
+          ("data_source", "자료 확보 방식", {"collect":"신규 수집", "existing_internal":"기관 내부 자료", "external":"외부 제공", "public":"공개 자료", "bank":"은행 분양"}),
+          ("consent", "동의 경로", {"obtain":"동의 취득", "waiver_request":"서면동의면제 요청", "existing_consent":"기존 동의 이용", "not_applicable":"동의 비적용"}),
+          ("vulnerable", "취약 대상자", {"children":"아동", "proxy":"대리인 동의", "none":"없음"}),
+          ("method", "연구 방법", {"survey":"설문·면담", "intervention":"개입", "records":"기록 이용", "specimen":"검체 연구", "stem_cell":"배아줄기세포주 이용"})
+        ) %}
+        <fieldset><legend>{{ label }}</legend>
+          {% for value, text in options.items() %}<label class="check"><input type="checkbox" name="{{ key }}" value="{{ value }}"{% if value in selected.get(key, []) or (key == "vulnerable" and key in selected and not selected[key] and value == "none") %} checked{% endif %}> {{ text }}</label>{% endfor %}
+        </fieldset>
+        {% endfor %}
+      </fieldset>

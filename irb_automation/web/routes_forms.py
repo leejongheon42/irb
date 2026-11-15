@@ -206,6 +206,8 @@ def _protocol(db: Session, user: User, pid: int) -> Protocol:
         raise HTTPException(404, "과제를 찾을 수 없습니다.")
     if not wf.can_view(db, user, p):
         raise HTTPException(403, "이 과제를 열람할 권한이 없습니다.")
+    if p.committee == "public_irb":
+        raise HTTPException(404, "공용 과제의 작성 서식은 제출 서류 패키지에서 확인하십시오.")
     return p
 
 

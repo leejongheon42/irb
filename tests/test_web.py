@@ -129,7 +129,19 @@ def test_quick_qc_sample_and_autofix(app):
         assert r.status_code == 303
         rid = int(r.headers["location"].rsplit("/", 1)[1])
         page = c.get(f"/qc/{rid}")
-        assert "FAIL" in page.text and "투여 용량" in page.text and "파일명과 본문의 버전" in page.text
+        assert "HOLD" in page.text and "투여 용량" in page.text and "파일명과 본문의 버전" in page.text
+        assert "제출 묶음 구성" in page.text and "문서별 대조값" in page.text
+        reference = re.search(r'action="(/qc/\d+/issues/\d+/reference)"', page.text).group(1)
+        assert c.post(reference, data={"csrf_token": t, "index": "999"}, follow_redirects=False).status_code == 400
+        selected = c.post(reference, data={"csrf_token": t, "index": "0"}, follow_redirects=False)
+        assert selected.status_code == 303
+        assert c.post(f"/qc/{rid}/review/bulk", data={"csrf_token": t}, follow_redirects=False).status_code == 303
+        page = c.get(f"/qc/{rid}")
+        assert "FAIL" in page.text
+        from irb_automation.doctemplates.docx_engine import plain_text
+
+        report = c.get(f"/qc/{rid}/report.docx")
+        assert report.status_code == 200 and "QC 상태 FAIL" in plain_text(report.content)
         ids = re.findall(r'name="issue" value="(\d+)"', page.text)
         assert ids
         r = c.post(f"/qc/{rid}/autofix", data={"csrf_token": t, "issue": ids, "unify_font": "on", "font": "맑은 고딕"},
@@ -140,6 +152,7 @@ def test_quick_qc_sample_and_autofix(app):
         assert c.get(f"/qc/{rid}/file/0/tracked").status_code == 200
         login(c, "researcher2")
         assert c.get(f"/qc/{rid}").status_code == 404
+        assert c.get(f"/qc/{rid}/report.docx").status_code == 404
 
 
 def test_deid_tool_for_researcher(app, settings):

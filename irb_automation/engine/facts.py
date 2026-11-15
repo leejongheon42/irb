@@ -11,6 +11,8 @@ from typing import Any
 
 # 과제 스냅샷/엔진 입력으로 쓰이는 Protocol 필드 목록
 PROTOCOL_FIELDS: tuple[str, ...] = (
+    "committee", "access_route", "research_category", "research_method", "consent_routes",
+    "subject_age_min", "subject_age_max", "proxy_consent", "application_route",
     "title",
     "department",
     "funding_source",
@@ -67,6 +69,17 @@ PROTOCOL_FIELDS: tuple[str, ...] = (
 
 @dataclass
 class ProtocolFacts:
+    committee: str = "institution"
+    access_route: str = ""
+    research_category: str = ""
+    research_method: list[str] = field(default_factory=list)
+    consent_routes: list[str] = field(default_factory=list)
+    subject_age_min: int | None = None
+    subject_age_max: int | None = None
+    proxy_consent: bool = False
+    application_route: str = "new"
+    requirement_states: dict[str, str] = field(default_factory=dict)
+    changed_doc_types: list[str] = field(default_factory=list)
     title: str = ""
     department: str = ""
     funding_source: str = ""
@@ -174,6 +187,12 @@ class ProtocolFacts:
                     continue
             if key == "uploaded_doc_types":
                 value = set(value)
+            if key == "team_training":
+                value = [
+                    {**row, "expires_on": date.fromisoformat(row["expires_on"])}
+                    if isinstance(row.get("expires_on"), str) and row["expires_on"] else row
+                    for row in value
+                ]
             values[key] = value
         return cls(**values)
 
@@ -181,7 +200,8 @@ class ProtocolFacts:
     def from_protocol(cls, protocol: Any, **context: Any) -> ProtocolFacts:
         data = {name: getattr(protocol, name) for name in PROTOCOL_FIELDS}
         facts = cls.from_mapping(data, **context)
-        _attach_institution_forms(facts, protocol)
+        if facts.committee != "public_irb":
+            _attach_institution_forms(facts, protocol)
         return facts
 
     def to_dict(self) -> dict[str, Any]:

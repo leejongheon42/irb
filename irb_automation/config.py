@@ -8,10 +8,34 @@ from __future__ import annotations
 import os
 import secrets
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_env_file(path: Path | None = None) -> bool:
+    """로컬 실행용: 작업 디렉터리의 .env를 읽는다. 이미 설정된 환경변수는 덮어쓰지 않는다.
+
+    Docker는 env_file로 주입하므로 영향이 없다.
+    """
+    if not _env_bool("IRB_LOAD_DOTENV", True):
+        return False
+    path = path or Path(os.environ.get("IRB_ENV_FILE", ".env"))
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        key, sep, value = line.strip().removeprefix("export ").partition("=")
+        key, value = key.strip(), value.strip()
+        if not sep or not key or key.startswith("#"):
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+    return True
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -28,6 +52,8 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass
 class Settings:
+    mvp_mode: bool = field(default_factory=lambda: _env_bool("IRB_MVP_MODE", True))
+    public_irb_enabled: bool = field(default_factory=lambda: _env_bool("IRB_PUBLIC_IRB_ENABLED", True))
     institution_name: str = field(
         default_factory=lambda: os.environ.get("IRB_INSTITUTION_NAME", "○○대학교병원")
     )
@@ -75,6 +101,19 @@ class Settings:
         default_factory=lambda: _env_bool("IRB_AI_ENABLED", False) or _env_bool("IRB_AI_REVIEW_ENABLED", False)
     )
     ai_model: str = field(default_factory=lambda: os.environ.get("IRB_AI_MODEL", "claude-opus-5-5"))
+
+    ai_provider: str = field(
+        default_factory=lambda: (os.environ.get("IRB_AI_PROVIDER") or "anthropic").strip().lower()
+    )
+    openrouter_api_key: str = field(
+        default_factory=lambda: os.environ.get("OPENROUTER_API_KEY", "").strip(), repr=False
+    )
+    ai_ocr_max_pages: int = field(default_factory=lambda: _env_int("IRB_AI_OCR_MAX_PAGES", 20))
+    # AI 호출 1회의 전체 제한 시간(초). 넘기면 규칙 기반 결과만으로 계속한다.
+    ai_timeout_seconds: int = field(default_factory=lambda: _env_int("IRB_AI_TIMEOUT", 420))
+
+    # 테스트 전용: 값이 있으면 로그인 화면 없이 해당 아이디로 자동 로그인(운영에서는 비워 둘 것)
+    auto_login_user: str = field(default_factory=lambda: os.environ.get("IRB_AUTO_LOGIN_USER", "").strip())
 
     # 문서 자동화 파이프라인
     # 업로드 시 자동 실행(로컬 단계는 항상, AI 단계는 AI 활성 시에만)
@@ -146,6 +185,8 @@ _settings: Settings | None = None
 def get_settings() -> Settings:
     global _settings
     if _settings is None:
+        if "pytest" not in sys.modules:
+            load_env_file()
         _settings = Settings()
         _settings.ensure_dirs()
     return _settings

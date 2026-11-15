@@ -14,6 +14,15 @@ log = logging.getLogger(__name__)
 
 # 순서가 중요: 더 구체적인 표현을 먼저 검사한다(예: '동의 면제 사유서'는 '동의서'보다 먼저).
 KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    ("assent_form", ("아동용승낙서", "아동승낙서", "승낙서", "assent")),
+    ("questionnaire", ("설문지", "면담질문지", "questionnaire")),
+    ("recruitment", ("모집공고", "모집게시물", "모집안내", "recruitment")),
+    ("advisor_pledge", ("지도교수서약서", "지도교수확인서")),
+    ("pledge", ("생명윤리준수서약",)),
+    ("mta", ("물질이전협약", "검체제공협약", "mta")),
+    ("site_agreement", ("기관장합의", "수행기관협약", "공동수행협약")),
+    ("external_staff_agreement", ("외부인력협약", "외부연구자협약")),
+    ("specimen_consent", ("별지제34호", "인체유래물연구법정동의서")),
     ("waiver_request", ("동의면제", "면제사유", "서면동의면제", "waiver")),
     ("exemption_request", ("심의면제", "면제확인", "면제신청", "exemption", "exempt")),
     ("deid_plan", ("가명처리", "비식별", "익명처리", "deidentification", "deid", "pseudonym")),
@@ -72,12 +81,13 @@ def guess_from_filename(filename: str) -> Guess:
     return Guess("other", 0.0, "파일명으로 판단 불가", "none")
 
 
-def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str] | None = None) -> Guess:
+def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str] | None = None,
+                   extracted_text: str | None = None) -> Guess:
     """파일명 → (필요 시) 텍스트 분류기 순서로 서류 종류를 추정한다."""
     g = guess_from_filename(filename)
     if allowed is not None and g.doc_type not in allowed:
         g = Guess("other", 0.0, g.reason, "none")
-    if g.confidence >= 0.75 or raw is None:
+    if g.confidence >= 0.75 or (raw is None and extracted_text is None):
         return g
     try:  # 문서 인식 모듈(선택): 텍스트 추출 + 분류
         from ..docproc.classify import classify_document
@@ -85,8 +95,9 @@ def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str]
     except ImportError:
         return g
     try:
-        extracted = extract_text(filename, raw, allow_ai_ocr=False)
-        doc_type, confidence, reason = classify_document(filename, extracted.text)
+        if extracted_text is None and raw is not None:
+            extracted_text = extract_text(filename, raw, allow_ai_ocr=False).text
+        doc_type, confidence, reason = classify_document(filename, extracted_text or "")
     except Exception:  # 분류 실패는 업로드를 막지 않는다
         log.exception("document classification failed for %s", filename)
         return g

@@ -33,7 +33,51 @@
 <div class="callout warn">변경심의 작성 중입니다. 변경 사유와 변경 전·후 비교표를 '기타' 서류로 첨부하십시오.</div>
 {% endif %}
 
+{% if not protocol and settings.public_irb_enabled %}
+<details class="card" {% if institution_query %}open{% endif %}>
+  <summary>공용위원회 협약 기관 조회</summary>
+  <form method="get" action="/protocols/new">
+    <label>소속 기관명 <input name="institution" value="{{ institution_query or '' }}" maxlength="160" required></label>
+    <button type="submit">조회</button>
+  </form>
+  {% if institution_query %}
+    {% if agreement_source %}
+    <p>기준일 {{ agreement_source.reference_date|fmt if agreement_source.reference_date else agreement_source.version }} ·
+      {% if agreement_match %}협약 목록에서 기관명을 확인했습니다. 기관협약 경로를 검토하세요.
+      {% else %}일치하는 기관명을 찾지 못했습니다. 목록의 기관명과 담당 부서에 확인하세요.{% endif %}
+    </p>
+    {% else %}<p>검수된 협약 기관 목록을 아직 조회할 수 없습니다.</p>{% endif %}
+  {% endif %}
+</details>
+{% endif %}
 <form method="post" action="{{ '/protocols/%d/edit'|format(protocol.id) if protocol else '/protocols/new' }}">
+{% if settings.public_irb_enabled or v.committee == "public_irb" %}
+  <details class="card" {% if v.committee == "public_irb" %}open{% endif %}>
+    <summary>공용 IRB 신청 설정</summary>
+    <input type="hidden" name="_public_profile" value="1">
+    <div class="form-row">
+      {% for key, label, opts in [
+        ("committee", "심의기관", {"institution":"자체 IRB", "public_irb":"공용 IRB"}),
+        ("access_route", "공용위원회 이용 방식", public_irb.ACCESS_ROUTES),
+        ("research_category", "공용 IRB 연구 분류", public_irb.CATEGORIES),
+        ("application_route", "신청 구분", {"new":"신규심의", "exemption":"심의면제"})] %}
+      <div><label for="irb-{{ key }}">{{ label }}</label><select id="irb-{{ key }}" name="{{ key }}">
+        {% if key in ("access_route", "research_category") %}<option value="">선택</option>{% endif %}
+        {% for value, title in opts.items() %}<option value="{{ value }}" {% if v[key] == value %}selected{% endif %}>{{ title }}</option>{% endfor %}
+      </select></div>
+      {% endfor %}
+    </div>
+    {% for key, label, opts in [("research_method", "연구 방법", public_irb.METHODS), ("consent_routes", "동의 경로", public_irb.CONSENT_ROUTES)] %}
+    <fieldset><legend>{{ label }}</legend>
+      {% for value, title in opts.items() %}<label><input name="{{ key }}" type="checkbox" value="{{ value }}" {% if value in v[key] %}checked{% endif %}> {{ title }}</label>{% endfor %}
+    </fieldset>
+    {% endfor %}
+    <div class="form-row">{% for key, label in [("subject_age_min","최소 연령 (만)"),("subject_age_max","최대 연령 (만)")] %}
+      <div><label for="{{ key }}">{{ label }}</label><input id="{{ key }}" name="{{ key }}" type="number" min="0" max="130" value="{{ v[key] if v[key] is not none else '' }}"></div>
+    {% endfor %}</div>
+    <label><input name="proxy_consent" type="checkbox" {% if v.proxy_consent %}checked{% endif %}> 법정대리인 동의 예정</label>
+  </details>
+{% endif %}
   {{ csrf_input }}
   <input type="hidden" name="_bools" value="1">
   <input type="hidden" name="_lists" value="1">

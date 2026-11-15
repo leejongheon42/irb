@@ -20,6 +20,7 @@ from .. import audit
 from ..documents import generatable_doc_types, generate_and_attach
 from ..engine.ruleset import get_ruleset
 from ..models import Document, Protocol, ProtocolStatus, SubmissionKind, User
+from ..public_irb.requirements import source_keys
 from ..submission.validate import safe_filename
 from ..submission.versions import latest_by_type
 from ..timeutil import now
@@ -53,17 +54,24 @@ def submission_kind(protocol: Protocol, kind: str | None = None) -> SubmissionKi
 def plan(db: Session, protocol: Protocol, kind: str | None = None) -> dict[str, Any]:
     k = submission_kind(protocol, kind)
     result = wf.preview(db, protocol, kind=k.value)
-    gen = generatable_doc_types(db)
+    gen = generatable_doc_types(db, protocol)
     latest = latest_by_type(list(protocol.documents))
     online_types: dict[str, dict] = {}
     try:
         from ..forms.online import pending_online_forms
 
-        pending, _ = pending_online_forms(db, protocol)
+        pending, _ = pending_online_forms(db, protocol) if protocol.committee != "public_irb" else ([], [])
         online_types = {x["doc_type"]: x for x in pending}
     except Exception:  # 기관 양식 모듈 오류는 패키지 화면을 막지 않는다
         log.exception("online forms status failed")
-    wanted: list[tuple[str, bool, str]] = [(c["doc"], True, c.get("condition", "")) for c in result["checklist"]]
+    rules_by_doc = {c["doc"]: c for c in result["checklist"]}
+    originals = {}
+    if protocol.committee == "public_irb":
+        from ..public_irb.source_models import SourceDocument
+
+        originals = {(s.series, s.number): s for s in db.scalars(select(SourceDocument).where(
+            SourceDocument.status == "current", SourceDocument.owner == "researcher")) if s.verified}
+    wanted: list[tuple[str, bool, str]] = [(c["doc"], c.get("required", True), c.get("condition", "")) for c in result["checklist"]]
     if protocol.status == S.REVISION_REQUESTED:
         wanted.insert(0, ("revision_response", True, "보완 요청 답변"))
     if k == SubmissionKind.AMENDMENT:
@@ -75,16 +83,20 @@ def plan(db: Session, protocol: Protocol, kind: str | None = None) -> dict[str, 
             continue
         seen.add(doc_type)
         cur = latest.get(doc_type)
+        rule = rules_by_doc.get(doc_type, {})
         how = ("online" if doc_type in online_types else "generate" if doc_type in gen
                else "upload")
         stale = bool(cur and cur.source in ("generated",) and protocol.updated_at and cur.uploaded_at
                      and cur.uploaded_at < protocol.updated_at)
         qc = (cur.validation or {}).get("qc") if cur else None
         status = "missing" if cur is None else ("stale" if stale else
-                                                ("issues" if qc and (qc.get("critical") or qc.get("major")) else
+                                                ("issues" if qc and (qc.get("critical") or qc.get("major")
+                                                                     or qc.get("status") in ("HOLD", "MINOR")) else
                                                  ("checked" if qc else "ready")))
         items.append({
-            "doc_type": doc_type, "label": _label(doc_type), "required": required, "condition": cond,
+            "doc_type": doc_type, "label": rule.get("label") or _label(doc_type), "required": required, "condition": cond,
+            "requirement": rule,
+            "originals": [originals[key] for key in sorted(source_keys(rule)) if key in originals],
             "how": how, "template": gen.get(doc_type), "current": cur, "stale": stale, "qc": qc, "status": status,
             "hint": PERSONAL_DOCS.get(doc_type, "") if how == "upload" else
             (f"웹 작성 서식 미완료: {', '.join(online_types[doc_type]['missing']) or '작성 필요'}" if how == "online" else ""),
@@ -95,7 +107,9 @@ def plan(db: Session, protocol: Protocol, kind: str | None = None) -> dict[str, 
             items.append({"doc_type": doc_type, "label": _label(doc_type), "required": False, "condition": "추가 서류",
                           "how": "upload", "template": gen.get(doc_type), "current": cur, "stale": False, "qc": qc,
                           "status": "checked" if qc else "ready", "hint": ""})
-    done = sum(1 for i in items if i["required"] and i["current"] is not None and not i["stale"])
+    done = sum(1 for i in items if i["required"] and (
+        i.get("requirement", {}).get("provided", False) if protocol.committee == "public_irb"
+        else i["current"] is not None and not i["stale"]))
     req = sum(1 for i in items if i["required"])
     from ..qc.models import QCRun
 

@@ -1,0 +1,14 @@
+# 로컬 ngrok 공개용 오버라이드: docker compose -f docker-compose.yml -f docker-compose.ngrok.yml up -d --build
+services:
+  irb:
+    ports: !override
+      - "127.0.0.1:8001:8000"   # 호스트 8000은 다른 컨테이너가 사용 중
+  ngrok:
+    image: ngrok/ngrok:latest
+    command: http irb:8000
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports:
+      - "127.0.0.1:4041:4040"
+    depends_on:
+      - irb

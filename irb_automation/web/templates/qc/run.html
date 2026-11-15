@@ -10,13 +10,18 @@
   <div class="actions">
     {% if qr.protocol and can_fix %}<form method="post" action="/qc/{{ qr.id }}/rerun" class="inline-form">{{ csrf_input }}<button type="submit">현재 서류로 다시 점검</button></form>{% endif %}
     <a class="btn" href="/qc">새 점검</a>
+    <a class="btn" href="/qc/{{ qr.id }}/report.docx">점검 보고서 내려받기</a>
   </div>
 </div>
 
 <div class="card">
+  <p class="small muted">제출 전 자가 점검 결과이며 실제 IRB 심의 결과를 보장하지 않습니다.</p>
   <div class="score-card">
-    <div><div class="score {{ 'verdict-pass' if qr.passed else 'verdict-fail' }}">{{ qr.score }}<small> / 100</small></div>
-      <div class="{{ 'verdict-pass' if qr.passed else 'verdict-fail' }}"><strong>{{ "✓ PASS" if qr.passed else "✕ FAIL" }}</strong></div></div>
+    <div><div class="score {{ 'verdict-pass' if qr.passed else 'verdict-fail' }}">{% if qr.counts.na %}산출 불가{% else %}{{ qr.score }}<small> / 100</small>{% endif %}</div>
+      <div><strong>{{ qr.verdict }}</strong>
+      {% if qr.passed %}<span class="small">문서 검토 완료. IRB 승인·면제 확인을 뜻하지 않습니다.</span>{% endif %}</div>
+      {% if qr.counts.provisional %}<p class="small">잠정 점수 · 후보 확정 시 예상 {{ qr.counts.projected }}점</p>{% endif %}
+      {% if qr.counts.coverage is defined and qr.counts.coverage is not none %}<p class="small">검사 완료율 {{ (qr.counts.coverage * 100)|round|int }}%</p>{% endif %}</div>
     <div class="sev-counts">
       <div class="critical"><div class="small muted">Critical</div><div class="n">{{ qr.counts.critical }}</div></div>
       <div class="major"><div class="small muted">Major</div><div class="n">{{ qr.counts.major }}</div></div>
@@ -31,10 +36,76 @@
       <div>{{ {"done": "완료", "skipped": "건너뜀", "failed": "실패"}.get(ph.status, ph.status) }} · 이슈 {{ ph.issues }}건</div>
       {% if ph.message %}<div class="small muted">{{ ph.message }}</div>{% endif %}</div>
     {% endfor %}
+    {% set vf = qr.phases.get("verify") %}{% if vf and vf.status != "skipped" %}
+    <div class="phase"><strong>규칙 지적 AI 재검토</strong>
+      <div>{{ {"done": "완료", "failed": "실패"}.get(vf.status, vf.status) }} · 오탐 철회 {{ vf.issues }}건</div>
+      {% if vf.message %}<div class="small muted">{{ vf.message }}</div>{% endif %}</div>
+    {% endif %}
   </div>
   {% if qr.phases.rejected %}<div class="callout danger small">점검 제외: {{ qr.phases.rejected|join(" / ") }}</div>{% endif %}
 </div>
 
+{% if qr.profile %}
+<div class="card">
+  <h2>적용한 연구 조건</h2>
+  {% set labels = {"committee":"위원회", "study_type":"연구 유형", "application":"심의 신청", "drug":"약물 투여", "visits":"방문 일정", "consent":"동의 경로", "data_source":"자료 확보 방식", "method":"연구 방법", "vulnerable":"취약 대상자", "multicenter":"다기관", "external_transfer":"외부 반출", "student_pi":"박사학위 학생 연구책임자"} %}
+  {% set values = {"public_irb":"공용 IRB", "institution":"기관 IRB", "unknown":"미정", "human":"인간대상", "specimen":"인체유래물", "both":"인간대상·인체유래물", "new":"신규심의", "exemption":"심의면제 신청", "obtain":"동의 취득", "waiver_request":"서면동의면제 요청", "existing_consent":"기존 동의", "not_applicable":"비적용", "collect":"신규 수집", "existing_internal":"기관 내부 자료", "external":"외부 제공", "public":"공개 자료", "bank":"은행 분양", "survey":"설문·면담", "intervention":"개입", "records":"기록 이용", "stem_cell":"배아줄기세포주", "children":"아동", "proxy":"대리인", "True":"있음", "False":"없음"} %}
+  <dl>
+  {% for key, source in qr.profile.source.items() if key in labels %}
+    <dt>{{ labels[key] }}</dt><dd>{% set val = qr.profile[key] %}
+      {% if val is sequence and val is not string %}{% for v in val %}{{ values.get(v, v) }}{{ " · " if not loop.last }}{% else %}없음{% endfor %}
+      {% else %}{{ values.get(val|string, val) }}{% endif %}
+      <span class="small muted">({{ {"user":"직접 입력", "record":"과제 정보", "doc":"서류", "default":"기본값"}.get(source, source) }})</span></dd>
+    {% if source == "doc" and qr.profile.evidence and qr.profile.evidence.get(key) %}<dd class="small muted">{{ qr.profile.evidence[key] }}</dd>{% endif %}
+  {% endfor %}
+  </dl>
+  {% if can_fix %}
+  <details id="qc-profile"><summary>신청 조건을 수정하고 같은 파일로 다시 점검</summary>
+    <form method="post" action="/qc/{{ qr.id }}/profile">{{ csrf_input }}
+      {% set selected = qr.profile %}
+      {% include "qc/profile_fields.html" %}
+      <button type="submit">수정한 조건으로 점검</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+{% if detectors %}
+<details class="card"><summary>플래그별 점검 방식</summary>
+<p class="small muted">규칙이 있어도 연구 조건과 서류의 판독 상태에 따라 실행 범위가 달라집니다. AI 분석 대상은 모든 플래그의 탐지를 보장하지 않습니다.</p>
+<div class="table-wrap"><table><tr><th>규칙</th><th>플래그</th><th>점검 방식</th></tr>
+{% for rule, flag, mode in detectors %}<tr><td>{{ rule }}</td><td>{{ flag }}</td><td>{{ "이번 범위 제외" if qr.profile.compare_only and rule == "E10" else mode }}</td></tr>{% endfor %}
+</table></div></details>
+{% endif %}
+{% if qr.checks %}
+{% set results = {"match":"일치", "mismatch":"불일치", "missing":"필수내용 누락", "needs_check":"확인 필요", "na":"해당 없음"} %}
+<div class="card">
+  <h2>제출 묶음 구성</h2>
+  <div class="table-wrap"><table><tr><th>자료</th><th>제출 파일</th><th>확인 결과</th><th>권고 서식</th></tr>
+  {% for c in qr.checks if c.rule == "E10" and c.label %}
+    <tr><td>{{ c.label }}</td><td>{% for d in qr.docs if d.key in c.docs %}{{ d.name }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+      <td>{{ "제공" if c.result == "match" else results[c.result] }}{% if c.issue %} <a href="#issue-{{ c.issue }}">질문 보기</a>{% endif %}</td>
+      <td>{{ c.forms|join(" · ") or "—" }}</td></tr>
+  {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h2>문서별 대조값</h2>
+  <div class="table-wrap"><table><tr><th>규칙·항목</th><th>결과</th>{% for d in qr.docs %}<th>{{ d.name }}</th>{% endfor %}</tr>
+  {% for c in qr.checks if c.locations %}
+    <tr><td>{{ c.rule }} · {{ c.label or c.field }}</td><td>{{ results[c.result] }}</td>
+    {% for d in qr.docs %}<td>{% for loc in c.locations if loc.doc == d.key %}{{ loc.norm }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>{% endfor %}</tr>
+  {% else %}<tr><td colspan="{{ qr.docs|length + 2 }}">대조할 수 있는 공통 항목이 없습니다.</td></tr>{% endfor %}
+  </table></div>
+</div>
+{% endif %}
+
+{% if can_fix %}
+<form id="qc-autofix" method="post" action="/qc/{{ qr.id }}/autofix">{{ csrf_input }}</form>
+{% if qr.counts.pending and qr.counts.pending.candidate %}
+<form method="post" action="/qc/{{ qr.id }}/review/bulk">{{ csrf_input }}<button type="submit">규칙 후보 일괄 확정</button></form>
+{% endif %}
+{% endif %}
 <div class="card">
   <h2>점검한 서류</h2>
   <div class="table-wrap"><table>
@@ -47,40 +118,94 @@
   </table></div>
 </div>
 
-<form method="post" action="/qc/{{ qr.id }}/autofix">
-  {{ csrf_input }}
   <div class="card">
     <h2>이슈 {{ qr.issues|length }}건 {% for c, n in by_cat.items() %}<span class="badge">{{ cats.get(c, c) }} {{ n }}</span> {% endfor %}</h2>
     {% for i in qr.issues %}
-    <div class="finding {{ i.severity }}">
+    {% if i.bundle_answer == "later" %}<details><summary>추후 제출: {{ i.title }}</summary>{% endif %}
+    <div id="issue-{{ i.id }}" class="finding {{ i.severity }}">
       <div>
-        {% if can_fix and i.id in fixable %}<label class="check"><input type="checkbox" name="issue" value="{{ i.id }}" checked> </label>{% endif %}
+        {% if can_fix and i.id in fixable %}<label class="check"><input form="qc-autofix" type="checkbox" name="issue" value="{{ i.id }}" checked> </label>{% endif %}
         <span class="badge {{ 'b-danger' if i.severity == 'critical' else ('b-warn' if i.severity == 'major' else 'b-info') }}">{{ sev[i.severity] }}</span>
         <span class="badge">{{ cats.get(i.category, i.category) }}</span>
         {% if i.source == "ai" %}<span class="badge b-primary">AI</span>{% endif %}
+        {% if i.confidence == "ai_unverified" %}<span class="badge b-warn">인용 미확인 · 감점 제외</span>{% endif %}
+        {% if i.status == "partial" %}<span class="badge b-warn">내용 미흡</span>{% endif %}
+        {% if i.basis_pending and not i.basis %}<span class="badge b-warn">근거 미검수</span>{% endif %}
+        {% if i.rule_id %}<span class="badge">{{ i.rule_id }} · {{ i.flags|join(" · ") }}</span>{% endif %}
+        {% if i.review %}<span class="badge">{{ {"candidate":"후보", "confirmed":"확정", "dismissed":"오탐 철회", "accepted":"잔여 수용", "resolved":"해결"}.get(i.review, i.review) }}</span>{% endif %}
         <strong>{{ i.title }}</strong> <span class="small muted">{{ i.doc_name }}</span>
       </div>
       {% if i.detail %}<div class="rec">{{ i.detail }}</div>{% endif %}
       {% if i.evidence %}<div class="small"><code>{{ i.evidence }}</code></div>{% endif %}
+      {% if i.section %}<div class="small muted">위치: {{ i.section }}</div>{% endif %}
+      {% if i.basis %}<div class="small muted">근거: {{ i.basis }}</div>{% endif %}
       {% if i.suggestion %}<div class="rec">→ {{ i.suggestion }}</div>{% endif %}
+      {% if i.question %}<p>{{ i.question }}</p>{% endif %}
+      {% if i.ai_review and i.ai_review.verdict == "false_positive" %}<p class="small"><span class="badge b-primary">AI 재검토 · 오탐</span> {{ i.ai_review.reason }}{% if i.ai_review.quote %} <code>{{ i.ai_review.quote }}</code>{% endif %}</p>
+      {% elif i.ai_review and i.ai_review.verdict == "valid" %}<p class="small muted"><span class="badge">AI 재검토 · 타당</span> {{ i.ai_review.reason }}</p>{% endif %}
+      {% if i.check_answer %}<p class="small">확인 기록: {{ i.check_answer.note }}</p>{% endif %}
+      {% for loc in i.ai_evidence %}<p class="small muted">AI 인용 · {{ loc.name }}: {{ loc.quote }}</p>{% endfor %}
+      {% if can_fix and i.code == "BUNDLE_REQUIRED" and i.reason in ("file_missing", "applicability_unknown") and i.review == "candidate" %}
+      <form method="post" action="/qc/{{ qr.id }}/issues/{{ i.id }}/bundle-answer">{{ csrf_input }}
+        {% if i.field in ("waiver_request", "exemption_request") and qr.profile.committee == "public_irb" %}
+        <button name="answer" value="eirb">e-IRB에서 제출</button>
+        {% endif %}
+        <button name="answer" value="not_applicable">해당 없음</button>
+        <button name="answer" value="out_of_scope">이번 점검 범위 아님</button>
+        <button name="answer" value="later">추후 제출</button>
+      </form>
+      {% endif %}
+      {% for loc in i.locations %}<p class="small">{{ loc.name or loc.doc }} · {{ loc.norm }}<br><code>{{ loc.quote }}</code></p>{% endfor %}
+      {% if can_fix and i.category == "cross" and i.fact_key and not i.reference_blocked and i.result == "mismatch" and i.review in ("candidate", "confirmed") %}
+      <form method="post" action="/qc/{{ qr.id }}/issues/{{ i.id }}/reference">{{ csrf_input }}
+        <label for="ref-{{ i.id }}">기준값 선택</label>
+        <select id="ref-{{ i.id }}" name="index" required><option value="">문서 선택</option>
+          {% for loc in i.locations %}<option value="{{ loop.index0 }}" {% if i.reference and i.reference.doc == loc.doc and i.reference.value == loc.norm %}selected{% endif %}>{{ loc.name }} · {{ loc.value }}</option>{% endfor %}
+        </select><button type="submit">기준값 저장</button>
+      </form>
+      {% endif %}
+      {% if can_fix and i.review == "candidate" and i.result == "needs_check" and not i.advice and not i.merged_into %}
+        {% if i.reason in check_options %}
+        <form method="post" action="/qc/{{ qr.id }}/issues/{{ i.id }}/resolve-check">{{ csrf_input }}
+          <label for="answer-{{ i.id }}">확인 결과</label>
+          <select id="answer-{{ i.id }}" name="answer" required>{% for value, label in check_options[i.reason].items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+          <label for="check-note-{{ i.id }}">확인 사유</label><input id="check-note-{{ i.id }}" name="note" maxlength="1000" required>
+          {% if i.reason == "basis_unverified" %}<label for="basis-{{ i.id }}">적용 근거 (적용 시 필수)</label><input id="basis-{{ i.id }}" name="basis" maxlength="1000">{% endif %}
+          <button type="submit">확인 결과 저장</button>
+        </form>
+        {% elif i.reason == "applicability_unknown" %}<a href="#qc-profile">신청 조건 수정</a>{% endif %}
+      {% endif %}
+      {% if can_fix and not i.advice and not i.merged_into and (i.review == "candidate" or (i.review == "confirmed" and i.severity == "minor")) %}
+      <form method="post" action="/qc/{{ qr.id }}/issues/{{ i.id }}/review">{{ csrf_input }}
+        <label for="note-{{ i.id }}">검토 사유</label><input id="note-{{ i.id }}" name="note" maxlength="1000">
+        {% if i.review == "candidate" %}
+          {% if i.result != "needs_check" %}
+            <label for="severity-{{ i.id }}">확정 등급</label><select name="severity" id="severity-{{ i.id }}"><option value="">제안 등급 유지</option>{% for value, label in sev.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+            <button name="action" value="confirmed">확정</button>
+          {% endif %}
+          <button name="action" value="dismissed">오탐 철회</button>
+          {% if i.result != "needs_check" %}<button name="action" value="needs_check">확인 필요로 전환</button>{% endif %}
+        {% else %}<button name="action" value="accepted">경미한 잔여 항목 수용</button>{% endif %}
+      </form>
+      {% endif %}
       {% for f in i.fixes[:4] %}<div class="fix-row"><span class="muted">자동 교정:</span> <del>{{ f.old }}</del> → <ins>{{ f.new }}</ins>{% if f.all %} <span class="hint">(모든 위치)</span>{% endif %}</div>{% endfor %}
     </div>
+    {% if i.bundle_answer == "later" %}</details>{% endif %}
     {% else %}<p class="verdict-pass">발견된 이슈가 없습니다.</p>{% endfor %}
   </div>
   {% if can_fix and (fixable or qr.docs|selectattr("fixable")|list) %}
   <div class="card">
     <h2>자동 교정 <span class="hint">원본 레이아웃(표·머리글·바닥글)을 유지하고 선택한 항목만 고칩니다</span></h2>
     <div class="checks">
-      <label class="check"><input type="checkbox" name="unify_font"> 글꼴 통일</label>
-      <input name="font" value="맑은 고딕" aria-label="통일할 글꼴">
-      {% if qr.protocol %}<label class="check"><input type="checkbox" name="save" value="on" checked> 수정 완료본을 과제 서류의 새 버전으로 저장</label>{% endif %}
+      <label class="check"><input form="qc-autofix" type="checkbox" name="unify_font"> 글꼴 통일</label>
+      <input form="qc-autofix" name="font" value="맑은 고딕" aria-label="통일할 글꼴">
+      {% if qr.protocol %}<label class="check"><input form="qc-autofix" type="checkbox" name="save" value="on" checked> 수정 완료본을 과제 서류의 새 버전으로 저장</label>{% endif %}
     </div>
     <p class="small muted">결과는 두 가지로 만듭니다: <strong>변경 추적본</strong>(Word 변경 내용 추적 — 검토 후 수락) · <strong>수정 완료본</strong>(고친 곳 노란 형광펜 표시).
       '내용 추가'가 필요한 항목(필수 기재사항 누락 등)은 자동으로 쓰지 않으니 직접 작성하십시오.</p>
-    <button class="btn-primary" type="submit">선택 항목 자동 교정</button>
+    <button form="qc-autofix" class="btn-primary" type="submit">선택 항목 자동 교정</button>
   </div>
   {% endif %}
-</form>
 
 {% if qr.outputs %}
 <div class="card" id="outputs">

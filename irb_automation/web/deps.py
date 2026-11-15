@@ -114,6 +114,12 @@ def pop_flashes(request: Request) -> list[dict[str, str]]:
 def current_user_optional(request: Request, db: Session = Depends(get_db)) -> User | None:
     uid = request.session.get("uid")
     if not uid:
+        auto = get_settings().auto_login_user
+        if auto and request.url.path != "/logout":
+            u = db.scalars(select(User).where(User.username == auto)).first()
+            if u is not None and u.is_active:
+                request.session["uid"] = u.id
+                return u
         return None
     user = db.get(User, uid)
     if user is None or not user.is_active:
@@ -148,9 +154,14 @@ def render(request: Request, name: str, db: Session | None = None, user: User | 
             select(func.count(Notification.id)).where(Notification.user_id == user.id, Notification.is_read.is_(False))
         ) or 0
     token = csrf_token(request)
+    from ..public_irb import context as public_irb
+
     context = {
         "user": user,
         "settings": settings,
+        "mvp_mode": settings.mvp_mode,
+        "mvp_layout": name.startswith("mvp/"),
+        "public_irb": public_irb,
         "rs": get_ruleset(),
         "unread_count": unread,
         "flashes": pop_flashes(request),

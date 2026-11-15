@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..config import get_settings
 from ..database import get_db
 from ..models import (
     Notification,
@@ -35,7 +36,7 @@ S = ProtocolStatus
 @router.get("/login")
 def login_form(request: Request, user: User | None = Depends(current_user_optional)):
     if user:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/mvp" if get_settings().mvp_mode else "/", status_code=303)
     return render(request, "login.html")
 
 
@@ -59,7 +60,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
     request.session["uid"] = user.id
     audit.record(db, user, "login", "user", user.id, {}, client_ip(request))
     db.commit()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/mvp" if get_settings().mvp_mode else "/", status_code=303)
 
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])
@@ -70,6 +71,8 @@ def logout(request: Request):
 
 @router.get("/")
 def dashboard(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if get_settings().mvp_mode:
+        return RedirectResponse("/mvp", status_code=303)
     t = today()
     soon = t + timedelta(days=60)
     mine = [p for p in db.scalars(select(Protocol).order_by(Protocol.updated_at.desc())) if user.id in p.member_ids()]

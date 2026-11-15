@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..config import get_settings
 from ..deid import patterns as P
 from ..engine.ruleset import get_ruleset
 from ..models import Protocol, Role, User
@@ -297,22 +298,36 @@ def _chunk_text(db: Session, hit: dict[str, Any]) -> str:
     return chunk.text if chunk else hit["snippet"]
 
 
-def _ai_answer(db: Session, question: str, hits: list[dict[str, Any]]) -> dict[str, Any]:
+def _ai_answer(db: Session, question: str, hits: list[dict[str, Any]]) -> dict[str, Any] | None:
     from ..ai import client  # 선택 구성 요소 - 없으면 ImportError
 
     if not client.ai_enabled():
         raise RuntimeError("AI 기능이 비활성화되어 있습니다.")
+    is_openrouter = get_settings().ai_provider == "openrouter"
     docs = []
     for h in hits:
         title = f"{h['title']}" + (f" — {h['ref']}" if h["ref"] else "") + (f" · {h['heading']}" if h["heading"] else "")
-        docs.append(_document_block(client, _chunk_text(db, h), title[:300]))
+        if is_openrouter:
+            from ..ai.privacy import mask_text
+
+            docs.append(client.text_document_block(mask_text(_chunk_text(db, h)).text, mask_text(title).text))
+        else:
+            docs.append(_document_block(client, _chunk_text(db, h), title[:300]))
+    system = SYSTEM_PROMPT
+    if is_openrouter:
+        system += (
+            "\n각 근거 문장 끝에 실제 문서 번호를 [n] 형식으로 붙이십시오. "
+            "예: 첫 번째 문서가 뒷받침하면 [1]을 붙이십시오. 근거가 없으면 번호를 쓰지 마십시오."
+        )
     response = client.create_message(
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": [*docs, {"type": "text", "text": f"질문: {question}"}]}],
         max_tokens=int(_policy()["ai_answer_max_tokens"]),
         effort="medium",
         purpose="knowledge_answer",
     )
+    if is_openrouter:
+        return _numbered_answer(client.response_text(response), hits)
     parts: list[str] = []
     citations: list[dict[str, Any]] = []
     index_of: dict[tuple[int, str], int] = {}
@@ -338,6 +353,27 @@ def _ai_answer(db: Session, question: str, hits: list[dict[str, Any]]) -> dict[s
     if not answer_text:
         raise RuntimeError("AI 응답이 비어 있습니다.")
     return {"answer": answer_text, "citations": citations, "mode": "ai"}
+
+
+def _numbered_answer(text: str, hits: list[dict[str, Any]]) -> dict[str, Any] | None:
+    citations: dict[int, dict[str, Any]] = {}
+
+    def cite(match: re.Match[str]) -> str:
+        number = int(match[1]) if len(match[1]) <= len(str(len(hits))) else 0
+        if not 1 <= number <= len(hits):
+            return ""
+        hit = hits[number - 1]
+        if number not in citations:
+            citations[number] = {
+                **{key: hit[key] for key in ("title", "ref", "source_id", "chunk_id", "url", "kind")},
+                "cited_text": hit["snippet"], "n": len(citations) + 1,
+            }
+        return f"[{citations[number]['n']}]"
+
+    answer = re.sub(r"\[([0-9]+)\]", cite, text).strip()
+    if not citations or not re.sub(r"\[[0-9]+\]", "", answer).strip():
+        return None
+    return {"answer": answer, "citations": list(citations.values()), "mode": "ai"}
 
 
 def _extractive_answer(question: str, hits: list[dict[str, Any]], db: Session) -> dict[str, Any]:
@@ -370,7 +406,7 @@ def _extractive_answer(question: str, hits: list[dict[str, Any]], db: Session) -
 
 def answer(db: Session, question: str, k: int = 6, user: User | None = None, *, ip: str = "",
            record: bool = True) -> dict[str, Any]:
-    """근거 인용 질의응답. AI가 켜져 있으면 Claude Citations로, 아니면 추출형으로 답한다.
+    """근거 인용 질의응답. AI가 켜져 있으면 공급자별 인용을 사용하고, 필요하면 추출형으로 답한다.
 
     질문의 개인정보는 검색·AI 전송·기록 전에 마스킹한다. user=None(내부 호출)은 정책 지식만 사용한다.
     """

@@ -5,7 +5,6 @@ import hashlib
 import uuid
 import zipfile
 from collections import OrderedDict
-from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -16,13 +15,16 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..config import get_settings
 from ..engine.ruleset import get_ruleset
-from ..models import Protocol, Role, User
+from ..models import Role, User
 from ..workflow import service as wf
-from . import core, docx_engine, hwpx_engine
+from . import docx_engine, hwpx_engine
 from . import placeholders as PH
-from .fields import SPECIAL_BLANK, SPECIAL_KEEP, FieldResolver, available_fields, format_value, is_known_path
+from .fields import available_fields, is_known_path
+from .filling import FillResult as FillResult
+from .filling import fill as fill
+from .filling import plain_text as plain_text
 from .mapping import suggest_all
-from .models import MEDIA_TYPES, DocumentTemplate
+from .models import DocumentTemplate
 
 MAX_TEMPLATE_BYTES = 20 * 1024 * 1024
 MAX_UNCOMPRESSED = 200 * 1024 * 1024
@@ -115,7 +117,7 @@ def _store(raw: bytes, fmt: str) -> str:
 
 def upload_template(
     db: Session, user: User, *, filename: str, raw: bytes, doc_type: str, name: str = "", notes: str = "",
-    ip: str = "",
+    ip: str = "", source_id: int | None = None, variant: str = "",
 ) -> DocumentTemplate:
     require_template_admin(user)
     rs = get_ruleset()
@@ -123,10 +125,47 @@ def upload_template(
         raise TemplateError("서류 종류를 선택하십시오.")
     fmt = sniff_format(filename, raw)
     placeholders = detect(fmt, raw)
+    source = None
+    if source_id is not None:
+        from ..docproc.text import extract_text
+        from ..public_irb.source_models import SourceDocument
+        from ..public_irb.sources import SourceError, source_bytes
+
+        source = db.get(SourceDocument, source_id)
+        expected = {
+            ("protocol", "intervention"): "38", ("protocol", "survey"): "39",
+            ("protocol", "specimen"): "40", ("protocol", "stem_cell"): "41", ("protocol", "records"): "43",
+            ("consent_form", "human"): "44", ("consent_form", "specimen"): "45",
+            ("assent_form", "human"): "46", ("assent_form", "specimen"): "47", ("final_report", ""): "57",
+        }.get((doc_type, variant))
+        if (source is None or not source.verified or source.owner != "researcher"
+                or expected is None or (source.series, source.number) != ("권고서식", expected)):
+            raise TemplateError("이 서식 종류와 연구 유형에 해당하는 검수 완료 원문을 선택하십시오.")
+        try:
+            original = extract_text(source.original_filename, source_bytes(source), allow_ai_ocr=False)
+        except SourceError as exc:
+            raise TemplateError("원문을 확인할 수 없습니다.") from exc
+        if not original.text.strip() or original.warnings:
+            raise TemplateError("원문 본문을 확인한 뒤 파생 서식을 등록하십시오.")
+        edited = extract_text(filename, raw, allow_ai_ocr=False)
+        def normalize(value: str) -> str:
+            import re
+
+            return re.sub(r"[\s|#]+", "", value)
+        candidate = edited.text
+        for item in placeholders:
+            for marker in item["raw"]:
+                candidate = candidate.replace(marker, "")
+        if normalize(original.text) != normalize(candidate):
+            raise TemplateError("파생본에 원문과 다른 본문이 있습니다. 자리표시자 외 문구를 대조하십시오.")
     version = 1 + (db.scalar(select(func.max(DocumentTemplate.version)).where(DocumentTemplate.doc_type == doc_type)) or 0)
     suggestions = suggest_all(placeholders, available_fields(db))
     tpl = DocumentTemplate(
         doc_type=doc_type,
+        committee="public_irb" if source else "institution",
+        variant=variant if source else "",
+        source_document_id=source.id if source else None,
+        derived_from_sha=source.sha256 if source else "",
         name=(name or "").strip() or f"{rs.label('document_types', doc_type)} 서식",
         fmt=fmt,
         original_filename=Path(filename).name,
@@ -189,11 +228,19 @@ def save_mapping(db: Session, user: User, tpl: DocumentTemplate, mapping: dict[s
 
 def activate(db: Session, user: User, tpl: DocumentTemplate, ip: str = "") -> None:
     require_template_admin(user)
+    if tpl.committee == "public_irb":
+        from ..public_irb.source_models import SourceDocument
+
+        src = db.get(SourceDocument, tpl.source_document_id) if tpl.source_document_id else None
+        if not src or not src.verified or tpl.derived_from_sha != src.sha256:
+            raise TemplateError("검수된 공용 IRB 원문을 연결해야 합니다.")
     missing = unmapped(tpl)
     if missing:
         raise TemplateError("매핑되지 않은 자리표시자가 있어 활성화할 수 없습니다: " + ", ".join(missing[:10])
                             + " — 필드를 연결하거나 '빈칸'/'그대로 둠'을 선택하십시오.")
     for other in db.scalars(select(DocumentTemplate).where(DocumentTemplate.doc_type == tpl.doc_type,
+                                                           DocumentTemplate.committee == tpl.committee,
+                                                           DocumentTemplate.variant == tpl.variant,
                                                            DocumentTemplate.active.is_(True))):
         other.active = False
     tpl.active = True
@@ -207,9 +254,10 @@ def deactivate(db: Session, user: User, tpl: DocumentTemplate, ip: str = "") -> 
     audit.record(db, user, "template_deactivate", "doc_template", tpl.id, {"doc_type": tpl.doc_type}, ip)
 
 
-def active_template(db: Session, doc_type: str) -> DocumentTemplate | None:
+def active_template(db: Session, doc_type: str, committee: str = "institution", variant: str = "") -> DocumentTemplate | None:
     return db.scalars(
-        select(DocumentTemplate).where(DocumentTemplate.doc_type == doc_type, DocumentTemplate.active.is_(True))
+        select(DocumentTemplate).where(DocumentTemplate.doc_type == doc_type, DocumentTemplate.active.is_(True),
+                                       DocumentTemplate.committee == committee, DocumentTemplate.variant == variant)
         .order_by(DocumentTemplate.version.desc())
     ).first()
 
@@ -229,107 +277,6 @@ def read_original(tpl: DocumentTemplate) -> bytes:
     if not path.is_file():
         raise TemplateError("서식 원본 파일을 찾을 수 없습니다.")
     return path.read_bytes()
-
-
-# ---------------------------------------------------------------- 채우기
-@dataclass
-class FillResult:
-    content: bytes
-    filename: str
-    media_type: str
-    fmt: str
-    warnings: list[str] = field(default_factory=list)
-    missing: list[str] = field(default_factory=list)
-    stats: core.FillStats | None = None
-
-
-class FillContext:
-    """자리표시자 하나를 문자열로 바꾸는 규칙(템플릿 매핑 + 과제 값)."""
-
-    def __init__(self, tpl: DocumentTemplate, resolver: FieldResolver):
-        self.tpl = tpl
-        self.resolver = resolver
-        self.missing: set[str] = set()
-
-    def render(self, ph: PH.Placeholder, scope: core.Scope | None) -> str | None:
-        if ph.marker:
-            return ""  # 반복 표식은 지운다
-        if ph.is_item_scoped:
-            return self._render_item(ph, scope)
-        path, default_fmt = resolve_target(self.tpl, ph.name)
-        if path is None:
-            self.missing.add(ph.name)
-            return None
-        if path == SPECIAL_KEEP:
-            return None
-        if path == SPECIAL_BLANK:
-            return ""
-        fmt = ph.fmt or default_fmt
-        if ph.op:
-            return format_value(self.resolver.compare(path, ph.op, ph.operand), fmt or "check")
-        return format_value(self.resolver.value(path), fmt)
-
-    def _render_item(self, ph: PH.Placeholder, scope: core.Scope | None) -> str | None:
-        if scope is None:
-            return None  # 반복 행 밖의 item/no 는 그대로 둔다
-        target, attr = PH.normalize_item_name(ph.name)
-        if scope.empty:
-            return ""
-        if target == "no":
-            return str(scope.index)
-        item = scope.item
-        if attr:
-            value = item.get(attr) if isinstance(item, dict) else getattr(item, attr, None)
-        else:
-            value = item
-        if ph.op:
-            return format_value(_item_compare(value, ph.op, ph.operand), ph.fmt or "check")
-        return format_value(value, ph.fmt)
-
-    def list_items(self, name: str) -> list[Any] | None:
-        path, _ = resolve_target(self.tpl, name)
-        if path is None or path in (SPECIAL_BLANK, SPECIAL_KEEP):
-            return None
-        value = self.resolver.value(path)
-        if isinstance(value, list):
-            return value
-        if value in (None, ""):
-            return []
-        return [value]
-
-
-def _item_compare(value: Any, op: str, operand: str) -> bool:
-    text = format_value(value)
-    return operand in text if op == "~" else text == operand
-
-
-def fill(db: Session, tpl: DocumentTemplate, protocol: Protocol) -> FillResult:
-    raw = read_original(tpl)
-    ctx = FillContext(tpl, FieldResolver(db, protocol))
-    stats = core.FillStats()
-    try:
-        content = ENGINES[tpl.fmt].fill(raw, ctx.render, ctx.list_items, stats)
-    except TemplateError:
-        raise
-    except Exception as e:  # 손상된 서식 등
-        raise TemplateError(f"서식을 채우는 중 오류가 발생했습니다({type(e).__name__}).") from e
-    label = get_ruleset().label("document_types", tpl.doc_type)
-    warnings = list(stats.warnings)
-    if ctx.missing:
-        warnings.append("매핑되지 않아 그대로 남은 자리표시자: " + ", ".join(sorted(ctx.missing)))
-    return FillResult(
-        content=content,
-        filename=f"{label}_v{protocol.version}.{tpl.fmt}",
-        media_type=MEDIA_TYPES[tpl.fmt],
-        fmt=tpl.fmt,
-        warnings=warnings,
-        missing=sorted(ctx.missing),
-        stats=stats,
-    )
-
-
-def plain_text(tpl: DocumentTemplate, raw: bytes | None = None) -> str:
-    return ENGINES[tpl.fmt].plain_text(raw if raw is not None else read_original(tpl))
 
 
 # ---------------------------------------------------------------- PDF 변환(Fork D 연동)

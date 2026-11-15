@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from typing import Any
 
@@ -33,7 +34,7 @@ from ..models import (
     User,
 )
 from ..notifications import notify
-from ..timeutil import now, today
+from ..timeutil import now, parse_date, today
 
 S = ProtocolStatus
 
@@ -52,7 +53,31 @@ def is_member(user: User, protocol: Protocol) -> bool:
 
 
 def can_view(db: Session, user: User, protocol: Protocol) -> bool:
-    return user.is_admin or is_member(user, protocol)
+    return user.is_admin or is_member(user, protocol) or is_reviewer(user, protocol)
+
+
+def is_reviewer(user: User, protocol: Protocol) -> bool:
+    return (user.is_active and user.role in (Role.REVIEWER, Role.ADMIN) and not is_member(user, protocol)
+            and user.id in (protocol.reviewer_ids or []))
+
+
+def require_reviewer(user: User, protocol: Protocol) -> None:
+    if not is_reviewer(user, protocol):
+        raise PermissionDenied("이 과제에 배정된 사전검토자만 수행할 수 있습니다.")
+
+
+def assign_reviewers(db: Session, actor: User, protocol: Protocol, reviewer_ids: list[int]) -> None:
+    require_admin(actor)
+    chosen = sorted(set(reviewer_ids))
+    for uid in chosen:
+        reviewer = db.get(User, uid)
+        if (reviewer is None or not reviewer.is_active or reviewer.role not in (Role.ADMIN, Role.REVIEWER)
+                or is_member(reviewer, protocol)):
+            raise WorkflowError("과제 구성원이 아닌 활성 사전검토자 또는 관리자만 배정할 수 있습니다.")
+    previous = set(protocol.reviewer_ids or [])
+    protocol.reviewer_ids = chosen
+    audit.record(db, actor, "assign_reviewers", "protocol", protocol.id, {"reviewer_ids": chosen})
+    notify(db, [uid for uid in chosen if uid not in previous], "IRB 사전검토에 배정되었습니다.", f"/protocols/{protocol.id}")
 
 
 def require_admin(user: User) -> None:
@@ -61,7 +86,7 @@ def require_admin(user: User) -> None:
 
 
 def require_member(user: User, protocol: Protocol) -> None:
-    if not is_member(user, protocol):
+    if user.role == Role.REVIEWER or not is_member(user, protocol):
         raise PermissionDenied("연구책임자 또는 공동연구자만 수행할 수 있습니다.")
 
 
@@ -74,6 +99,7 @@ def create_protocol(db: Session, user: User, data: dict[str, Any], ip: str = "")
         raise PermissionDenied("과제 생성 권한이 없습니다.")
     protocol = Protocol(pi_id=user.id, title=data.get("title") or "(제목 없음)")
     _apply(protocol, data)
+    _validate_public_profile(protocol)
     db.add(protocol)
     db.flush()
     audit.record(db, user, "protocol_create", "protocol", protocol.id, {"title": protocol.title}, ip)
@@ -85,6 +111,8 @@ def update_protocol(db: Session, user: User, protocol: Protocol, data: dict[str,
     if not protocol.is_editable:
         raise WorkflowError(f"'{protocol.status.label}' 상태에서는 수정할 수 없습니다.")
     changed = _apply(protocol, data)
+    _validate_public_profile(protocol)
+    protocol.reviewer_ids = [uid for uid in (protocol.reviewer_ids or []) if uid not in protocol.member_ids()]
     if changed:
         audit.record(db, user, "protocol_update", "protocol", protocol.id, {"fields": sorted(changed)}, ip)
 
@@ -105,6 +133,28 @@ def _apply(protocol: Protocol, data: dict[str, Any]) -> set[str]:
     return changed
 
 
+def _validate_public_profile(protocol: Protocol) -> None:
+    from ..public_irb.context import ACCESS_ROUTES, CATEGORIES, CONSENT_ROUTES, METHODS
+
+    if protocol.committee in (None, "institution"):
+        return
+    if protocol.committee != "public_irb":
+        raise WorkflowError("위원회 기준이 유효하지 않습니다.")
+    if not get_settings().public_irb_enabled:
+        raise WorkflowError("공용 IRB 신청은 현재 비활성화되어 있습니다.")
+    if protocol.research_category not in CATEGORIES or not protocol.research_method or not set(protocol.research_method) <= METHODS.keys():
+        raise WorkflowError("공용 IRB 연구 분류와 연구 방법을 선택하십시오.")
+    if protocol.access_route not in ACCESS_ROUTES or protocol.application_route not in ("new", "exemption"):
+        raise WorkflowError("공용 IRB 이용 방식과 신청 구분을 선택하십시오.")
+    if not protocol.consent_routes or not set(protocol.consent_routes) <= CONSENT_ROUTES.keys():
+        raise WorkflowError("공용 IRB 동의 경로를 선택하십시오.")
+    low, high = protocol.subject_age_min, protocol.subject_age_max
+    if (low is not None and not 0 <= low <= 130) or (high is not None and not 0 <= high <= 130) or (
+        low is not None and high is not None and low > high
+    ):
+        raise WorkflowError("대상자 연령 범위가 유효하지 않습니다.")
+
+
 def _restore_snapshot(protocol: Protocol, snapshot: dict[str, Any]) -> None:
     for key in PROTOCOL_FIELDS:
         if key not in snapshot:
@@ -120,16 +170,33 @@ def build_facts(
     db: Session, protocol: Protocol, kind: str = "initial", report: dict[str, Any] | None = None
 ) -> ProtocolFacts:
     pi = protocol.pi or db.get(User, protocol.pi_id)
+    public = protocol.committee == "public_irb"
+    provided = {d.doc_type for d in protocol.documents}
+    states = {}
+    changed = []
+    if public:
+        from ..public_irb.records import RequirementState
+
+        docs = [d for d in protocol.documents if d.is_current and d.has_file and d.status not in ("revision_requested", "superseded")]
+        provided = {d.doc_type for d in docs}
+        states = {row.doc_type: row.status for row in db.scalars(select(RequirementState).where(
+            RequirementState.protocol_id == protocol.id, RequirementState.kind == kind))}
+        if kind == "amendment":
+            baseline = _last_approved_submission(protocol, exclude=None)
+            prior_ids = {d["id"] for d in ((baseline.basis or {}).get("documents", []) if baseline else [])}
+            changed = sorted({d.doc_type for d in docs if d.id not in prior_ids})
     previous = None
     for sub in reversed(protocol.submissions):
-        if sub.review_type and sub.kind != SubmissionKind.CONTINUING:
+        if sub.review_type and not sub.kind.is_parallel and sub.kind != SubmissionKind.CONTINUING:
             previous = sub.review_type.value
             break
     return ProtocolFacts.from_protocol(
         protocol,
         submission_kind=kind,
         previous_review_type=previous,
-        uploaded_doc_types={d.doc_type for d in protocol.documents},
+        uploaded_doc_types=provided,
+        requirement_states=states,
+        changed_doc_types=changed,
         pi_training_expires_on=pi.training_expires_on if pi else None,
         team_training=[
             {"name": u.full_name, "expires_on": u.training_expires_on}
@@ -155,12 +222,17 @@ def next_submission_kind(protocol: Protocol) -> SubmissionKind:
 
 def preview(db: Session, protocol: Protocol, kind: str | None = None, report: dict[str, Any] | None = None) -> dict[str, Any]:
     """저장하지 않고 사전검토 결과만 계산(작성 중 실시간 점검용)."""
-    if kind is None:
-        try:
-            kind = next_submission_kind(protocol).value
-        except WorkflowError:
-            kind = "initial"
+    kind = kind or preview_kind(protocol)
     return run_prereview(build_facts(db, protocol, kind, report))
+
+
+def preview_kind(protocol: Protocol) -> str:
+    try:
+        return next_submission_kind(protocol).value
+    except WorkflowError:
+        if protocol.committee == "public_irb" and protocol.status in (S.APPROVED, S.EXPIRED):
+            return "continuing"
+        return "initial"
 
 
 def _run_and_store_prereview(db: Session, submission: Submission, facts: ProtocolFacts) -> PreReview:
@@ -215,12 +287,43 @@ def submit_report(
         SubmissionKind.CONTINUING: (S.APPROVED, S.EXPIRED),
         SubmissionKind.FINAL_REPORT: (S.APPROVED, S.EXEMPT, S.EXPIRED),
     }
+    if kind.is_parallel and protocol.committee == "public_irb":
+        allowed[kind] = (S.APPROVED, S.EXEMPT, S.EXPIRED, S.AMENDMENT)
     if kind not in allowed:
         raise WorkflowError("지원하지 않는 보고 유형입니다.")
     if protocol.status not in allowed[kind]:
         raise WorkflowError(f"'{protocol.status.label}' 상태에서는 {kind.label}을(를) 제출할 수 없습니다.")
+    event_on = parse_date(report.get("event_on"))
+    if report.get("event_on") and (event_on is None or event_on > today()):
+        raise WorkflowError("발생일 또는 인지일은 오늘 이전의 유효한 날짜여야 합니다.")
     facts = build_facts(db, protocol, kind.value, report)
-    return _create_submission(db, user, protocol, kind, facts, report=report, external_ref=external_ref, ip=ip)
+    submission = _create_submission(db, user, protocol, kind, facts, report=report, external_ref=external_ref, ip=ip)
+    if event_on is not None:
+        from ..public_irb.records import ReportReminder
+
+        reminder = db.get(ReportReminder, (protocol.id, kind.value, event_on))
+        if reminder is not None:
+            reminder.submitted_id = submission.id
+    return submission
+
+
+def track_report_deadline(db: Session, user: User, protocol: Protocol, kind: SubmissionKind,
+                          event_on: date | None) -> None:
+    from ..public_irb.records import ReportReminder
+
+    require_member(user, protocol)
+    if protocol.committee != "public_irb" or kind not in (
+        SubmissionKind.COI_UPDATE, SubmissionKind.DEVIATION, SubmissionKind.ADVERSE_EVENT,
+    ):
+        raise WorkflowError("기한을 추적할 수 없는 보고 유형입니다.")
+    if event_on is None or event_on > today():
+        raise WorkflowError("발생일 또는 인지일은 오늘 이전의 유효한 날짜여야 합니다.")
+    key = (protocol.id, kind.value, event_on)
+    if db.get(ReportReminder, key) is None:
+        due_on = event_on + timedelta(days=30) if kind == SubmissionKind.COI_UPDATE else None
+        db.add(ReportReminder(protocol_id=protocol.id, kind=kind.value, event_on=event_on, due_on=due_on))
+        audit.record(db, user, "report_deadline_track", "protocol", protocol.id,
+                     {"kind": kind.value, "event_on": event_on.isoformat()})
 
 
 def _create_submission(
@@ -239,12 +342,33 @@ def _create_submission(
         external_ref=external_ref.strip(),
     )
     db.add(sub)
+    if protocol.committee == "public_irb":
+        from pathlib import Path
+
+        from ..public_irb.checklists import applicable_forms
+        from ..public_irb.records import capture_packs
+        from ..public_irb.requirements import CATALOG
+        from ..qc.checks import CRITERIA_PATH
+
+        settings = get_settings()
+        criteria_path = Path(settings.qc_criteria_path or CRITERIA_PATH)
+        sub.basis = {
+            "packs": capture_packs(db, {"ruleset": settings.ruleset_path, "requirements": CATALOG,
+                                       "criteria": criteria_path if criteria_path.exists() else CRITERIA_PATH}),
+            "documents": [{"id": d.id, "type": d.doc_type, "sha256": d.sha256,
+                           "template": (d.validation or {}).get("template")}
+                          for d in protocol.documents if d.is_current and d.has_file],
+            "checklists": [{"id": form.id, "source_id": form.source.id, "sha256": form.source.sha256,
+                            "verified": form.verified} for form in applicable_forms(db, facts)],
+            "facts": json.loads(json.dumps(facts.to_dict(), default=str)),
+        }
     pr = _run_and_store_prereview(db, sub, facts)
-    if kind not in (SubmissionKind.CONTINUING, SubmissionKind.FINAL_REPORT):
+    if not kind.is_parallel and kind not in (SubmissionKind.CONTINUING, SubmissionKind.FINAL_REPORT):
         protocol.review_type = pr.review_type
         protocol.risk_score = pr.risk_score
         protocol.risk_level = pr.risk_level
-    protocol.status = S.SUBMITTED
+    if not kind.is_parallel:
+        protocol.status = S.SUBMITTED
     db.flush()
     audit.record(db, user, "submit", "protocol", protocol.id,
                  {"kind": kind.value, "version": protocol.version, "external_ref": sub.external_ref,
@@ -291,19 +415,24 @@ def _split_revision_text(text: str) -> list[str]:
 
 
 def record_revision_request(
-    db: Session, user: User, protocol: Protocol, text: str, ip: str = "",
+    db: Session, user: User, protocol: Protocol, text: str, ip: str = "", *, submission_id: int | None = None,
 ) -> list[RevisionItem]:
     """IRB에서 받은 보완 요청을 입력한다. 항목별로 나눠 답변 대상으로 만든다."""
     require_member(user, protocol)
-    sub = protocol.current_submission
-    if protocol.status != S.SUBMITTED or sub is None:
+    sub = db.get(Submission, submission_id) if submission_id is not None else protocol.current_submission
+    if sub is None or sub.protocol_id != protocol.id or sub.closed or (
+        not sub.kind.is_parallel and (protocol.status != S.SUBMITTED or sub != protocol.current_submission)
+    ):
         raise WorkflowError("IRB에 제출한 신청건에만 보완 요청을 입력할 수 있습니다.")
     parts = _split_revision_text(text)
     if not parts:
         raise WorkflowError("보완 요청 내용을 입력하십시오.")
-    protocol.status = S.REVISION_REQUESTED
+    if not sub.kind.is_parallel:
+        protocol.status = S.REVISION_REQUESTED
     sub.result = "revision"
     sub.result_date = today()
+    sub.result_issued_on = sub.result_date
+    sub.result_entered_by = user.id
     sub.result_note = text.strip()
     _close_submission(sub, "revision_requested")
     created = []
@@ -328,7 +457,9 @@ def _close_submission(sub: Submission, outcome: str) -> None:
 def open_revision_items(db: Session, protocol: Protocol) -> list[RevisionItem]:
     """가장 최근 보완 요청의 항목(답변 대상)."""
     latest = db.scalars(
-        select(RevisionItem.submission_id).where(RevisionItem.protocol_id == protocol.id)
+        select(RevisionItem.submission_id).join(Submission, Submission.id == RevisionItem.submission_id)
+        .where(RevisionItem.protocol_id == protocol.id,
+               Submission.kind.in_([kind for kind in SubmissionKind if not kind.is_parallel]))
         .order_by(RevisionItem.id.desc()).limit(1)
     ).first()
     if latest is None:
@@ -377,19 +508,38 @@ RESULTS_BY_KIND: dict[SubmissionKind, tuple[str, ...]] = {
 }
 
 
+def result_options(protocol: Protocol, sub: Submission) -> tuple[str, ...]:
+    if sub.kind.is_parallel:
+        return ("acknowledged", "revision", "disapproved")
+    options = RESULTS_BY_KIND[sub.kind]
+    if protocol.committee == "public_irb" and sub.kind in (SubmissionKind.INITIAL, SubmissionKind.RESUBMISSION, SubmissionKind.AMENDMENT):
+        return (*options, "expedited_recheck")
+    return options
+
+
 def record_result(
     db: Session, user: User, protocol: Protocol, result: str, *, result_date: date | None = None,
     approval_end: date | None = None, irb_no: str = "", note: str = "", ip: str = "",
+    submission_id: int | None = None, source_id: int | None = None,
 ) -> Submission:
     """IRB 통지서의 결과를 입력한다(승인·시정승인·면제·부결·종료 확인). 보완 요청은 record_revision_request."""
     require_member(user, protocol)
-    sub = protocol.current_submission
-    if sub is None or sub.closed or protocol.status != S.SUBMITTED:
+    sub = db.get(Submission, submission_id) if submission_id is not None else protocol.current_submission
+    if sub is None or sub.protocol_id != protocol.id or sub.closed or (
+        not sub.kind.is_parallel and (protocol.status != S.SUBMITTED or sub != protocol.current_submission)
+    ):
         raise WorkflowError("결과를 입력할 제출 기록이 없습니다.")
-    if result not in RESULTS_BY_KIND[sub.kind]:
+    if result not in result_options(protocol, sub):
         raise WorkflowError(f"{sub.kind.label}에는 '{SUBMISSION_RESULTS.get(result, result)}' 결과를 입력할 수 없습니다.")
+    if source_id is not None and not any(d.id == source_id and d.has_file
+                                         and d.doc_type in ("result_notice", "exemption_confirmation")
+                                         for d in protocol.documents):
+        raise WorkflowError("이 과제에 첨부된 결과통지서 또는 면제확인서를 선택하십시오.")
     t = result_date or today()
-    if result in ("approved", "approved_with_conditions"):
+    if sub.kind.is_parallel:
+        if result == "acknowledged" and sub.kind == SubmissionKind.EARLY_TERMINATION:
+            protocol.status = S.CLOSED
+    elif result in ("approved", "approved_with_conditions"):
         if approval_end is None:
             base = protocol.expires_at if sub.kind == SubmissionKind.CONTINUING and protocol.expires_at else t
             approval_end = base + timedelta(days=get_settings().approval_validity_days)
@@ -414,13 +564,19 @@ def record_result(
             protocol.status = S.DISAPPROVED
     elif result == "acknowledged":
         protocol.status = S.CLOSED
-    if irb_no.strip():
+    if irb_no.strip() and not sub.kind.is_parallel:
         protocol.protocol_no = irb_no.strip()
     sub.result = result
     sub.result_date = t
+    sub.result_source = source_id
+    sub.result_issued_on = t
+    sub.result_entered_by = user.id
     sub.approval_end = approval_end if result in ("approved", "approved_with_conditions", "exempt") else None
     sub.result_note = note.strip()
-    _close_submission(sub, "decided")
+    if result == "expedited_recheck":
+        sub.outcome = "followup_pending"
+    else:
+        _close_submission(sub, "decided")
     audit.record(db, user, "decision", "protocol", protocol.id,
                  {"result": result, "kind": sub.kind.value,
                   "approval_end": approval_end.isoformat() if approval_end else None}, ip)
@@ -500,4 +656,25 @@ def run_scheduler(db: Session) -> dict[str, int]:
                     f"/protocols/{p.id}/package?kind=continuing", dedup_key=f"expiry:{p.id}:{p.expires_at}:{notice}",
                 )
                 break
+    from ..public_irb.records import ReportReminder
+
+    reminders = db.scalars(select(ReportReminder).where(ReportReminder.submitted_id.is_(None))).all()
+    for reminder in reminders:
+        protocol = db.get(Protocol, reminder.protocol_id)
+        if protocol is None:
+            continue
+        kind = SubmissionKind(reminder.kind)
+        if reminder.due_on is None:
+            stage, message = "check", f"{kind.label} 발생일에 적용되는 보고 기한을 공용 e-IRB에서 확인하십시오."
+        elif reminder.due_on <= t:
+            stage, message = "due", f"{kind.label} 예정 기한 {reminder.due_on.isoformat()}을 확인하십시오."
+        elif reminder.due_on <= t + timedelta(days=7):
+            stage, message = "upcoming", f"{kind.label} 예정 기한 {reminder.due_on.isoformat()}이 다가옵니다."
+        else:
+            continue
+        stats.setdefault("report_notices", 0)
+        stats["report_notices"] += notify(
+            db, protocol.member_ids(), message, f"/protocols/{protocol.id}/report/{kind.value}",
+            dedup_key=f"public-report:{protocol.id}:{kind.value}:{reminder.event_on}:{stage}",
+        )
     return stats

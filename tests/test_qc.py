@@ -10,6 +10,8 @@ from sqlalchemy import select
 from irb_automation.models import Protocol
 from irb_automation.qc import autofix, checks, facts, samples
 from irb_automation.qc import service as qcs
+from irb_automation.qc.review import select_reference
+from irb_automation.qc.scoring import assess
 
 
 def _docs():
@@ -45,19 +47,23 @@ def test_sample_rules_find_catcher_scenario():
     titles = " | ".join(i["title"] for i in issues)
     assert "투여 용량·횟수 불일치" in titles and "방문 횟수 불일치" in titles
     assert "파일명과 본문의 버전" in titles
-    assert "'피험자' → '연구대상자'" in titles and "'부작용' → '이상반응'" in titles
+    assert "'피험자' → '연구대상자'" in titles
+    assert any(i.get("flags") == ["의미가 다른 용어 혼동"] and not i["fixes"] for i in issues)
     assert "자발적 참여 및 언제든 철회할 권리" in titles and "'연구대상지'" in titles
-    score, verdict, counts = qcs.score(issues)
-    assert verdict == "FAIL" and counts["critical"] >= 3 and score < 80
-    # 계획서는 기준 문서이므로 교차 대조 이슈는 동의서에만
-    assert all(i["doc"] == "d2" for i in issues if i["category"] == "cross")
+    cross = [i for i in issues if i["category"] == "cross"]
+    assert cross and all(not i["fixes"] and len(i["locations"]) >= 2 for i in cross)
 
 
 def test_score_rules():
-    mk = lambda sev: {"severity": sev}  # noqa: E731
-    assert qcs.score([mk("major")] * 2) == (86, "PASS", {"critical": 0, "major": 2, "minor": 0})
-    assert qcs.score([mk("critical")])[1] == "FAIL"  # Critical 1건이면 점수와 무관하게 FAIL
-    assert qcs.score([mk("major")] * 3)[1] == "FAIL"  # 79점 < 80
+    def result(*severities):
+        res = assess([{"severity": sev, "review": "confirmed"} for sev in severities])
+        return res["score"], res["status"]
+
+    assert result("critical") == (85, "FAIL")
+    assert result("major", "major", "minor", "minor", "minor") == (80, "REVISE")
+    assert result("major", "major", "major") == (79, "REVISE")
+    assert result("minor", "minor") == (96, "MINOR")
+    assert result(*(["minor"] * 60)) == (0, "MINOR")
 
 
 def test_record_cross_check_against_protocol(db, users):
@@ -69,7 +75,7 @@ def test_record_cross_check_against_protocol(db, users):
                        "이 연구에는 총 1,500명의 연구대상자가 참여합니다.\n연구 기간: 2026.12.01 ~ 2027.06.30\n자료는 1년간 보관합니다.")
     p1, _ = checks.run_rules([doc], p)
     rec = {i["code"]: i for i in p1 if i["category"] == "record"}
-    assert rec["RECORD_SUBJECTS"]["severity"] == "critical"
+    assert rec["RECORD_SUBJECTS"]["severity"] == "major"
     assert "1,800명" in rec["RECORD_SUBJECTS"]["fixes"][0]["new"]
     assert rec["RECORD_STUDY_PERIOD"]["fixes"][0]["new"] == "2026.12.01 ~ 2027.11.30"
     assert any(i["code"] == "RETENTION_SHORT" for i in p1)
@@ -82,14 +88,16 @@ def test_autofix_docx_tracked_and_clean_preserve_layout():
 
     docs = _docs()
     p1, p3 = checks.run_rules(docs, None)
-    fixes = [f for i in p1 + p3 for f in i["fixes"] if f["doc"] == "d2"]
+    issues = [select_reference(i, 0) if i["category"] == "cross" and i["result"] == "mismatch" else i
+              for i in p1 + p3]
+    fixes = [f for i in issues for f in i["fixes"] if f["doc"] == "d2"]
     raw = samples.icf_docx()
     clean, rep, _ = autofix.apply("ICF_v3.0.docx", raw, fixes, mode="clean", font="맑은 고딕")
     tracked, _, _ = autofix.apply("ICF_v3.0.docx", raw, fixes, mode="tracked")
     assert rep.total >= 6
     text = qcs._read_doc("x", "ICF_v3.0.docx", clean, "consent_form").text
     assert "1일 1회 100mg" in text and "총 8회 방문" in text and "Version 3.0" in text
-    assert "피험자" not in text and "부작용" not in text and "연구대상지" not in text
+    assert "피험자" not in text and "부작용" in text and "연구대상지" not in text
     d = Document(BytesIO(clean))
     assert "Version 3.0" in d.sections[0].header.paragraphs[0].text  # 머리글도 교정
     assert any(r.font.highlight_color is not None for p in d.paragraphs for r in p.runs)
@@ -101,7 +109,7 @@ def test_autofix_docx_tracked_and_clean_preserve_layout():
     # 재점검하면 교차 대조·버전 이슈가 사라진다
     again = [docs[0], qcs._read_doc("d2", "ICF_v3.0.docx", clean, "consent_form")]
     p1b, p3b = checks.run_rules(again, None)
-    assert not [i for i in p1b if i["category"] in ("cross", "version", "terminology")]
+    assert not [i for i in p1b if i["category"] == "version" or (i["category"] == "cross" and i["result"] == "mismatch")]
     assert not [i for i in p3b if i["category"] == "typo"]
 
 
@@ -119,7 +127,7 @@ def test_autofix_rejects_pdf():
 def test_run_uploads_and_apply_fixes(db, users):
     files = [(n, f(), t) for n, t, f in samples.SAMPLES]
     qr = qcs.run_uploads(db, users["researcher"], files, use_ai=False)
-    assert qr.verdict == "FAIL" and qr.phases["2"]["status"] == "skipped"
+    assert qr.verdict == "HOLD" and qr.score == 100 and qr.phases["2"]["status"] == "skipped"
     ids = [i["id"] for i in qcs.fixable_issues(qr)]
     outs = qcs.apply_fixes(db, users["researcher"], qr, ids, font="맑은 고딕")
     assert outs and all(o.get("clean") for o in outs if not o.get("error"))
@@ -151,9 +159,12 @@ def test_ai_phase_with_fake_client(db, users, monkeypatch):
     monkeypatch.setattr(ai_pkg, "client", fake, raising=False)
     qr = qcs.run(db, users["researcher"], _docs(), use_ai=True)
     ai_issues = [i for i in qr.issues if i["source"] == "ai"]
-    assert ai_issues and ai_issues[0]["fixes"] == [{"doc": "d2", "old": "두통, 오심 등이", "new": "두통, 오심, 저혈당 등이"}]
+    assert ai_issues and ai_issues[0]["confidence"] == "ai_verified"
+    assert ai_issues[0]["fixes"] == [] and ai_issues[0]["review"] == "candidate"
     assert qr.ai_used and qr.phases["2"]["status"] == "done"
-    assert "이미 찾은 이슈" in calls[0]["content"][-1]["text"]
+    assert [c["purpose"] for c in calls] == ["규칙 점검 결과 재검토", "서류 품질 점검"]
+    assert "이미 찾은 이슈" in calls[1]["content"][-1]["text"]
+    assert qr.phases["verify"]["status"] == "done"
 
 
 def test_package_autocomplete(db, users):

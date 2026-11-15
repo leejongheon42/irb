@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}공용 IRB 원문 관리{% endblock %}
+{% block content %}
+<h1>공용 IRB 원문 관리</h1>
+<form method="post" action="/admin/public-irb/seed">{{ csrf_input }}<button type="submit">공용 IRB 참고 목록 불러오기</button></form>
+<section class="card"><h2>원문 등록</h2>
+<form method="post" action="/admin/public-irb/source" enctype="multipart/form-data">{{ csrf_input }}
+ <label>계열 <select name="series">{% for series in ["권고서식","별지","공용위원회 별지","시행규칙 별지","지침","조회자료"] %}<option>{{ series }}</option>{% endfor %}</select></label>
+ <label>번호 <input name="number" required></label><label>판본 <input name="version" required></label>
+ <label>제목 <input name="title"></label><label>출처 <input name="origin"></label>
+ <label>Notion 블록 ID <input name="notion_block_id"></label>
+ <label>작성 주체 <select name="owner"><option value="researcher">연구자</option><option value="committee">위원회</option><option value="reference">참고</option></select></label>
+ <label>적용 경로 <input name="applies_to"></label><label>원문 파일 <input type="file" name="file" required></label>
+ <button type="submit">등록</button>
+</form>
+</section>
+<section class="card"><h2>원문 목록</h2>
+{% for source in sources %}
+ <div class="finding"><strong>{{ source.title }}</strong> · ID {{ source.id }} · {{ source.series }} {{ source.number }} · {{ source.version }} · {{ {"unverified":"검수 대기","current":"현행","archived":"보관"}.get(source.status) }}
+ {% if source.sha256 %}
+ <a href="/public-irb/sources/{{ source.id }}/download">원문 받기</a> · 표지 대조 {{ source.cover_check }}
+ <a href="/admin/public-irb?draft_source={{ source.id }}">점검표 초안 추출</a>
+ {% if source.status != "current" %}<form method="post" action="/admin/public-irb/source/{{ source.id }}/verify">{{ csrf_input }}
+ <label>검수 메모 <input name="note"></label><button type="submit">검수하고 현행으로 지정</button></form>{% endif %}
+ {% endif %}</div>
+{% endfor %}
+</section>
+<section class="card"><h2>평가 항목 정의 등록</h2>
+ <form method="post" action="/admin/public-irb/checklists">{{ csrf_input }}
+ <label>항목 정의 JSON <textarea name="definition" rows="7" required>{{ draft }}</textarea></label>
+ <button type="submit">점검표 등록</button></form>
+</section>
+{% endblock %}

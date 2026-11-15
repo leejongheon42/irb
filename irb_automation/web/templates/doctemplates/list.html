@@ -6,6 +6,7 @@
     <div class="sub">병원에서 쓰는 원본 서식 파일을 그대로 올리면 자리표시자를 찾아 과제 정보와 연결합니다. 활성화된 서식은 '서류 자동 작성'에 바로 쓰입니다.</div></div>
   <div class="actions">
     <a class="btn" href="/doc-templates">서식 자료실 보기</a>
+    <a class="btn" href="/admin/public-irb">공용 IRB 원문 관리</a>
     <form method="post" action="/admin/templates/samples" class="inline-form" data-confirm="서로 다른 병원 양식의 샘플 서식 2종(심의의뢰서, 동의 면제 사유서)을 등록합니다.">{{ csrf_input }}<button type="submit">샘플 서식 만들기</button></form>
   </div>
 </div>
@@ -23,6 +24,10 @@
       <label for="file">서식 파일 <span class="hint">DOCX(워드) 또는 HWPX(한글) · 20MB 이하</span></label>
       <input id="file" name="file" type="file" accept=".docx,.hwpx" required>
       <label for="notes">메모</label><input id="notes" name="notes" type="text" placeholder="개정 사유 등">
+      <label>공용 IRB 파생본 원문 ID <input name="source_id" type="number" min="1"></label>
+      <label>공용 서식 유형 <select name="variant"><option value="">공통</option>
+      {% for key, value in {"intervention":"개입","survey":"조사","specimen":"인체유래물","stem_cell":"배아줄기세포주","records":"기존 정보","human":"인간대상"}.items() %}<option value="{{ key }}">{{ value }}</option>{% endfor %}
+      </select></label>
       <p><button class="btn-primary" type="submit">등록하고 자리표시자 찾기</button></p>
     </form>
     <p class="small muted">HWP(바이너리)·DOC 파일은 한글/워드에서 HWPX·DOCX로 저장해 올려 주십시오. 같은 서류 종류에 새 서식을 올리면 버전이 올라가고 이전 버전은 이력으로 남습니다.</p>

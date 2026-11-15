@@ -1,7 +1,7 @@
 """서류 품질 점검 실행·저장·자동 교정.
 
   업로드/과제 서류 → 텍스트 인식 → Phase 1 규칙(필수항목·버전·용어·미기입·교차/과제 정보 대조·규제)
-                    → Phase 2 AI 심층(선택) → Phase 3 오탈자·숫자·날짜 → 점수(100 - 15C - 7M - 2m) → PASS/FAIL
+                    → 규칙 지적 AI 재검토(선택) → Phase 2 AI 심층(선택) → Phase 3 오탈자·숫자·날짜 → 검토·점수 및 QC 판정
   → 이슈 선택 → 자동 교정(변경 추적본·수정 완료본) → 새 버전 저장 → 재점검
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ import hashlib
 import logging
 import uuid
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +19,15 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..config import get_settings
 from ..models import Document, Protocol, User
-from ..timeutil import now
 from . import autofix
+from .bundle import inspect_bundle, mixed_study_findings
 from .checks import QCDoc, criteria, run_rules
+from .grouping import group_issues, merge_ai_evidence
 from .models import QCRun
+from .profile import Answers, build_profile, profile_conditions
+from .review import refresh
+from .rules import rules
+from .units import annotate, observed_units
 
 log = logging.getLogger(__name__)
 SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2}
@@ -38,15 +44,16 @@ def qc_dir() -> Path:
 
 
 # ------------------------------------------------------------------ 문서 준비
-def _read_doc(key: str, name: str, raw: bytes, doc_type: str, document_id: int | None = None) -> QCDoc:
+def _read_doc(key: str, name: str, raw: bytes, doc_type: str, document_id: int | None = None,
+              *, allow_ai_ocr: bool = False) -> QCDoc:
     from ..docproc.text import detect_format, extract_text
 
-    ex = extract_text(name, raw)
+    ex = extract_text(name, raw, allow_ai_ocr=allow_ai_ocr)
     fmt = detect_format(name, raw)
     text = ex.text or ""
     extra = _header_footer_text(raw) if fmt == "docx" else ""
     if extra:
-        text = f"{extra}\n{text}\n{extra}"  # 머리글·바닥글(표지 버전 표기 등)도 점검 대상
+        text = f"{text}\n[QC: 머리글·바닥글]\n{extra}" if text.strip() else ""
     return QCDoc(key=key, name=name, doc_type=doc_type, text=text, document_id=document_id,
                  fmt=fmt, warnings=list(ex.warnings or []))
 
@@ -103,42 +110,63 @@ def _summary(protocol: Protocol | None) -> str:
     return "\n".join(lines)
 
 
-# ------------------------------------------------------------------ 점수
-def score(issues: list[dict]) -> tuple[int, str, dict[str, int]]:
-    sc = criteria().get("scoring", {})
-    counts = Counter(i["severity"] for i in issues)
-    total = 100 - counts["critical"] * int(sc.get("critical", 15)) - counts["major"] * int(sc.get("major", 7)) \
-        - counts["minor"] * int(sc.get("minor", 2))
-    total = max(0, total)
-    fail = (counts["critical"] > 0 and sc.get("critical_fails", True)) or total < int(sc.get("pass_score", 80))
-    return total, "FAIL" if fail else "PASS", {k: counts.get(k, 0) for k in ("critical", "major", "minor")}
-
-
 # ------------------------------------------------------------------ 실행
 def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None = None, use_ai: bool = True,
-        title: str = "", ip: str = "", store: dict[str, str] | None = None) -> QCRun:
+        title: str = "", ip: str = "", store: dict[str, str] | None = None, profile: Answers | None = None,
+        qr: QCRun | None = None, on_stage: Callable[[str], None] | None = None,
+        score_run: Callable[[QCRun], None] = refresh) -> QCRun:
     if not docs:
         raise QCError("점검할 서류가 없습니다.")
-    p1, p3 = run_rules(docs, protocol)
-    qr = QCRun(protocol_id=protocol.id if protocol else None, created_by=user.id, title=title[:200],
-               criteria_version=str(criteria().get("version", "")))
-    db.add(qr)
-    db.flush()
+    if on_stage:
+        on_stage("규칙 점검 중")
+    applied = build_profile(profile, protocol, docs)
+    bundle_units, bundle_issues = ([], []) if applied.get("compare_only") else inspect_bundle(docs, applied, protocol)
+    for condition, rule_ids in (("drug", ("M02", "M03")), ("visits", ("M04",))):
+        if applied.get(condition) is False:
+            bundle_units.extend({"rule": rid, "field": condition, "scope": "제출 묶음", "docs": [],
+                                 "result": "na", "reason": "연구 조건에 해당하지 않습니다."} for rid in rule_ids)
+    p1, p3 = run_rules(docs, protocol, profile_conditions(applied), applied, units=bundle_units)
+    mix = [] if applied.get("compare_only") else mixed_study_findings(docs)
+    p1 = bundle_issues + mix + p1
+    if qr is None:
+        qr = QCRun(protocol_id=protocol.id if protocol else None, created_by=user.id, title=title[:200])
+        db.add(qr)
+        db.flush()
     ai_issues: list[dict] = []
     ai_info: dict[str, Any] = {"status": "skipped", "message": "요청하지 않음"}
+    verify_info: dict[str, Any] = {"status": "skipped", "message": "요청하지 않음"}
     if use_ai:
         from .ai_phase import run_ai
+        from .ai_verify import verify_rule_findings
 
+        if on_stage:
+            on_stage("규칙 지적 AI 재검토 중")
+        verify_info = verify_rule_findings(docs, p1 + p3, db=db, user=user, entity_id=qr.id)
+        if on_stage:
+            on_stage("AI 심층 분석 중")
         ai_issues, ai_info = run_ai(docs, p1 + p3, _summary(protocol), db=db, user=user, entity_id=qr.id)
+        ai_issues = merge_ai_evidence(p1 + p3, ai_issues)
+    if on_stage:
+        on_stage("점수 계산 중")
+    qr.criteria_version = f"{criteria().get('version', '')}+r{rules()['version']}"[:32]
+    qr.profile = applied
     issues = sorted(p1 + ai_issues + p3, key=lambda i: (SEVERITY_ORDER.get(i["severity"], 9), i["phase"], i["doc"] or ""))
     for n, it in enumerate(issues, start=1):
         it["id"] = n
-    total, verdict, counts = score(issues)
+        annotate(it)
+        auto = criteria().get("review", {}).get("auto_confirm", [])
+        if (it["confidence"] == "rule" and it["result"] != "needs_check" and not it.get("advice")
+                and (it.get("rule_id") in auto or set(it.get("flags", [])) & set(auto))):
+            it["review"] = "confirmed"
+            it["review_note"] = "기관 설정에 따라 자동 확정"
     qr.issues = issues
-    qr.score, qr.verdict, qr.counts = total, verdict, counts
+    group_issues(issues)
+    qr.checks = observed_units(docs, issues, bundle_units)
     qr.ai_used = ai_info.get("status") == "done"
     qr.phases = {
         "1": {"label": "규칙 기반 스캔", "status": "done", "issues": len(p1)},
+        "verify": {"label": "규칙 지적 AI 재검토", "status": verify_info.get("status"),
+                   "issues": verify_info.get("dismissed", 0), "message": verify_info.get("message", "")},
         "2": {"label": "AI 심층 분석", "status": ai_info.get("status"), "issues": len(ai_issues),
               "message": ai_info.get("message", "")},
         "3": {"label": "오탈자·숫자·날짜 검증", "status": "done", "issues": len(p3)},
@@ -146,38 +174,31 @@ def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None
     by_doc = Counter(i["doc"] for i in issues)
     qr.docs = [{
         "key": d.key, "name": d.name, "doc_type": d.doc_type, "label": d.label, "document_id": d.document_id,
-        "path": (store or {}).get(d.key, ""), "fmt": d.fmt, "chars": len(d.text), "warnings": d.warnings,
+        "path": (store or {}).get(d.key, ""), "fmt": d.fmt, "chars": len(d.text.strip()), "warnings": d.warnings,
         "fixable": d.fmt in ("docx", "hwpx", "text"), "issues": by_doc.get(d.key, 0),
         "facts": [{"key": f.key, "value": f.value, "raw": f.raw} for f in d.facts][:40],
     } for d in docs]
-    if protocol is not None:
-        for d in docs:
-            if d.document_id:
-                doc = db.get(Document, d.document_id)
-                if doc is not None:
-                    sev = Counter(i["severity"] for i in issues if i["doc"] == d.key)
-                    doc.validation = {**(doc.validation or {}), "qc": {
-                        "run": qr.id, "critical": sev["critical"], "major": sev["major"], "minor": sev["minor"],
-                        "at": now().isoformat(timespec="minutes")}}
+    score_run(qr)
     audit.record(db, user, "qc_run", "protocol" if protocol else "qc_run", protocol.id if protocol else qr.id,
-                 {"run": qr.id, "score": total, "verdict": verdict, **counts, "docs": len(docs), "ai": qr.ai_used}, ip)
+                 {"run": qr.id, "score": qr.score, "verdict": qr.verdict, **qr.counts, "docs": len(docs), "ai": qr.ai_used}, ip)
     return qr
 
 
 def run_for_protocol(db: Session, user: User, protocol: Protocol, *, doc_ids: list[int] | None = None,
-                     use_ai: bool = True, ip: str = "") -> QCRun:
+                     use_ai: bool = True, ip: str = "", profile: Answers | None = None) -> QCRun:
     docs = protocol_documents(protocol)
     if doc_ids:
         docs = [d for d in docs if d.id in set(doc_ids)]
+        profile = {**(profile or {}), "compare_only": True}
     qdocs = [_read_doc(f"d{i}", d.filename, Path(d.stored_path).read_bytes(), d.doc_type, d.id)
              for i, d in enumerate(docs, start=1)]
     store = {f"d{i}": d.stored_path for i, d in enumerate(docs, start=1)}
-    return run(db, user, qdocs, protocol=protocol, use_ai=use_ai, ip=ip, store=store,
+    return run(db, user, qdocs, protocol=protocol, use_ai=use_ai, ip=ip, store=store, profile=profile,
                title=f"{protocol.title[:60]} 서류 {len(qdocs)}건")
 
 
 def run_uploads(db: Session, user: User, files: list[tuple[str, bytes, str | None]], *, use_ai: bool = True,
-                protocol: Protocol | None = None, ip: str = "") -> QCRun:
+                protocol: Protocol | None = None, ip: str = "", profile: Answers | None = None) -> QCRun:
     """빠른 점검: 과제와 무관하게 파일을 올려 점검(과제를 지정하면 과제 정보와도 대조)."""
     from ..submission.validate import validate_upload
 
@@ -196,16 +217,32 @@ def run_uploads(db: Session, user: User, files: list[tuple[str, bytes, str | Non
         qdocs.append(_read_doc(key, Path(name).name, raw, doc_type or _guess(name, raw)))
     if not qdocs:
         raise QCError("점검할 수 있는 파일이 없습니다. " + " / ".join(rejected))
-    qr = run(db, user, qdocs, protocol=protocol, use_ai=use_ai, ip=ip, store=store,
+    qr = run(db, user, qdocs, protocol=protocol, use_ai=use_ai, ip=ip, store=store, profile=profile,
              title=", ".join(d.name for d in qdocs)[:200])
     if rejected:
         qr.phases = {**qr.phases, "rejected": rejected}
     return qr
 
 
+def rerun_saved(db: Session, user: User, previous: QCRun, *, profile: Answers, ip: str = "") -> QCRun:
+    """Repeat the exact saved bundle with edited answers."""
+    docs, store = [], {}
+    for entry in previous.docs:
+        path = Path(entry.get("path") or "")
+        if not path.is_file():
+            raise QCError("저장된 서류를 읽을 수 없습니다. 원본을 다시 업로드해 주세요.")
+        store[entry["key"]] = str(path)
+        docs.append(_read_doc(entry["key"], entry["name"], path.read_bytes(), entry["doc_type"], entry["document_id"]))
+    return run(db, user, docs, protocol=previous.protocol, use_ai=previous.ai_used, ip=ip, store=store,
+               profile=profile, title=previous.title)
+
+
 # ------------------------------------------------------------------ 자동 교정
 def fixable_issues(qr: QCRun) -> list[dict]:
-    return [i for i in qr.issues if i.get("fixes") and any((qr.doc(f["doc"]) or {}).get("fixable") for f in i["fixes"])]
+    return [i for i in qr.issues if i.get("fixes") and i.get("result") != "needs_check"
+            and i.get("review") not in ("dismissed", "resolved", "accepted") and not i.get("merged_into")
+            and (i.get("category") != "cross" or i.get("reference"))
+            and any((qr.doc(f["doc"]) or {}).get("fixable") for f in i["fixes"])]
 
 
 def apply_fixes(db: Session, user: User, qr: QCRun, issue_ids: list[int], *, font: str | None = None,
@@ -214,8 +251,7 @@ def apply_fixes(db: Session, user: User, qr: QCRun, issue_ids: list[int], *, fon
 
     과제 서류는 수정 완료본을 새 버전으로 저장(save_version)한다. 반환: 출력 파일 목록.
     """
-    chosen = [qr.issue(i) for i in issue_ids]
-    chosen = [c for c in chosen if c and c.get("fixes")]
+    chosen = [i for i in fixable_issues(qr) if i["id"] in issue_ids]
     per_doc: dict[str, list[dict]] = {}
     for it in chosen:
         for fx in it["fixes"]:

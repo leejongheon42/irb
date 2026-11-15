@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ai = ["anthropic>=2.5"]
+ai = ["anthropic>=2.5", "httpx>=0.27", "jsonschema>=4.23", "pypdfium2>=4.30", "Pillow>=10"]
 dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.6"]
 
 [project.scripts]
@@ -29,7 +29,7 @@ build-backend = "setuptools.build_meta"
 include = ["irb_automation*"]
 
 [tool.setuptools.package-data]
-irb_automation = ["rules/*.yaml", "web/templates/**/*.html", "web/templates/*.html", "web/static/*"]
+irb_automation = ["ai/*.yaml", "rules/*.yaml", "qc/*.yaml", "qc/*.json", "web/templates/**/*.html", "web/templates/*.html", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,257 @@
+from __future__ import annotations
+
+import io
+import re
+from datetime import timedelta
+from pathlib import Path
+from zipfile import ZipFile
+
+import pytest
+from fastapi.testclient import TestClient
+from pypdf import PdfWriter
+from sqlalchemy import select
+
+from irb_automation.ai import client as ai_client
+from irb_automation.mvp.models import MvpUpload
+from irb_automation.qc.category_scores import score_run
+from irb_automation.qc.checks import criteria
+from irb_automation.qc.models import QCRun
+from irb_automation.submission.validate import validate_upload
+from irb_automation.timeutil import now
+
+from .conftest import PASSWORD, make_pdf
+from .test_submission import docx_bytes
+
+
+def _token(html: str) -> str:
+    match = re.search(r'name="csrf_token" value="([^\"]+)"', html)
+    assert match
+    return match[1]
+
+
+def _login(client: TestClient, username: str = "researcher") -> str:
+    login = client.get("/login")
+    result = client.post("/login", data={"username": username, "password": PASSWORD, "csrf_token": _token(login.text)},
+                         follow_redirects=False)
+    assert result.status_code == 303 and result.headers["location"] == "/mvp"
+    assert client.get("/", follow_redirects=False).headers["location"] == "/mvp"
+    return _token(client.get("/mvp").text)
+
+
+@pytest.fixture
+def client(app, settings):
+    settings.mvp_mode = True
+    settings.pipeline_sync = True
+    settings.ai_review_enabled = False
+    with TestClient(app) as client:
+        yield client
+
+
+def _upload(client: TestClient, token: str, *files: tuple[str, bytes]):
+    response = client.post("/mvp/files", data={"csrf_token": token}, files=[("files", file) for file in files],
+                           headers={"Accept": "application/json"})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_five_uploads_persist_and_review_with_consistent_scorecard(client):
+    token = _login(client)
+    files = [("연구계획서.txt", "연구 제목: 진료기록 후향적 연구\n연구 방법: 후향적 관찰 연구".encode()),
+             ("data.csv", b"year,count\n2026,10"), ("scan.pdf", make_pdf()), ("신청서.docx", docx_bytes()),
+             ("image.png", b"\x89PNG\r\n\x1a\n")]
+    uploaded = _upload(client, token, *files)
+    assert [(row["name"], row["status"]) for row in uploaded] == [(name, "ok") for name, _ in files]
+    refreshed = client.get("/mvp").text
+    assert all(name in refreshed for name, _ in files)
+    assert 'class="sidebar"' not in refreshed and 'aria-current="step"' in refreshed
+
+    started = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False)
+    assert started.status_code == 303
+    review_url = started.headers["location"]
+    result = client.get(f"/api{review_url}").json()
+    review = client.get(review_url)
+    assert result == {"status": "done", "stage": "채점 완료", "score": int(re.search(r'<strong>(\d+)</strong>', review.text)[1]),
+                      "verdict": "FAIL"}
+    assert review.text.count("<meter ") == 5 and "AI 심층 분석 없이 채점됨" in review.text
+    scorecard = client.get(f"{review_url}/scores")
+    assert scorecard.status_code == 200 and f'<td>{result["score"]}</td><td colspan=' in scorecard.text
+    rules = client.get(f"{review_url}/scores?tab=criteria")
+    assert rules.status_code == 200
+    for name in ("critical", "major", "minor"):
+        assert f"{name.title()} · {criteria()['scoring'][name]}점" in rules.text
+
+
+def test_only_pending_owner_can_delete_and_binary_is_removed(client, db):
+    token = _login(client)
+    row, = _upload(client, token, ("report.txt", b"Research report"))
+    path = Path(db.get(MvpUpload, row["id"]).path)
+    assert path.is_file()
+    admin_token = _login(client, "admin")
+    route = f"/mvp/files/{row['id']}/delete"
+    assert client.post(route, data={"csrf_token": admin_token}).status_code == 404
+    assert path.is_file()
+
+    token = _login(client)
+    assert client.post(route, data={"csrf_token": token}, follow_redirects=False).status_code == 303
+    assert not path.exists()
+    assert row["name"] not in client.get("/mvp").text
+
+
+def test_rejected_uploads_cannot_start_review(client, settings):
+    settings.max_upload_mb = 1
+    token = _login(client)
+    invalid = _upload(client, token, ("bundle.zip", b"zip"), ("data.txt", b"a" * (1024 * 1024 + 1)))
+    assert [(item["status"], "ZIP" in item["message"], "초과" in item["message"]) for item in invalid] == [
+        ("rejected", True, False), ("rejected", False, True),
+    ]
+    denied = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False)
+    assert denied.status_code == 303 and denied.headers["location"] == "/mvp"
+    cleared = client.post("/mvp/files/clear", data={"csrf_token": token})
+    assert all(item["name"] not in cleared.text for item in invalid)
+
+
+def test_unreadable_document_has_no_score_and_is_private(client):
+    token = _login(client)
+    blank = PdfWriter()
+    blank.add_blank_page(width=400, height=600)
+    with io.BytesIO() as buffer:
+        blank.write(buffer)
+        row, = _upload(client, token, ("scan.pdf", buffer.getvalue()))
+    assert row["status"] == "ok" and "본문을 읽지 못함" in row["message"]
+    run = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
+    assert client.get(f"/api{run}").json()["score"] is None
+    assert "채점 불가" in client.get(run).text
+
+    _login(client, "admin")
+    assert client.get(run).status_code == 404
+    assert client.get(f"/api{run}").status_code == 404
+    assert client.get(f"{run}/scores").status_code == 404
+
+
+def test_ai_provider_failure_still_returns_rule_score(client, settings, monkeypatch, db):
+    settings.ai_review_enabled = True
+    settings.ai_provider = "openrouter"
+    settings.openrouter_api_key = "test-key"
+
+    def unavailable(**_request):
+        raise ai_client.AIUnavailable("Test provider unavailable")
+
+    monkeypatch.setattr(ai_client, "structured_call", unavailable)
+    token = _login(client)
+    _upload(client, token, ("memo.txt", b"Synthetic study memo for deterministic rule scoring."))
+    review = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
+
+    result = client.get(f"/api{review}").json()
+    assert result["status"] == "done" and isinstance(result["score"], int)
+    assert "AI 심층 분석 없이 채점됨" in client.get(review).text
+    assert db.get(QCRun, int(review.rsplit("/", 1)[1])).phases["2"]["status"] == "failed"
+
+
+def test_stalled_review_becomes_failed_and_can_retry_same_files(client, db, users):
+    token = _login(client)
+    upload, = _upload(client, token, ("report.txt", b"Research report"))
+    run = QCRun(created_by=users["researcher"].id, status="running", mvp_attempt="prior-attempt",
+                stage_updated_at=now() - timedelta(minutes=11))
+    db.add(run)
+    db.flush()
+    db.get(MvpUpload, upload["id"]).run_id = run.id
+    db.commit()
+    url = f"/mvp/review/{run.id}"
+    assert client.get(f"/api{url}").json()["status"] == "failed"
+
+    retry = client.post(f"{url}/retry", data={"csrf_token": token}, follow_redirects=False)
+    assert retry.headers["location"] == url
+    assert client.get(f"/api{url}").json()["status"] == "done"
+    db.expire_all()
+    assert db.scalar(select(MvpUpload.run_id).where(MvpUpload.id == upload["id"])) == run.id
+
+
+def test_scoring_caps_area_and_counts_verified_highest_severity_once():
+    def issue(i: int, category: str, severity: str, **values):
+        return {"id": i, "category": category, "severity": severity, "doc": "d1", **values}
+
+    run = QCRun(docs=[{"key": "d1", "chars": 100}], issues=[
+        issue(1, "version", "minor", group="shared"),
+        issue(2, "version", "critical", group="shared"),
+        issue(3, "numbers", "major", review="confirmed"),
+        issue(4, "cross", "critical", confidence="ai_unverified"),
+        issue(5, "typo", "minor", confidence="ai_verified"),
+        issue(6, "placeholder", "major", result="needs_check"),
+        issue(7, "regulatory", "critical", advice=True),
+        issue(8, "required", "critical", merged_into=2),
+    ])
+    score_run(run)
+    areas = run.counts["areas"]
+    assert [(area["score"], area["issue_ids"]) for area in areas.values()] == [
+        (35, []), (25, []), (20, []), (0, [2, 3]), (8, [5]),
+    ]
+    assert run.score == sum(area["score"] for area in areas.values()) == 88
+    assert run.counts["documents"]["d1"]["deduction"] == 12
+    assert run.verdict == "FAIL"
+
+
+@pytest.mark.parametrize(("name", "entries", "data"), [
+    ("slides.pptx", {"[Content_Types].xml": "", "ppt/presentation.xml": ""}, b""),
+    ("document.odt", {"mimetype": "application/vnd.oasis.opendocument.text", "content.xml": ""}, b""),
+    ("document.rtf", {}, b"{\\rtf1 Sample document}"),
+])
+def test_office_formats_require_matching_signatures(name, entries, data):
+    if entries:
+        buffer = io.BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            for filename, content in entries.items():
+                archive.writestr(filename, content)
+        data = buffer.getvalue()
+    assert validate_upload(name, data).ok
+    assert not validate_upload(name, b"not an office document").ok
+
+
+def test_running_review_in_this_process_is_not_expired(client, db, users, monkeypatch):
+    from irb_automation.mvp import service
+
+    _login(client)
+    run = QCRun(created_by=users["researcher"].id, status="running", mvp_attempt="live", stage="AI 심층 분석 중",
+                stage_updated_at=now() - timedelta(minutes=30))
+    db.add(run)
+    db.commit()
+    monkeypatch.setattr(service, "_running", {run.id})
+    assert client.get(f"/api/mvp/review/{run.id}").json()["status"] == "running"
+    monkeypatch.setattr(service, "_running", set())
+    assert client.get(f"/api/mvp/review/{run.id}").json()["status"] == "failed"
+
+
+def test_unscored_findings_are_listed_for_manual_check(client, settings, monkeypatch):
+    settings.ai_review_enabled = True
+    settings.ai_provider = "openrouter"
+    settings.openrouter_api_key = "test-key"
+    monkeypatch.setattr(ai_client, "structured_call", lambda **_request: {"summary": "검토 요약 문장", "issues": [
+        {"doc_index": 0, "severity": "major", "category": "context", "title": "인용이 원문에 없는 지적",
+         "rule_id": "M10", "flag": "서술 모순", "evidence": "문서에 없는 문장입니다.", "locations": []},
+        {"doc_index": 0, "severity": "major", "category": "context", "title": "원문으로 확인된 지적",
+         "rule_id": "M10", "flag": "서술 모순", "evidence": "대상자는 익명으로 처리한다.", "locations": []},
+    ]})
+    token = _login(client)
+    _upload(client, token, ("memo.txt", "대상자는 익명으로 처리한다. 대상자의 등록번호를 수집한다.".encode()))
+    review = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
+
+    page = client.get(review).text
+    assert "AI 심층 분석 포함" in page and "AI 심층 분석 없이 채점됨" not in page
+    scores = client.get(f"{review}/scores").text
+    assert "확인 필요 항목" in scores and "인용이 원문에 없는 지적" in scores and "원문 인용 미확인" in scores
+    assert "검토 요약 문장" in scores
+    verified = re.search(r"원문으로 확인된 지적</strong>\s*<p class=\"small muted\">([^<]+)", scores)
+    assert verified and "AI 지적" in verified[1] and "감점" in verified[1]
+
+
+def test_local_env_file_fills_only_unset_variables(tmp_path, monkeypatch):
+    from irb_automation.config import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text("# comment\nIRB_AI_ENABLED=true\nOPENROUTER_API_KEY='file-key'\nIRB_AI_PROVIDER=openrouter\n", encoding="utf-8")
+    import os
+
+    fake = {"IRB_AI_PROVIDER": "anthropic"}
+    monkeypatch.setattr(os, "environ", fake)
+    assert load_env_file(env)
+    assert fake == {"IRB_AI_ENABLED": "true", "OPENROUTER_API_KEY": "file-key", "IRB_AI_PROVIDER": "anthropic"}
+    assert not load_env_file(tmp_path / "missing.env")

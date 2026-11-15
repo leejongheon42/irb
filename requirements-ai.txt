@@ -1,2 +1,6 @@
 # (선택) AI 사전검토 보조 기능 - 기관 정보보호 승인 후에만 사용
 anthropic>=2.5
+httpx>=0.27
+jsonschema>=4.23
+pypdfium2>=4.30
+Pillow>=10

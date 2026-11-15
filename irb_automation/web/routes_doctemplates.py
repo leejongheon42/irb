@@ -73,6 +73,7 @@ async def template_upload(request: Request, user: User = Depends(template_admin)
         tpl = service.upload_template(
             db, user, filename=upload.filename, raw=raw, doc_type=str(form.get("doc_type", "")),
             name=str(form.get("name", "")), notes=str(form.get("notes", "")), ip=client_ip(request),
+            source_id=_source_id(form.get("source_id")), variant=str(form.get("variant", "")),
         )
     except wf.WorkflowError as e:
         db.rollback()
@@ -84,6 +85,15 @@ async def template_upload(request: Request, user: User = Depends(template_admin)
                    f"{len(tpl.placeholders) - len(missing)}개를 자동 매핑했습니다. 확인 후 활성화하십시오.",
           "success" if not missing else "info")
     return RedirectResponse(f"/admin/templates/{tpl.id}", status_code=303)
+
+
+def _source_id(value: object) -> int | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if not raw.isascii() or not raw.isdecimal() or len(raw) > 12:
+        raise service.TemplateError("원문 ID를 확인하십시오.")
+    return int(raw)
 
 
 @router.post("/admin/templates/samples", dependencies=[Depends(verify_csrf)])

@@ -6,18 +6,22 @@ raw는 문서에 실제로 적힌 문자열(자동 교정 시 찾아 바꿀 대�
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
+from decimal import Decimal
 
 NUM = r"\d{1,3}(?:,\d{3})+|\d+"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Fact:
     key: str
     value: str
     raw: str
     line: str = ""
+    field: str = ""
+    scope: str = ""
+    ambiguous: bool = False
 
 
 # ------------------------------------------------------------------ 버전
@@ -42,13 +46,23 @@ def version_from_filename(name: str) -> str | None:
 
 
 def versions_in_body(text: str) -> list[Fact]:
-    head = text[:4000] + "\n" + text[-1500:]  # 표지·머리글·바닥글에 주로 표기
     out: list[Fact] = []
-    for m in _VER_BODY.finditer(head):
-        v = m.group(1) or m.group(2)
-        if not v:
+    history = False
+    where = "cover"
+    for index, line in enumerate(text.splitlines()):
+        if line.startswith("[QC:"):
+            where = "header_footer"
+        elif index > 5 and where == "cover":
+            where = "body"
+        if re.match(r"^\s*(?:#+\s*)?(?:개정\s*이력|변경\s*이력|Revision History|Version History)", line, re.I):
+            history = True
             continue
-        out.append(Fact("version", normalize_version(v), m.group(0).strip(), _line_of(head, m.start())))
+        if re.match(r"^\s*(?:\[QC:|(?:본\s*문서|현재)\s*버전|(?:[Ⅰ-Ⅻ]\.|제\s*\d+\s*장)|(?:\d+[.)]\s*)?연구\s*(?:목적|배경|방법|대상))", line):
+            history = False
+        if history or re.search(r"이전\s*버전|[vV]\s*\d[\d.]*\s*에서\s*변경", line):
+            continue
+        out.extend(Fact("version", normalize_version(m.group(1) or m.group(2)), m.group(0).strip(), line, scope=where)
+                   for m in _VER_BODY.finditer(line))
     return out
 
 
@@ -94,15 +108,22 @@ _SUBJECTS = re.compile(
     r"(?:목표\s*)?(?:연구\s*)?(?:대상자|피험자|시험대상자|환자|참여자)\s*(?:수|의\s*수)?\s*(?:는|은|:|：)?\s*"
     r"(?:총|약|최대|전체)?\s*(" + NUM + r")\s*(?:명|례|건)"
     r"|(?:총|약)\s*(" + NUM + r")\s*명(?:의|이|을)?\s*(?:연구대상자|대상자|환자|피험자|참여)"
+    r"|(" + NUM + r")\s*명(?:이|의\s*대상자가)\s*참여"
 )
+_GROUPS = re.compile(r"(?:시험군|실험군|치료군)\s*(" + NUM + r")\s*명\s*[,，·및]+\s*대조군\s*(" + NUM + r")\s*명")
+DOSE_AMOUNT = re.compile(r"\d+(?:\.\d+)?\s*(?:mg|㎎|g|mL|ml|㎖|μg|mcg|IU|단위)(?![A-Za-z])(?:\s*/\s*(?:kg|m2|㎡|day|일))?")
 _DOSAGE = re.compile(
-    r"(?:1일|하루|매일)\s*(\d+)\s*회\s*,?\s*(?:1회\s*)?(\d+(?:\.\d+)?)\s*(mg|㎎|g|mL|ml|㎖|μg|mcg|IU|단위)"
+    r"(?:(?:1일|하루|매일)\s*(?:(\d+)\s*회\s*,?\s*)?(?:아침\s*|저녁\s*|1회\s*)?|1회\s*)"
+    r"(\d+(?:\.\d+)?)\s*(mg|㎎|g|mL|ml|㎖|μg|mcg|IU|단위)(?![A-Za-z])"
+    r"(?:\s*/\s*(kg|m2|㎡|day|일))?(?!\s*/)"
 )
-_VISITS = re.compile(r"(?:총|전체)\s*(\d+)\s*회\s*(?:의\s*)?(?:방문|내원)|(?:방문|내원)\s*(?:횟수)?\s*(?:는|은|:|：)?\s*(?:총)?\s*(\d+)\s*회")
+_KOREAN_NUMBERS = {"한": 1, "두": 2, "세": 3, "네": 4, "다섯": 5, "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10}
+_VISIT_NUMBER = r"\d+|" + "|".join(_KOREAN_NUMBERS)
+_VISITS = re.compile(r"(?:총|전체)\s*(" + _VISIT_NUMBER + r")\s*(?:회|차례)\s*(?:의\s*)?(?:방문|내원)|(?:방문|내원)\s*(?:횟수)?\s*(?:는|은|:|：)?\s*(?:총)?\s*(" + _VISIT_NUMBER + r")\s*(?:회|차례)")
 _DURATION = re.compile(
     r"(?:시험|참여|투약|투여|치료|관찰)\s*기간\s*(?:은|는|:|：)?\s*(?:총|약)?\s*(\d+)\s*(주|개월|달|일|년)"
 )
-_RETENTION = re.compile(r"(\d+)\s*년\s*(?:간|동안)?\s*(?:보관|보존)")
+_RETENTION = re.compile(r"(\d+)\s*년\s*(?:(?:간|동안)?\s*(?:보관|보존)|(?:이\s*지나면|후|뒤)\s*(?:폐기|파기|삭제))")
 _DRUG = re.compile(r"(?:시험약|연구약|시험약물|시험제품|임상시험용\s*의약품)\s*(?:명|명칭)?\s*(?:은|는|:|：)\s*([A-Za-z가-힣][A-Za-z0-9가-힣\-]{1,30})")
 _PI = re.compile(r"(?:연구책임자|책임연구자|연구 책임자)\s*(?:성명|이름)?\s*(?:은|는|:|：)\s*([가-힣]{2,4})(?![가-힣])")
 _TITLE = re.compile(r"(?:연구\s*제목|연구\s*과제명|과제명|연구명)\s*(?:\(국문\))?\s*[:：]\s*(.{6,200})")
@@ -120,19 +141,41 @@ def _line_of(text: str, pos: int) -> str:
     return text[start:end if end != -1 else None].strip()[:200]
 
 
+def _near(text: str, start: int, end: int) -> str:
+    prefix = re.split(r"[,;，\n]|이며|이고", text[max(0, start - 45):start])[-1]
+    return prefix + text[start:end]
+
+
 def extract(text: str) -> list[Fact]:
+    from .extra_facts import extract_extra
+
     facts: list[Fact] = []
     for m in _SUBJECTS.finditer(text):
-        n = m.group(1) or m.group(2)
+        n = m.group(1) or m.group(2) or m.group(3)
         if n and 1 <= _num(n) <= 10_000_000:
-            facts.append(Fact("subjects", str(_num(n)), m.group(0).strip(), _line_of(text, m.start())))
+            facts.append(_with_scope(Fact("subjects", str(_num(n)), m.group(0).strip(),
+                                          _line_of(text, m.start())), _near(text, m.start(), m.end())))
+    if not facts:
+        for m in _GROUPS.finditer(text):
+            if re.search(r"(?:총|합계|전체)\s*[\d,]+\s*명", _line_of(text, m.start())):
+                continue
+            facts.append(Fact("subjects", str(_num(m.group(1)) + _num(m.group(2))), m.group(0), _line_of(text, m.start())))
     for m in _DOSAGE.finditer(text):
         unit = UNIT_ALIASES.get(m.group(3), m.group(3))
-        facts.append(Fact("dosage", f"{int(m.group(1))}회/{float(m.group(2)):g}{unit}", m.group(0).strip(),
-                          _line_of(text, m.start())))
+        amount = Decimal(m.group(2))
+        if unit == "g":
+            unit, amount = "mg", amount * 1000
+        if unit == "μg":
+            unit, amount = "mg", amount / 1000
+        denominator = {"㎡": "m2", "일": "day"}.get(m.group(4), m.group(4))
+        if denominator:
+            unit = f"{unit}/{denominator}"
+        facts.append(_with_scope(Fact("dosage", f"{int(m.group(1) or 1)}회/{amount.normalize():f}{unit}",
+                                      m.group(0).strip(), _line_of(text, m.start())), _near(text, m.start(), m.end())))
     for m in _VISITS.finditer(text):
         n = m.group(1) or m.group(2)
-        facts.append(Fact("visits", str(int(n)), m.group(0).strip(), _line_of(text, m.start())))
+        facts.append(_with_scope(Fact("visits", str(_KOREAN_NUMBERS[n] if n in _KOREAN_NUMBERS else int(n)),
+                                      m.group(0).strip(), _line_of(text, m.start())), _near(text, m.start(), m.end())))
     for m in _DURATION.finditer(text):
         unit = UNIT_ALIASES.get(m.group(2), m.group(2))
         facts.append(Fact("duration", f"{int(m.group(1))}{unit}", m.group(0).strip(), _line_of(text, m.start())))
@@ -150,7 +193,48 @@ def extract(text: str) -> list[Fact]:
             if pat.search(line):
                 facts.append(Fact(key, _fmt_range(a, b), raw, line))
                 break
-    return facts
+    return [f if f.field else _with_scope(f) for f in facts] + extract_extra(text)
+
+
+def _with_scope(fact: Fact, context: str = "") -> Fact:
+    line = context or fact.line
+    arm = re.findall(r"시험군|실험군|치료군|대조군", line)
+    scope = arm[0] if len(set(arm)) == 1 else ""
+    field = fact.key
+    uncertain = len(set(arm)) > 1
+    if fact.key == "subjects":
+        if _GROUPS.fullmatch(fact.raw):
+            return replace(fact, field="subjects_total")
+        if re.search(r"기관별|각 기관|기관당", line):
+            field, uncertain = "subjects_site", True
+        elif re.search(r"분석\s*(?:대상|군)|탈락", line):
+            field = "subjects_analysis"
+        elif arm:
+            field = "subjects_arm"
+        else:
+            field = "subjects_total"
+        uncertain |= bool(re.search(r"약\s*\d|최대|최소", fact.raw))
+    elif fact.key == "duration":
+        label = fact.raw.split("기간", 1)[0].strip()
+        field = {"참여": "period_individual", "투약": "dose_duration", "투여": "dose_duration",
+                 "치료": "period_treatment", "시험": "period_trial", "관찰": "period_followup"}.get(label, "duration")
+        scope = scope + next(iter(re.findall(r"등록일|투여일|마지막 방문", line)), "")
+    elif fact.key == "visits":
+        field = "visits_optional" if re.search(r"선택|추가|필요\s*시", line) else "visits_required"
+    elif fact.key == "dosage":
+        if re.match(r"1일|하루|매일", fact.raw) and not re.search(r"\d+\s*회", fact.raw):
+            field = "dose_daily"
+        else:
+            field = "dose_unit"
+        drug = re.search(r"(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9-]*약|시험약|대조약)(?=\s|은|는|이|가|을|를|:|$)", line)
+        if drug:
+            scope += "|" + drug[1].lower()
+        uncertain |= bool(re.search(r"필요\s*시|증량|감량|교대", line, re.I))
+    elif fact.key == "retention":
+        scope = next(iter(re.findall(r"연구\s*종료\s*후|수집일\s*부터", line)), "").replace(" ", "")
+    elif fact.key in ("study_period", "data_period"):
+        uncertain |= "?" in fact.value or bool(re.search(r"기관별|예상|잠정", line))
+    return replace(fact, field=field, scope=scope, ambiguous=uncertain)
 
 
 def _norm_title(t: str) -> str:
@@ -189,6 +273,8 @@ def _kr_range(a: date | None, b: date | None) -> str:
 
 def restyle(key: str, old_raw: str, ref: Fact) -> str | None:
     """old_raw(문서 표기)를 기준값 ref에 맞게 고친 문자열. 형식은 가능한 한 원문을 따른다."""
+    if key == "subjects" and _GROUPS.search(old_raw):
+        return None
     if key in ("subjects", "visits", "retention"):
         nums = list(re.finditer(NUM, old_raw))
         if not nums:
@@ -210,7 +296,12 @@ def restyle(key: str, old_raw: str, ref: Fact) -> str | None:
             core = m.group(0).rstrip()
             out = out[:m.start()] + _like(core, d) + m.group(0)[len(core):] + out[m.end():]
         return out
-    if key in ("dosage", "duration", "drug", "pi", "title"):
+    if key == "dosage":
+        old, selected = DOSE_AMOUNT.search(old_raw), DOSE_AMOUNT.search(ref.raw)
+        if old and selected:
+            return old_raw[:old.start()] + selected[0] + old_raw[old.end():]
+        return None
+    if key in ("dose_freq", "dose_route", "duration", "drug", "pi", "title"):
         return ref.raw if ref.raw and ref.raw != old_raw else None
     return None
 

@@ -26,6 +26,10 @@ class DocumentTemplate(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     doc_type: Mapped[str] = mapped_column(String(50), index=True)
+    committee: Mapped[str] = mapped_column(String(20), default="institution")
+    variant: Mapped[str] = mapped_column(String(40), default="")
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("source_documents.id"), nullable=True)
+    derived_from_sha: Mapped[str] = mapped_column(String(64), default="")
     name: Mapped[str] = mapped_column(String(200))
     fmt: Mapped[str] = mapped_column(String(10))  # docx | hwpx
     original_filename: Mapped[str] = mapped_column(String(255))

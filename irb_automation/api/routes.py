@@ -22,6 +22,7 @@ from ..engine.facts import ProtocolFacts
 from ..engine.prereview import run_prereview
 from ..models import Protocol, Role, User
 from ..web.deps import current_user, require_roles
+from ..workflow import service as wf
 from ..workflow.service import can_view
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -31,6 +32,14 @@ class FactsIn(BaseModel):
     """무상태 사전검토 입력. 필드 의미는 engine.facts.ProtocolFacts 참조."""
 
     title: str = ""
+    committee: str = "institution"
+    access_route: str = ""
+    research_category: str = ""
+    research_method: list[str] = Field(default_factory=list)
+    consent_routes: list[str] = Field(default_factory=list)
+    subject_age_min: int | None = None
+    subject_age_max: int | None = None
+    application_route: str = "new"
     study_type: str = "retrospective_chart_review"
     objectives: str = ""
     methods: str = ""
@@ -103,6 +112,30 @@ def protocol_prereview(pid: int, user: User = Depends(current_user), db: Session
     if sub is None or sub.latest_prereview is None:
         raise HTTPException(404, "제출된 신청건이 없습니다.")
     return sub.latest_prereview.result
+
+
+@router.get("/protocols/{pid}/requirements")
+def requirements(pid: int, kind: str | None = None, submission_id: int | None = None,
+                 user: User = Depends(current_user),
+                 db: Session = Depends(get_db)) -> dict[str, Any]:
+    from ..models import Submission, SubmissionKind
+    from ..public_irb.records import replay
+
+    protocol = db.get(Protocol, pid)
+    if protocol is None or not can_view(db, user, protocol):
+        raise HTTPException(404)
+    if submission_id is not None:
+        submission = db.get(Submission, submission_id)
+        if submission is None or submission.protocol_id != pid or submission.latest_prereview is None:
+            raise HTTPException(404)
+        result = replay(db, submission.basis or {}) or submission.latest_prereview.result
+        return {"committee": submission.snapshot.get("committee", "institution"), "kind": submission.kind.value,
+                "submission_id": submission.id, "items": result["checklist"]}
+    selected = kind or wf.preview_kind(protocol)
+    if selected not in {k.value for k in SubmissionKind}:
+        raise HTTPException(422, "유효하지 않은 제출 유형입니다.")
+    result = wf.preview(db, protocol, selected)
+    return {"committee": protocol.committee, "kind": selected, "items": result["checklist"]}
 
 
 @router.post("/deid/analyze")

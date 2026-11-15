@@ -21,14 +21,21 @@ class QCRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     title: Mapped[str] = mapped_column(String(200), default="")
     score: Mapped[int] = mapped_column(Integer, default=100)
-    verdict: Mapped[str] = mapped_column(String(8), default="PASS")  # PASS | FAIL
+    verdict: Mapped[str] = mapped_column(String(8), default="HOLD")
     counts: Mapped[dict] = mapped_column(JSON, default=dict)
     docs: Mapped[list] = mapped_column(JSON, default=list)
     issues: Mapped[list] = mapped_column(JSON, default=list)
     phases: Mapped[dict] = mapped_column(JSON, default=dict)
+    profile: Mapped[dict] = mapped_column(JSON, default=dict)
+    checks: Mapped[list] = mapped_column(JSON, default=list)
     ai_used: Mapped[bool] = mapped_column(Boolean, default=False)
     criteria_version: Mapped[str] = mapped_column(String(32), default="")
     outputs: Mapped[list] = mapped_column(JSON, default=list)  # 자동 교정 결과 파일
+    status: Mapped[str] = mapped_column(String(12), default="done")
+    stage: Mapped[str] = mapped_column(String(80), default="")
+    error: Mapped[str] = mapped_column(String(200), default="")
+    mvp_attempt: Mapped[str | None] = mapped_column(String(32), default=None)
+    stage_updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
 
     protocol: Mapped[Protocol | None] = relationship()
     creator: Mapped[User] = relationship()

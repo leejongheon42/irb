@@ -39,6 +39,7 @@ pre { background: var(--surface-2); border: 1px solid var(--border); padding: 12
 
 /* layout */
 .layout { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; background: linear-gradient(to right, var(--nav) 232px, var(--bg) 232px); }
+.layout.layout-single { display: block; background: var(--bg); }
 .sidebar { background: var(--nav); color: var(--nav-text); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .brand { color: #fff; font-weight: 700; font-size: 15px; padding: 0 8px 4px; }
 .brand small { display: block; color: var(--nav-text); font-weight: 400; font-size: 12px; }

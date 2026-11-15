@@ -6,8 +6,11 @@
 <div class="topbar">
   <div><h1>AI·문서 자동화 관리</h1><div class="sub">AI 사용 상태, 전송 정책, 최근 분석과 외부 전송 기록(내용 없이 해시·크기만)을 확인합니다.</div></div>
 </div>
+{% if status.provider == "openrouter" %}
+<p class="small"><strong>더미 데이터 전용.</strong> OpenRouter 무료 공급자가 요청을 보관하거나 학습에 사용할 수 있습니다. 실제 환자·연구 문서는 전송하지 마십시오.</p>
+{% endif %}
 <div class="grid grid-4">
-  <div class="card stat"><div class="small muted">AI 기능</div><div class="result-big">{% if status.available %}<span class="badge b-ok">사용 중</span>{% elif status.enabled %}<span class="badge b-warn">설정됨·SDK 없음</span>{% else %}<span class="badge">꺼짐</span>{% endif %}</div><div class="small muted">{{ status.model }}</div></div>
+  <div class="card stat"><div class="small muted">AI 기능</div><div class="result-big">{% if status.available %}<span class="badge b-ok">사용 가능</span>{% elif status.enabled %}<span class="badge b-warn">설정 확인 필요</span>{% else %}<span class="badge">꺼짐</span>{% endif %}</div><div class="small muted">{% if status.provider == "openrouter" %}OpenRouter{% elif status.provider == "anthropic" %}Anthropic · {{ status.model }}{% else %}공급자 설정 오류{% endif %}</div></div>
   <div class="card stat"><div class="small muted">업로드 시 자동 분석</div><div class="result-big">{{ "켜짐" if status.auto else "꺼짐" }}</div><div class="small muted">로컬 단계는 항상, AI 단계는 AI 사용 시</div></div>
   <div class="card stat"><div class="small muted">LibreOffice 변환</div><div class="result-big">{{ "사용 가능" if status.soffice else "없음" }}</div><div class="small muted">{{ status.soffice_path or "IRB_SOFFICE_PATH 미설정" }}</div></div>
   <div class="card stat"><div class="small muted">분석 실행</div><div class="result-big">{{ counts.values()|sum }}</div><div class="small muted">{% for k, v in counts.items() %}{{ status_labels.get(k, k) }} {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</div></div>
@@ -19,7 +22,7 @@
       <li>텍스트는 주민번호·전화·이메일·주소·카드·여권·호칭형 이름을 가린 뒤 전송합니다(연구 기간 등 날짜는 보존).</li>
       <li>원본 파일(PDF·이미지) 전송 허용 서류: <strong>{% for t in status.allowed %}{{ rs.label("document_types", t) }}{% if not loop.last %}, {% endif %}{% endfor %}</strong> — 개인정보가 탐지되면 전송하지 않습니다.</li>
       <li>전송 사실은 감사 로그(목적·대상·SHA-256·크기·마스킹 건수)로 남기며 내용은 저장하지 않습니다.</li>
-      <li>설정: <code>IRB_AI_ENABLED</code>, <code>IRB_AI_MODEL</code>, <code>IRB_AI_PIPELINE_AUTO</code>, <code>IRB_AI_DOC_TYPES_ALLOWED</code>, <code>IRB_SOFFICE_PATH</code></li>
+      <li>설정: <code>IRB_AI_ENABLED</code>, <code>IRB_AI_PROVIDER</code>, {% if status.provider == "openrouter" %}<code>OPENROUTER_API_KEY</code>, <code>IRB_AI_OCR_MAX_PAGES</code>{% else %}<code>IRB_AI_MODEL</code>{% endif %}, <code>IRB_AI_PIPELINE_AUTO</code>, <code>IRB_AI_DOC_TYPES_ALLOWED</code>, <code>IRB_SOFFICE_PATH</code></li>
     </ul>
     <h3>목적별 전송 건수</h3>
     {% if by_purpose %}<ul class="small">{% for k, v in by_purpose.items() %}<li>{{ k }}: {{ v }}건</li>{% endfor %}</ul>{% else %}<p class="small muted">전송 기록이 없습니다.</p>{% endif %}
@@ -27,11 +30,22 @@
   <div class="card">
     <h2 class="mt0">최근 AI 호출(이 서버 프로세스)</h2>
     {% if usage %}<div class="table-wrap"><table class="small">
-      <tr><th>일시</th><th>목적</th><th>결과</th><th>토큰(입/출)</th><th>시간</th></tr>
-      {% for u in usage %}<tr><td class="nowrap">{{ u.at }}</td><td>{{ u.purpose }}</td><td>{% if u.ok %}<span class="badge b-ok">성공</span>{% else %}<span class="badge b-danger">{{ u.error[:40] }}</span>{% endif %}</td><td>{{ u.input_tokens or "-" }}/{{ u.output_tokens or "-" }}</td><td>{{ u.elapsed_s }}초</td></tr>{% endfor %}
+      <tr><th>일시</th><th>목적</th><th>모델</th><th>결과</th><th>토큰(입/출)</th><th>시간</th></tr>
+      {% for u in usage %}<tr><td class="nowrap">{{ u.at }}</td><td>{{ u.purpose }}</td><td>{{ u.model }}</td><td>{% if u.ok %}<span class="badge b-ok">성공</span>{% else %}<span class="badge b-danger">{{ u.error[:40] }}</span>{% endif %}</td><td>{{ u.input_tokens if u.input_tokens is not none else "-" }}/{{ u.output_tokens if u.output_tokens is not none else "-" }}</td><td>{{ u.elapsed_s }}초</td></tr>{% endfor %}
     </table></div>{% else %}<p class="small muted">호출 기록이 없습니다.</p>{% endif %}
   </div>
 </div>
+{% if status.models %}
+<div class="card">
+  <h2 class="mt0" id="openrouter-models">OpenRouter 기능별 모델</h2>
+  <div class="table-wrap" tabindex="0" role="region" aria-labelledby="openrouter-models"><table class="small nowrap">
+    <thead><tr><th scope="col">기능</th><th scope="col">우선 모델</th><th scope="col">대체 모델</th><th scope="col">최대 출력 토큰</th></tr></thead>
+    <tbody>{% for label, route in status.models %}
+    <tr><th scope="row">{{ label }}</th><td>{{ route.models[0] }}</td><td>{{ route.models[1:]|join(", ") }}</td><td>{{ "{:,}".format(route.max_tokens) }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
 <div class="card">
   <h2 class="mt0">최근 분석 실행</h2>
   <div class="table-wrap"><table>

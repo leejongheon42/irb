@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}IRB 서류 자동완성{% endblock %} · {{ settings.institution_name }}</title>
   <link rel="stylesheet" href="/static/app.css">
+  {% block styles %}{% endblock %}
 </head>
 <body>
-<div class="layout">
+<div class="layout{% if mvp_mode or mvp_layout %} layout-single{% endif %}">
+  {% block header %}{% endblock %}
+  {% if not (mvp_mode or mvp_layout) %}
   <aside class="sidebar">
     <div class="brand">IRB 제출서류 자동완성<small>{{ settings.institution_name }} 연구자용</small></div>
     <form method="get" action="/search" class="nav-search"><input type="text" name="q" placeholder="과제 검색" aria-label="검색"></form>
@@ -47,11 +50,12 @@
       <form method="post" action="/logout">{{ csrf_input }}<button class="btn-ghost btn-sm" type="submit">로그아웃</button></form>
     </div>
   </aside>
+  {% endif %}
   <main class="main">
     {% for f in flashes %}<div class="flash {{ f.category }}">{{ f.message }}</div>{% endfor %}
     {% block content %}{% endblock %}
   </main>
-  {% if page_guide %}{% set g = page_guide %}
+  {% if page_guide and not (mvp_mode or mvp_layout) %}{% set g = page_guide %}
   <details class="guide" id="page-guide" data-guide-key="{{ g.key }}">
     <summary class="guide-fab" title="이 화면 사용 가이드" aria-label="이 화면 사용 가이드">?</summary>
     <div class="guide-panel" role="dialog" aria-label="{{ g.title }} 가이드">
@@ -71,5 +75,6 @@
   {% endif %}
 </div>
 <script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

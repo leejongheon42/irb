@@ -45,7 +45,7 @@ def _entry_name(index: int, doc: Document) -> str:
 
 
 def manifest_for(protocol: Protocol, user: User, docs: list[Document]) -> dict[str, Any]:
-    return {
+    result = {
         "protocol_no": protocol.protocol_no,
         "title": protocol.title,
         "pi": protocol.pi.full_name if protocol.pi else None,
@@ -55,6 +55,20 @@ def manifest_for(protocol: Protocol, user: User, docs: list[Document]) -> dict[s
         "generated_by": user.full_name,
         "documents": [],
     }
+    if protocol.committee == "public_irb":
+        from sqlalchemy.orm import object_session
+
+        from ..workflow import service as wf
+
+        db = object_session(protocol)
+        submission = protocol.current_submission
+        if submission and submission.latest_prereview and not protocol.is_editable:
+            result["requirements"] = submission.latest_prereview.result.get("checklist", [])
+            result["basis"] = (submission.basis or {}).get("packs", {})
+        elif db is not None:
+            result["requirements"] = wf.preview(db, protocol)["checklist"]
+        result["committee"] = "public_irb"
+    return result
 
 
 def build_zip(protocol: Protocol, user: User) -> bytes:

@@ -15,6 +15,7 @@ DEMO_USERS = [
     ("admin", "연구지원관리자", "연구지원팀", Role.ADMIN),
     ("researcher", "정연구", "내분비내과", Role.RESEARCHER),
     ("researcher2", "한공동", "소아청소년과", Role.RESEARCHER),
+    ("reviewer", "공용 IRB 사전검토자", "연구지원팀", Role.REVIEWER),
 ]
 
 

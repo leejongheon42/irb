@@ -265,14 +265,17 @@ def admin_ai(request: Request, user: User = Depends(require_roles(Role.ADMIN)),
     for t in db.scalars(select(AuditLog).where(AuditLog.action == "ai_transmit")):
         key = (t.details or {}).get("purpose", "-")
         by_purpose[key] = by_purpose.get(key, 0) + 1
-    try:
-        import anthropic  # noqa: F401
+    models = []
+    if s.ai_provider == "openrouter":
+        from ..ai.openrouter import PURPOSE_KEYS, route_for
 
-        sdk = True
-    except ImportError:
-        sdk = False
+        models = [
+            ("지식 질의응답" if key == "knowledge" else label, route_for(key))
+            for label, key in PURPOSE_KEYS.items()
+        ]
     status = {
-        "enabled": s.ai_enabled, "available": ai.ai_enabled(), "sdk": sdk, "model": s.ai_model,
+        "enabled": s.ai_enabled, "available": ai.ai_enabled(), "provider": s.ai_provider,
+        "model": s.ai_model, "models": models,
         "auto": s.ai_pipeline_auto, "allowed": s.ai_doc_types_allowed, "soffice": soffice_available(),
         "soffice_path": s.soffice_path, "sync": s.pipeline_sync,
     }
