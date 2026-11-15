@@ -55,6 +55,14 @@ async def _scheduler_loop(interval: int) -> None:
 async def lifespan(app: FastAPI):
     init_db()
     settings = get_settings()
+    if settings.builtin_accounts:
+        from .seed import ensure_builtin_accounts
+
+        with SessionLocal() as db:
+            created = ensure_builtin_accounts(db)
+            db.commit()
+        if created:
+            log.info("builtin accounts: %s", ", ".join(created))
     task = None
     if settings.scheduler_enabled:
         task = asyncio.create_task(_scheduler_loop(settings.scheduler_interval_seconds))
@@ -73,6 +81,17 @@ def create_app() -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+    @app.middleware("http")
+    async def ai_tier_for_session(request: Request, call_next):
+        # 세션 미들웨어보다 먼저 등록해 그 안쪽에서 실행된다(request.session 사용 가능).
+        from .ai import tier
+
+        token = tier.set_current(request.session.get("ai_tier") if request.session.get("uid") else None)
+        try:
+            return await call_next(request)
+        finally:
+            tier.reset(token)
+
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.secret_key,

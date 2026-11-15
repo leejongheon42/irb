@@ -32,7 +32,8 @@ def make_pdf(pages: int = 1, text: str = "") -> bytes:
 @pytest.fixture()
 def settings(tmp_path, monkeypatch):
     monkeypatch.delenv("IRB_DATABASE_URL", raising=False)
-    s = Settings(data_dir=tmp_path / "data", password_iterations=1000, scheduler_enabled=False, mvp_mode=False)
+    s = Settings(data_dir=tmp_path / "data", password_iterations=1000, scheduler_enabled=False, mvp_mode=False,
+                 builtin_accounts=False)
     override_settings(s)
     reset_engine()
     init_db()

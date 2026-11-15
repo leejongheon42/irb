@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from ..ai import tier as ai_tier
 from ..config import get_settings
 from ..database import get_db
 from ..models import (
@@ -58,7 +59,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
     throttle.reset(username)
     request.session.clear()
     request.session["uid"] = user.id
-    audit.record(db, user, "login", "user", user.id, {}, client_ip(request))
+    request.session["ai_tier"] = ai_tier.tier_for(user)
+    audit.record(db, user, "login", "user", user.id, {"ai": request.session["ai_tier"]}, client_ip(request))
     db.commit()
     return RedirectResponse("/mvp" if get_settings().mvp_mode else "/", status_code=303)
 

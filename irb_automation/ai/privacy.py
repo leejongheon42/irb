@@ -129,6 +129,12 @@ def record_transmission(
             "sha256": hashlib.sha256(data).hexdigest(),
             "bytes": len(data),
             "masked": masked,
-            "model": get_settings().ai_model,
+            "model": _sent_model(),
         },
     )
+
+
+def _sent_model() -> str:
+    from . import tier
+
+    return "openrouter(free)" if tier.provider() == "openrouter" else tier.model()

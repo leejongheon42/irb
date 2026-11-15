@@ -75,7 +75,7 @@ def _client() -> Any:
             if _client_factory is not None:
                 _client_cache = _client_factory()
             else:
-                _client_cache = _sdk().Anthropic()
+                _client_cache = _sdk().Anthropic(api_key=get_settings().claude_api_key or None)
         except AIUnavailable:
             raise
         except Exception as e:  # SDK 생성 단계의 설정 오류(자격증명 형식 등)
@@ -88,12 +88,17 @@ def ai_enabled() -> bool:
     settings = get_settings()
     if not settings.ai_enabled:
         return False
-    if settings.ai_provider == "openrouter":
+    from . import tier
+
+    provider = tier.provider()
+    if provider == "openrouter":
         return bool(settings.openrouter_api_key)
-    if settings.ai_provider != "anthropic":
+    if provider != "anthropic":
         return False
     if _client_factory is not None:
         return True
+    if tier.current() == tier.CLAUDE and not settings.claude_api_key:
+        return False
     try:
         _sdk()
     except AIUnavailable:
@@ -138,7 +143,10 @@ def create_message(
     settings = get_settings()
     if not settings.ai_enabled:
         raise AIUnavailable("AI 기능이 비활성화되어 있습니다(IRB_AI_ENABLED=true 로 활성화, 기관 승인 필요).")
-    if settings.ai_provider == "openrouter":
+    from . import tier
+
+    provider = tier.provider()
+    if provider == "openrouter":
         from . import openrouter
 
         started = time.monotonic()
@@ -154,7 +162,7 @@ def create_message(
             _record_usage(purpose, model, False, time.monotonic() - started, error=str(e))
             raise
         return _checked_response(response, purpose, model, started)
-    if settings.ai_provider != "anthropic":
+    if provider != "anthropic":
         raise AIUnavailable("IRB_AI_PROVIDER는 anthropic 또는 openrouter여야 합니다.")
 
     try:
@@ -164,7 +172,7 @@ def create_message(
         if _client_factory is None:
             raise AIUnavailable("anthropic 패키지가 설치되어 있지 않습니다 (pip install -r requirements-ai.txt).") from None
     client = _client()
-    model = get_settings().ai_model
+    model = tier.model()
     output_config: dict[str, Any] = {"effort": effort}
     if output_schema is not None:
         output_config["format"] = {"type": "json_schema", "schema": output_schema}
@@ -210,11 +218,11 @@ def _normalize_exception(e: Exception, anthropic: Any) -> AIError:
         return e
     if anthropic is not None:
         if isinstance(e, anthropic.AuthenticationError):
-            return AIUnavailable("AI API 인증 실패 - ANTHROPIC_API_KEY 등 자격증명을 확인하십시오.")
+            return AIUnavailable("AI API 인증 실패 - CLAUDE_API_KEY 등 자격증명을 확인하십시오.")
         if isinstance(e, anthropic.PermissionDeniedError):
             return AIError("AI API 권한 없음 - 조직·워크스페이스 설정을 확인하십시오.")
         if isinstance(e, anthropic.NotFoundError):
-            return AIError(f"모델 또는 엔드포인트를 찾을 수 없습니다({get_settings().ai_model}).")
+            return AIError(f"모델 또는 엔드포인트를 찾을 수 없습니다({_model_name()}).")
         if isinstance(e, anthropic.RateLimitError):
             return AIError("AI API 요청 한도 초과 - 잠시 후 다시 시도하십시오.")
         if isinstance(e, anthropic.BadRequestError):
@@ -230,6 +238,12 @@ def _normalize_exception(e: Exception, anthropic: Any) -> AIError:
         return AIUnavailable("AI API 자격증명이 설정되지 않았습니다(ANTHROPIC_API_KEY).")
     log.exception("unexpected AI client error")
     return AIError(f"AI 호출 실패: {type(e).__name__}")
+
+
+def _model_name() -> str:
+    from . import tier
+
+    return tier.model()
 
 
 def response_text(response: Any) -> str:
@@ -250,7 +264,9 @@ def structured_call_with_response(
         system=system, messages=[{"role": "user", "content": _content(content)}], max_tokens=max_tokens,
         effort=effort, output_schema=schema, purpose=purpose,
     )
-    if get_settings().ai_provider == "openrouter":
+    from . import tier
+
+    if tier.provider() == "openrouter":
         return _openrouter_structured_result(response, system, content, schema, max_tokens, purpose)
     return _json_object(response_text(response)), response
 

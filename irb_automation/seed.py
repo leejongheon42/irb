@@ -19,6 +19,38 @@ DEMO_USERS = [
 ]
 
 
+def ensure_builtin_accounts(db: Session) -> list[str]:
+    """서버 시작 시 기본 계정을 확인한다. 없으면 만들고, 있으면 설정된 비밀번호·역할·활성 상태로 맞춘다.
+
+      guest : 방문자(연구자 권한) - AI는 무료 모델
+      admin : 관리자 - AI는 유료 Claude 모델
+    반환: 새로 만들었거나 고친 계정 설명(로그용, 비밀번호는 담지 않는다).
+    """
+    from .config import get_settings
+    from .security import verify_password
+
+    settings = get_settings()
+    changed: list[str] = []
+    for username, name, dept, role, password in (
+        ("guest", "방문자", "체험 계정", Role.RESEARCHER, settings.guest_password),
+        ("admin", "관리자", "연구지원팀", Role.ADMIN, settings.admin_password),
+    ):
+        u = db.scalars(select(User).where(User.username == username)).first()
+        if u is None:
+            db.add(User(username=username, password_hash=hash_password(password), full_name=name, department=dept,
+                        role=role, training_expires_on=date.today() + timedelta(days=3650)))
+            changed.append(f"{username} 생성")
+            continue
+        if not verify_password(password, u.password_hash):
+            u.password_hash = hash_password(password)
+            changed.append(f"{username} 비밀번호 재설정")
+        if u.role != role or not u.is_active:
+            u.role, u.is_active = role, True
+            changed.append(f"{username} 역할·활성 복구")
+    db.flush()
+    return changed
+
+
 def _doc(p: Protocol, doc_type: str, uid: int) -> Document:
     return Document(
         protocol_id=p.id, doc_type=doc_type, filename=f"{doc_type}_sample.pdf", stored_path="",

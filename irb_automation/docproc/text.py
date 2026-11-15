@@ -176,7 +176,9 @@ def _pdf(raw: bytes, allow_ai_ocr: bool) -> ExtractedText:
             from ..config import get_settings
 
             settings = get_settings()
-            if settings.ai_provider == "openrouter":
+            from ..ai import tier
+
+            if tier.provider() == "openrouter":
                 ocr = _openrouter_pdf_ocr(raw, pages, settings.ai_ocr_max_pages, warnings)
             else:
                 ocr = _ai_ocr([_ai().pdf_block(raw)], "PDF 문서", warnings)

@@ -303,7 +303,9 @@ def _ai_answer(db: Session, question: str, hits: list[dict[str, Any]]) -> dict[s
 
     if not client.ai_enabled():
         raise RuntimeError("AI 기능이 비활성화되어 있습니다.")
-    is_openrouter = get_settings().ai_provider == "openrouter"
+    from ..ai import tier
+
+    is_openrouter = tier.provider() == "openrouter"
     docs = []
     for h in hits:
         title = f"{h['title']}" + (f" — {h['ref']}" if h["ref"] else "") + (f" · {h['heading']}" if h["heading"] else "")

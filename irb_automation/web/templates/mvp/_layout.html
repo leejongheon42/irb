@@ -5,7 +5,7 @@
   <div class="mvp-container mvp-header-inner">
     <a class="mvp-brand" href="/mvp">IRB 서류 심사</a>
     <div class="mvp-account">
-      <span>{{ user.full_name }}</span>
+      <span>{{ user.full_name }}{% if ai_label %} · <span class="small muted">AI: {{ ai_label }}</span>{% endif %}</span>
       <form method="post" action="/logout">{{ csrf_input }}<button class="btn-ghost" type="submit">로그아웃</button></form>
     </div>
   </div>

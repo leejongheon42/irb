@@ -98,8 +98,12 @@ def _dispatch(db: Session, run_id: int, attempt: str) -> None:
         db.expire_all()
         return
 
+    from ..ai import tier
+
+    review = tier.carry(_review)  # 요청한 계정의 AI 등급을 백그라운드 스레드로 넘긴다.
+
     def after_commit(_session: Session) -> None:
-        _executor.submit(_review, run_id, attempt)
+        _executor.submit(review, run_id, attempt)
 
     event.listen(db, "after_commit", after_commit, once=True)
     db.commit()

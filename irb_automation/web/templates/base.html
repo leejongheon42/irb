@@ -46,6 +46,7 @@
     </ul>
     <div class="me">
       <strong>{{ user.full_name }}</strong><br>
+      {% if ai_label %}<span class="small muted">AI: {{ ai_label }}</span><br>{% endif %}
       <span class="small">{{ user.role.label }} · {{ user.department }}</span>
       <form method="post" action="/logout">{{ csrf_input }}<button class="btn-ghost btn-sm" type="submit">로그아웃</button></form>
     </div>

@@ -13,6 +13,7 @@ from markupsafe import Markup
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..ai import tier as ai_tier
 from ..audit import ACTION_LABELS
 from ..config import get_settings
 from ..database import get_db
@@ -119,6 +120,7 @@ def current_user_optional(request: Request, db: Session = Depends(get_db)) -> Us
             u = db.scalars(select(User).where(User.username == auto)).first()
             if u is not None and u.is_active:
                 request.session["uid"] = u.id
+                request.session["ai_tier"] = ai_tier.tier_for(u)
                 return u
         return None
     user = db.get(User, uid)
@@ -158,6 +160,7 @@ def render(request: Request, name: str, db: Session | None = None, user: User | 
 
     context = {
         "user": user,
+        "ai_label": _ai_label(user),
         "settings": settings,
         "mvp_mode": settings.mvp_mode,
         "mvp_layout": name.startswith("mvp/"),
@@ -172,6 +175,13 @@ def render(request: Request, name: str, db: Session | None = None, user: User | 
         **ctx,
     }
     return templates.TemplateResponse(request, name, context, status_code=status)
+
+
+def _ai_label(user: User | None) -> str:
+    if user is None or not get_settings().ai_enabled:
+        return ""
+    with ai_tier.use(ai_tier.tier_for(user)):
+        return ai_tier.label()
 
 
 def _page_guide(path: str, user: User | None):

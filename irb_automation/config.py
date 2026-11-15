@@ -105,6 +105,18 @@ class Settings:
     ai_provider: str = field(
         default_factory=lambda: (os.environ.get("IRB_AI_PROVIDER") or "anthropic").strip().lower()
     )
+    # 관리자 계정이 쓰는 유료 Claude 모델과 Anthropic API 키(CLAUDE_API_KEY 또는 ANTHROPIC_API_KEY)
+    ai_admin_model: str = field(default_factory=lambda: os.environ.get("IRB_AI_ADMIN_MODEL", "claude-sonnet-5-5"))
+    claude_api_key: str = field(
+        default_factory=lambda: (os.environ.get("CLAUDE_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or "").strip(),
+        repr=False,
+    )
+    # 서버 시작 시 기본 계정(guest, admin)을 확인하고 없으면 만든다.
+    builtin_accounts: bool = field(default_factory=lambda: _env_bool("IRB_BUILTIN_ACCOUNTS", True))
+    guest_password: str = field(default_factory=lambda: os.environ.get("IRB_GUEST_PASSWORD", "guest"), repr=False)
+    admin_password: str = field(
+        default_factory=lambda: os.environ.get("IRB_ADMIN_PASSWORD", "medilux_admin"), repr=False
+    )
     openrouter_api_key: str = field(
         default_factory=lambda: os.environ.get("OPENROUTER_API_KEY", "").strip(), repr=False
     )
