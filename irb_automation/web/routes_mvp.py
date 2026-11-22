@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from ..database import get_db
 from ..engine.ruleset import get_ruleset
 from ..models import User
 from ..mvp import service
+from ..mvp.evidence import evidence_image, findings_evidence
 from ..mvp.models import MvpUpload
 from ..qc.category_scores import SEVERITIES, VERDICTS
 from ..qc.models import QCRun
@@ -148,6 +149,18 @@ def score_page(request: Request, run_id: int, user: CurrentUser, db: Db,
     run = _review(db, user, run_id)
     if run.status != "done":
         return RedirectResponse(f"/mvp/review/{run_id}", status_code=303)
+    locations = run.counts.get("source_locations")
+    if tab == "scores" and locations is None:
+        locations = findings_evidence(run)
     return render(request, "mvp/scores.html", db, user, run=run, tab=tab, verdicts=VERDICTS,
                   severities=SEVERITIES, issues={issue["id"]: issue for issue in run.issues},
-                  ruleset=get_ruleset())
+                  source_locations=locations or {}, ruleset=get_ruleset())
+
+
+@router.get("/mvp/review/{run_id}/evidence/{issue_id}/{index}.png")
+def source_image(run_id: int, issue_id: int, index: int, user: CurrentUser, db: Db) -> Response:
+    run = _review(db, user, run_id)
+    image = evidence_image(run, issue_id, index) if run.status == "done" else None
+    if image is None:
+        raise HTTPException(404)
+    return Response(image, media_type="image/png", headers={"Cache-Control": "private, no-store"})

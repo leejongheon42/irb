@@ -1,0 +1,60 @@
+{% macro finding(issue, run, scoring, citations, manual=false) %}
+{% set reasons = {
+  'applicability_unknown': '적용 조건 확인', 'scope_unclear': '비교 범위 확인',
+  'file_missing': '제출 여부 확인', 'basis_unverified': '적용 근거 확인',
+  'unreadable': '문서 본문 확인'
+} %}
+{% set reason = '원문 인용 미확인' if issue.confidence == 'ai_unverified' else
+                '개선 조언' if issue.advice else reasons.get(issue.reason, '담당자 확인') %}
+<li id="finding-{{ issue.id }}" class="mvp-finding">
+  <strong>{{ issue.title }}</strong>
+  <p class="small muted">{{ issue.doc_name or '제출 묶음' }} · {{ 'AI 지적' if issue.source == 'ai' else '규칙 점검' }} · {% if manual %}{{ reason }}{% else %}{{ scoring.severities[issue.severity].label }} · {{ run.counts.deductions[issue.id|string] }}점 감점{% endif %}</p>
+  {% if issue.flags %}<p class="mvp-finding-rule small">{{ issue.rule_id }} · {{ issue.flags|join(' / ') }}</p>{% endif %}
+  {% if issue.detail %}<p>{{ issue.detail }}</p>{% endif %}
+  {% if manual %}
+  <dl class="mvp-finding-actions">
+    <dt>확인할 내용</dt>
+    <dd>{{ issue.question or {
+      '원문 인용 미확인': '아래 인용 문구와 지적 내용이 제출 원문에 있는지 확인해 주세요.',
+      '개선 조언': '연구 내용에 이 개선 사항을 적용할지 검토해 주세요.'
+      }.get(reason, '제출 범위와 적용 기준을 확인해 주세요.') }}</dd>
+    {% if issue.basis %}<dt>검토 근거</dt><dd>{{ issue.basis }}</dd>{% endif %}
+  </dl>
+  {% endif %}
+  {% if issue.suggestion %}<p><b>{{ '권고 사항' if manual else '수정 제안' }}</b> {{ issue.suggestion }}</p>{% endif %}
+  {% if citations %}
+  <div class="mvp-evidence">
+    <b>원문 근거</b>
+    {% for citation in citations %}
+    {% set position = citation.position|default({}) %}
+    {% set source_url = '/mvp/review/' ~ run.id ~ '/evidence/' ~ issue.id ~ '/' ~ loop.index0 ~ '.png' %}
+    <div class="mvp-citation">
+      <div class="mvp-citation-meta">
+        {% if position %}
+        <span class="mvp-location">
+          {% if position.page %}{{ position.page }}페이지{% else %}텍스트 파일{% endif %}
+          · {{ position.line }}{% if position.last_line != position.line %}–{{ position.last_line }}{% endif %}번째 줄
+        </span>
+        {% elif citation.state == 'ambiguous' %}<span>같은 문구가 여러 곳에 있어 위치를 특정할 수 없습니다.</span>
+        {% elif citation.state == 'unverified' %}<span>AI가 제시한 인용 · 미검증</span>
+        {% else %}<span>원문에서 페이지·줄 위치를 확인할 수 없습니다.</span>{% endif %}
+        {% if citation.name %}<span>{{ citation.name }}</span>{% endif %}
+      </div>
+      <blockquote>{{ citation.quote }}</blockquote>
+      {% if position.boxes %}
+      <details class="mvp-context-image">
+        <summary>빨간색으로 표시한 원본 이미지 보기</summary>
+        <figure>
+          <a href="{{ source_url }}"><img loading="lazy" src="{{ source_url }}" alt="{{ citation.name }} {{ position.page }}페이지 원문에서 인용 위치를 빨간 테두리로 표시"></a>
+          <figcaption class="small muted">{{ '원본 PDF' if citation.name.lower().endswith('.pdf') else '원본 서식을 PDF로 변환한 화면' }} · 이미지를 선택하면 원본 크기로 열립니다.</figcaption>
+        </figure>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="small muted">이 항목에 연결된 원문 인용이 없습니다.</p>
+  {% endif %}
+</li>
+{% endmacro %}

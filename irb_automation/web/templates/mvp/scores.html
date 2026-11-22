@@ -1,4 +1,5 @@
 {% extends "mvp/_layout.html" %}
+{% from "mvp/_finding.html" import finding %}
 {% set step = 3 %}
 {% block title %}채점 점수표 · IRB 서류 심사{% endblock %}
 {% block mvp_content %}
@@ -9,10 +10,46 @@
   <a href="/mvp/review/{{ run.id }}/scores?tab=criteria"{% if tab == 'criteria' %} aria-current="page"{% endif %}>점수 기준</a>
 </nav>
 {% if tab == 'scores' %}
-<section class="card" aria-labelledby="summary-heading">
-  <h2 id="summary-heading">영역별 점수</h2>
-  {% if run.counts.na %}<p>제출한 서류에서 본문을 읽지 못해 채점할 수 없습니다.</p>
+{% set notes = run.counts.notes|default([]) %}
+{% set ai = run.phases.get('2', {}) %}
+<section class="card mvp-result-summary" aria-label="검토 결과 요약">
+  {% if run.counts.na %}
+  <p>제출한 서류에서 본문을 읽지 못해 채점할 수 없습니다.</p>
   {% else %}
+  <p class="mvp-result-total"><strong>{{ run.score }}점</strong> <span class="muted">/ {{ run.counts.max_score }}점</span>
+    <span class="mvp-verdict" data-verdict="{{ run.verdict }}">{{ verdicts[run.verdict] }}</span></p>
+  {% endif %}
+  <nav class="mvp-result-nav" aria-label="결과 항목으로 이동">
+    <a class="btn btn-primary" href="{{ '#deductions-heading' if run.counts.deductions else '#notes-heading' }}">{{ '감점 항목 보기' if run.counts.deductions else '확인 필요 항목 보기' }}</a>
+    {% if run.counts.deductions %}<a class="btn" href="#notes-heading">확인 필요 {{ notes|length }}건</a>{% endif %}
+    {% if not run.counts.na %}<a href="#summary-heading">영역별 점수</a>{% endif %}
+  </nav>
+</section>
+
+<section class="card" aria-labelledby="deductions-heading">
+  <h2 id="deductions-heading" tabindex="-1">감점 항목 <span class="mvp-result-count">{{ run.counts.deductions|length }}건</span></h2>
+  {% for area in run.counts.areas.values() if area.issue_ids %}
+  <details class="mvp-details" open>
+    <summary>{{ area.label }} <span class="muted">{{ area.issue_ids|length }}건</span></summary>
+    <ul class="mvp-findings">
+      {% for id in area.issue_ids %}{{ finding(issues[id], run, scoring, source_locations.get(id|string, [])) }}{% endfor %}
+    </ul>
+  </details>
+  {% else %}<p class="muted">감점 항목이 없습니다.</p>{% endfor %}
+</section>
+
+<section class="card" aria-labelledby="notes-heading">
+  <h2 id="notes-heading" tabindex="-1">확인 필요 항목 <span class="mvp-result-count">{{ notes|length }}건 · 감점 없음</span></h2>
+  {% if notes %}
+  <ul class="mvp-findings">
+    {% for id in notes %}{{ finding(issues[id], run, scoring, source_locations.get(id|string, []), manual=true) }}{% endfor %}
+  </ul>
+  {% else %}<p class="muted">확인이 필요한 항목이 없습니다.</p>{% endif %}
+</section>
+
+{% if not run.counts.na %}
+<section class="card" aria-labelledby="summary-heading">
+  <h2 id="summary-heading" tabindex="-1">영역별 점수</h2>
   <div class="table-wrap" role="region" aria-labelledby="summary-heading" tabindex="0">
     <table class="mvp-score-table">
       <thead><tr><th>영역</th><th>배점</th><th>감점</th><th>점수</th>
@@ -27,51 +64,11 @@
         <td>{{ run.counts.max_score - run.score }}</td><td>{{ run.score }}</td><td colspan="{{ severities|length }}"></td></tr></tfoot>
     </table>
   </div>
-  <h3>감점 항목</h3>
-  {% for area in run.counts.areas.values() %}
-  <details class="mvp-details">
-    <summary>{{ area.label }} <span class="muted">{{ area.issue_ids|length }}건</span></summary>
-    {% if area.issue_ids %}
-    <ul class="mvp-findings">
-      {% for id in area.issue_ids %}{% set issue = issues[id] %}
-      <li>
-        <strong>{{ issue.title }}</strong>
-        <p class="small muted">{{ issue.doc_name or '제출 묶음' }} · {{ 'AI 지적' if issue.source == 'ai' else '규칙 점검' }} · {{ scoring.severities[issue.severity].label }} · {{ run.counts.deductions[id|string] }}점 감점</p>
-        {% if issue.detail %}<p>{{ issue.detail }}</p>{% endif %}
-        {% if issue.evidence %}<blockquote>{{ issue.evidence }}</blockquote>
-        {% else %}{% for item in issue.locations|default([]) %}<blockquote>{{ item.quote }} <cite>{{ item.name }}</cite></blockquote>
-        {% else %}<p class="small muted">표시할 원문 인용이 없습니다.</p>{% endfor %}{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}<p class="muted">감점 항목이 없습니다.</p>{% endif %}
-  </details>
-  {% endfor %}
-  {% endif %}
 </section>
-{% set ai = run.phases.get('2', {}) %}
-<section class="card" aria-labelledby="notes-heading">
-  <h2 id="notes-heading">확인 필요 항목 <span class="muted">감점 없음 · {{ run.counts.notes|default([])|length }}건</span></h2>
-  <p class="small muted">적용 여부를 사람이 판단해야 하는 항목, 원문 인용이 확인되지 않은 AI 지적, 개선 조언입니다. 점수에는 반영하지 않습니다.</p>
-  <p class="small muted">AI 심층 분석: {{ {'done': '완료', 'failed': '실패', 'skipped': '실행 안 함'}.get(ai.status, '기록 없음') }}{% if ai.message %} · {{ ai.message }}{% endif %}</p>
-  {% if run.counts.notes|default([]) %}
-  <ul class="mvp-findings">
-    {% for id in run.counts.notes %}{% set issue = issues[id] %}
-    <li>
-      <strong>{{ issue.title }}</strong>
-      <p class="small muted">{{ issue.doc_name or '제출 묶음' }} · {{ 'AI 지적' if issue.source == 'ai' else '규칙 점검' }} ·
-        {{ '개선 조언' if issue.advice else '원문 인용 미확인' if issue.confidence == 'ai_unverified' else '적용 여부 확인 필요' }}</p>
-      {% if issue.detail %}<p>{{ issue.detail }}</p>{% endif %}
-      {% if issue.question %}<p class="small">{{ issue.question }}</p>{% endif %}
-      {% if issue.evidence %}<blockquote>{{ issue.evidence }}</blockquote>{% endif %}
-      {% if issue.suggestion %}<p class="small muted">권고: {{ issue.suggestion }}</p>{% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}<p class="muted">확인이 필요한 항목이 없습니다.</p>{% endif %}
-</section>
+{% endif %}
 <section class="card" aria-labelledby="document-heading">
   <h2 id="document-heading">서류별 결과</h2>
+  <p class="small muted">AI 심층 분석 {{ {'done': '완료', 'failed': '실패', 'skipped': '실행 안 함'}.get(ai.status, '기록 없음') }}{% if ai.message %} · {{ ai.message }}{% endif %}</p>
   <div class="table-wrap" role="region" aria-labelledby="document-heading" tabindex="0">
     <table class="mvp-files">
       <thead><tr><th>서류명</th><th>서류 종류</th><th>이슈</th><th>감점 소계</th><th>본문 인식</th></tr></thead>
