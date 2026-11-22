@@ -12,6 +12,7 @@ from PIL import ImageDraw
 from .pdf_images import _RENDER_LOCK
 
 Box = tuple[float, float, float, float]
+PixelBox = tuple[int, int, int, int]
 
 
 class _LinePosition(TypedDict):
@@ -110,24 +111,49 @@ def locate_source(quotes: set[str], *, pdf: bytes | None = None, text: str | Non
     return found
 
 
+def _merge_line_fragments(rectangles: list[PixelBox]) -> list[PixelBox]:
+    """Join neighboring text runs on the same line while keeping distant text separate."""
+    if not rectangles:
+        return []
+    merged = [rectangles[0]]
+    previous = rectangles[0]
+    for left, top, right, bottom in rectangles[1:]:
+        prev_left, prev_top, prev_right, prev_bottom = previous
+        height = min(bottom - top, prev_bottom - prev_top)
+        overlap = min(bottom, prev_bottom) - max(top, prev_top)
+        gap = max(left - prev_right, prev_left - right, 0)
+        if overlap >= height / 2 and gap <= height * 0.75:
+            x1, y1, x2, y2 = merged[-1]
+            merged[-1] = (min(x1, left), min(y1, top), max(x2, right), max(y2, bottom))
+        else:
+            merged.append((left, top, right, bottom))
+        previous = (left, top, right, bottom)
+    return merged
+
+
 def highlighted_page(pdf: bytes, position: SourcePosition, *, preview: bool = False) -> bytes:
-    """Render a page or its relevant excerpt with the verified text outlined in red."""
+    """Render a page or excerpt with a translucent highlight over verified text."""
     with _RENDER_LOCK, pdfium.PdfDocument(pdf) as document:
         with closing(document[position["page"] - 1]) as page:
             scale = min(2, 2200 / max(page.get_size()))
             with closing(page.render(scale=scale)) as bitmap, bitmap.to_pil().convert("RGB") as image:
                 coordinates = bitmap.get_posconv(page)
-                draw = ImageDraw.Draw(image)
-                rectangles: list[tuple[int, int, int, int]] = []
+                fragments: list[PixelBox] = []
                 for left, bottom, right, top in position["boxes"]:
                     x1, y1 = coordinates.to_bitmap(left, bottom)
                     x2, y2 = coordinates.to_bitmap(right, top)
-                    rectangle = (max(0, min(x1, x2) - 3), max(0, min(y1, y2) - 3),
-                                 min(image.width - 1, max(x1, x2) + 3), min(image.height - 1, max(y1, y2) + 3))
+                    rectangle = (max(0, min(x1, x2)), max(0, min(y1, y2)),
+                                 min(image.width - 1, max(x1, x2)), min(image.height - 1, max(y1, y2)))
                     if rectangle[0] >= rectangle[2] or rectangle[1] >= rectangle[3]:
                         continue
+                    fragments.append(rectangle)
+                rectangles = []
+                draw = ImageDraw.Draw(image, "RGBA")
+                for x1, y1, x2, y2 in _merge_line_fragments(fragments):
+                    rectangle = (max(0, x1 - 3), max(0, y1 - 2),
+                                 min(image.width - 1, x2 + 3), min(image.height - 1, y2 + 2))
                     rectangles.append(rectangle)
-                    draw.rectangle(rectangle, outline="#d00020", width=3)
+                    draw.rounded_rectangle(rectangle, radius=4, fill=(208, 0, 32, 22), outline="#d00020", width=2)
                 with io.BytesIO() as output:
                     if preview and rectangles:
                         left = max(0, min(box[0] for box in rectangles) - 48)

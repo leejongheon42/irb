@@ -78,6 +78,8 @@
     const severity = filters.querySelector('#finding-severity');
     const status = filters.querySelector('#finding-status');
     const docSelect = filters.querySelector('#finding-doc');
+    const matches = filters.querySelector('#finding-matches');
+    const empty = document.querySelector('.mvp-no-matches');
     const normalize = value => value.normalize('NFC').toLowerCase().replace(/\s+/g, ' ');
     const entries = Array.from(document.querySelectorAll('.mvp-finding'), node => ({
       node, text: normalize(`${node.textContent} ${node.dataset.keywords || ''}`)
@@ -86,6 +88,14 @@
     const sections = document.querySelectorAll('[aria-labelledby="deductions-heading"], [aria-labelledby="notes-heading"]');
     const toggles = document.querySelectorAll('[data-filter-severity], [data-filter-status]');
     const openBeforeSearch = new Map();
+    function updateCount(container) {
+      const count = container.querySelectorAll('.mvp-finding:not([hidden])').length;
+      const label = container.querySelector('[data-finding-count]');
+      const text = `${count}건`;
+      if (label.textContent !== text) label.textContent = text;
+      return count;
+    }
+
     function applyFilters() {
       const terms = normalize(query.value).trim().split(' ').filter(Boolean);
       const active = Boolean(terms.length || severity.value || status.value || docSelect.value);
@@ -99,13 +109,15 @@
       }
       for (const group of groups) {
         if (active && !openBeforeSearch.has(group)) openBeforeSearch.set(group, group.open);
-        group.hidden = active && !group.querySelector('.mvp-finding:not([hidden])');
+        const count = updateCount(group);
+        group.hidden = active && !count;
         if (active) group.open = !group.hidden;
         else if (openBeforeSearch.has(group)) group.open = openBeforeSearch.get(group);
       }
       if (!active) openBeforeSearch.clear();
       for (const section of sections) {
-        section.hidden = active && !section.querySelector('.mvp-finding:not([hidden])');
+        const count = updateCount(section);
+        section.hidden = active && !count;
       }
       for (const button of toggles) {
         const pressed = button.dataset.filterSeverity
@@ -113,12 +125,27 @@
           : status.value === button.dataset.filterStatus;
         button.setAttribute('aria-pressed', String(pressed));
       }
-      filters.querySelector('#finding-matches').textContent = active && !visible
-        ? '검색 결과가 없습니다. 키워드나 필터를 변경해 주세요.'
-        : `전체 ${entries.length}건 중 ${visible}건 표시`;
+      const result = `전체 ${entries.length}건 중 ${visible}건 표시`;
+      if (matches.textContent !== result) matches.textContent = result;
+      empty.hidden = !active || visible > 0;
     }
+
+    function resetFilters() {
+      query.value = severity.value = status.value = docSelect.value = '';
+      applyFilters();
+    }
+
     filters.hidden = false;
-    filters.addEventListener('input', applyFilters);
+    filters.addEventListener('input', event => {
+      if (!event.isComposing) applyFilters();
+    });
+    query.addEventListener('compositionend', applyFilters);
+    query.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || event.isComposing || !query.value) return;
+      event.preventDefault();
+      query.value = '';
+      applyFilters();
+    });
     for (const button of toggles) {
       button.addEventListener('click', () => {
         if (button.dataset.filterSeverity) {
@@ -127,14 +154,25 @@
           status.value = status.value === button.dataset.filterStatus ? '' : button.dataset.filterStatus;
         }
         applyFilters();
-        if (!filters.contains(button)) filters.scrollIntoView({behavior: 'smooth', block: 'start'});
+        if (!filters.contains(button)) {
+          filters.scrollIntoView({block: 'start'});
+          query.focus({preventScroll: true});
+        }
       });
     }
     filters.querySelector('#finding-reset').addEventListener('click', () => {
-      query.value = severity.value = status.value = docSelect.value = '';
-      applyFilters();
+      resetFilters();
+      query.focus({preventScroll: true});
+    });
+    empty.querySelector('[data-reset-filters]').addEventListener('click', () => {
+      resetFilters();
       query.focus();
     });
+    for (const link of document.querySelectorAll('.mvp-result-nav a[href="#deductions-heading"], .mvp-result-nav a[href="#notes-heading"]')) {
+      link.addEventListener('click', () => {
+        if (document.querySelector(link.hash).closest('section').hidden) resetFilters();
+      });
+    }
     applyFilters();
   }
 
@@ -158,6 +196,15 @@
     show(['table', 'chart', 'both'].includes(saved) ? saved : 'table');
   }
 
+  const scoreSummary = document.querySelector('#score-summary');
+  if (scoreSummary) {
+    window.addEventListener('pageshow', event => {
+      if (!event.persisted && !window.location.hash && performance.getEntriesByType('navigation')[0]?.type === 'navigate') {
+        scoreSummary.scrollIntoView({block: 'start'});
+      }
+    });
+  }
+
   // 문서 뷰어는 현재 화면을 바꾸지 않고 화면 오른쪽 절반에 별도 창으로 연다(같은 창을 재사용).
   document.addEventListener('click', event => {
     const link = event.target.closest('a[data-document-viewer]');
@@ -175,15 +222,39 @@
 
   if (document.body.classList.contains('viewer-body')) {
     const docSelect = document.querySelector('[data-viewer-doc]');
+    const viewerMain = document.querySelector('.viewer-main');
+    const frame = document.querySelector('.viewer-frame');
+    const evidence = document.querySelector('.viewer-evidence-image');
+    function showEvidence(src) {
+      frame.hidden = true;
+      evidence.src = src;
+      evidence.hidden = false;
+      viewerMain.scrollTop = 0;
+    }
+
+    if (frame?.hasAttribute('data-evidence-image')) {
+      showEvidence(frame.src);
+      frame.removeAttribute('src');
+    }
     if (docSelect) {
       docSelect.form.querySelector('[data-viewer-doc-submit]').hidden = true;
       docSelect.addEventListener('change', () => docSelect.form.submit());
     }
     document.addEventListener('click', event => {
       const target = event.target.closest('[data-viewer-target]');
-      if (!target) return;
+      if (!target || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
       for (const item of document.querySelectorAll('.viewer-item[aria-current]')) item.removeAttribute('aria-current');
       target.closest('.viewer-item').setAttribute('aria-current', 'true');
+      if (target.hasAttribute('data-evidence-image')) {
+        event.preventDefault();
+        showEvidence(target.href);
+      } else {
+        evidence.hidden = true;
+        frame.hidden = false;
+      }
+      if (window.matchMedia('(max-width: 720px)').matches) {
+        viewerMain.scrollIntoView({block: 'start'});
+      }
     });
     const close = document.querySelector('[data-viewer-close]');
     if (close && window.opener) {

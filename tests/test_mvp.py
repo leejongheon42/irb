@@ -252,19 +252,25 @@ def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, 
     settings.ai_provider = "openrouter"
     settings.openrouter_api_key = "test-key"
     sample_size = "All eligible patients are included. Target: 1,500."
+    size_followup = "The number reflects the planned enrollment window."
     timing = "Eligibility applies within the study period."
     repeated = "Study protocol"
     pdf = io.BytesIO()
     document = Canvas(pdf)
     document.drawString(72, 760, repeated)
     document.showPage()
-    for index, line in enumerate((repeated, sample_size, timing)):
-        document.drawString(72, 760 - index * 16, line)
+    document.drawString(72, 760, repeated)
+    for y, line in ((740, sample_size), (724, size_followup)):
+        x = 72
+        for word in line.split():
+            document.drawString(x, y, word)
+            x += document.stringWidth(word + " ")
+    document.drawString(72, 698, timing)
     document.save()
     monkeypatch.setattr(ai_client, "structured_call", lambda **_request: {"summary": "", "issues": [
         {"doc_index": 0, "severity": "major", "category": "context", "title": "대상자 수 산출 근거 미흡",
          "rule_id": "E02", "flag": "대상자 수", "detail": "목표 수와 전수 조사 기준의 관계를 설명해 주세요.",
-         "evidence": sample_size},
+         "evidence": f"{sample_size} {size_followup}"},
         {"doc_index": 0, "severity": "major", "category": "context", "title": "자료 수집 기간 표현 불명확",
          "rule_id": "M05", "flag": "기간 구분 오류", "detail": "자료 수집 기간과 연구 수행 기간을 구분해 주세요.",
          "evidence": timing},
@@ -278,8 +284,8 @@ def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, 
     scores = client.get(f"{url}/scores").text
     size_card = re.search(r'<strong>대상자 수 산출 근거 미흡</strong>(.*?)</li>', scores, re.S)[1]
     time_card = re.search(r'<strong>자료 수집 기간 표현 불명확</strong>(.*?)</li>', scores, re.S)[1]
-    assert "E02 · 대상자 수" in size_card and "· 2번째 줄" in size_card and sample_size in size_card
-    assert "M05 · 기간 구분 오류" in time_card and "· 3번째 줄" in time_card and timing in time_card
+    assert "E02 · 대상자 수" in size_card and "· 2–3번째 줄" in size_card and sample_size in size_card
+    assert "M05 · 기간 구분 오류" in time_card and "· 4번째 줄" in time_card and timing in time_card
     assert "2페이지" in size_card and "2페이지" in time_card
     notes = scores.split('id="notes-heading"', 1)[1].split("</section>", 1)[0]
     assert "제목이 연구 유형을 드러내는지 확인해 주세요." in notes
@@ -299,16 +305,19 @@ def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, 
     assert image_response.headers["cache-control"] == "private, no-store"
     preview_response = client.get(f"{image_url}?preview=true")
     with Image.open(io.BytesIO(image_response.content)) as image, Image.open(io.BytesIO(preview_response.content)) as preview:
-        reds = [(x, y) for y in range(170, 220) for x in range(120, 700)
-                if image.getpixel((x, y)) == (208, 0, 32)]
-        assert len(reds) > 100 and min(x for x, _ in reds) >= 135
+        for baseline in (740, 724):
+            row = image.height - 2 * (baseline + 4)
+            reds = [x for x in range(image.width) if image.getpixel((x, row)) == (208, 0, 32)]
+            assert len(reds) == 4 and min(reds) >= 135
+        between = image.height - 2 * 736
+        assert all(image.getpixel((x, between)) != (208, 0, 32) for x in range(image.width))
         colors = preview.getcolors(preview.width * preview.height)
         assert preview.height < image.height // 2 and any(color == (208, 0, 32) for _, color in colors)
 
     run = db.get(QCRun, int(url.rsplit("/", 1)[1]))
     run.counts = {key: value for key, value in run.counts.items() if key != "source_locations"}
     db.commit()
-    assert "2번째 줄" in client.get(f"{url}/scores").text
+    assert "2–3번째 줄" in client.get(f"{url}/scores").text
     assert client.get(image_url).content == image_response.content
 
     _login(client, "admin")

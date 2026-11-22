@@ -48,7 +48,7 @@
       <blockquote>{{ citation.quote }}</blockquote>
       {% if position.boxes %}
       <details class="mvp-context-image">
-        <summary>빨간색으로 표시한 원본 이미지 보기</summary>
+        <summary>원문에서 지적 위치 보기</summary>
         <figure>
           <a href="/mvp/review/{{ run.id }}/viewer?doc={{ citation.doc }}&amp;issue={{ issue.id }}&amp;cite={{ loop.index0 }}" data-document-viewer target="irb-document-viewer"><img loading="lazy" src="{{ source_url }}?preview=true" alt="{{ citation.name }} {{ position.page }}페이지 인용 위치 표시 · 전체 페이지 새 창 열기"></a>
           <figcaption class="small muted">{{ '원본 PDF' if citation.name.lower().endswith('.pdf') else '원본 서식을 PDF로 변환한 화면' }} · 이미지를 선택하면 전체 페이지가 새 창에서 열립니다.</figcaption>

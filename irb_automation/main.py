@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager, suppress
+from html import escape
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -35,6 +37,7 @@ from .web import (
 from .web.deps import LoginRequired, current_user_optional, render
 
 log = logging.getLogger("irb")
+VIEWER_FRAME_PATH = re.compile(r"^/mvp/review/\d+/(documents/[^/]+|evidence/\d+/\d+\.png)$")
 
 
 async def _scheduler_loop(interval: int) -> None:
@@ -153,6 +156,16 @@ def create_app() -> FastAPI:
     async def _http_error(request: Request, exc: HTTPException):
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        if VIEWER_FRAME_PATH.match(request.url.path):
+            # 문서 뷰어 창의 iframe 안에서 열리는 원본·강조 이미지 요청. 기본 오류 화면은 프레임 표시가 막혀
+            # Chrome이 깨진 문서 아이콘만 보여 주므로, 같은 출처 프레임에 표시되는 짧은 안내를 돌려준다.
+            message = exc.detail if isinstance(exc.detail, str) and exc.status_code != 404 else (
+                "문서를 찾을 수 없습니다. 심사 결과 화면을 새로고침한 뒤 다시 열어 주세요.")
+            body = (f'<!doctype html><html lang="ko"><meta charset="utf-8"><title>{exc.status_code}</title>'
+                    f'<body><p>{escape(message)}</p></body></html>')
+            return HTMLResponse(body, status_code=exc.status_code, headers={
+                "X-Frame-Options": "SAMEORIGIN", "Cache-Control": "no-store",
+                "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"})
         db = SessionLocal()
         try:
             user = current_user_optional(request, db)

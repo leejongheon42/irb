@@ -30,7 +30,7 @@
 <div class="viewer-layout">
   <aside class="viewer-side" aria-labelledby="viewer-side-heading">
     <h2 id="viewer-side-heading">이 문서의 지적 <span class="mvp-result-count">{{ entries|length }}건</span></h2>
-    <p class="small muted">항목을 선택하면 오른쪽에서 해당 페이지 또는 빨간 표시 이미지가 열립니다.</p>
+    <p class="small muted">원본 페이지를 열거나 지적된 문구의 강조 위치를 확인할 수 있습니다.</p>
     {% if entries %}
     <ol class="viewer-list">
       {% for entry in entries %}
@@ -45,10 +45,14 @@
         <strong>{{ item.title }}</strong>
         <blockquote class="small">{{ entry.citation.quote|truncate(140) }}</blockquote>
         <div class="viewer-item-actions">
+          {% if position.boxes %}
+          {% set marked = '/mvp/review/' ~ run.id ~ '/evidence/' ~ item.id ~ '/' ~ entry.index ~ '.png' %}
+          <a class="btn viewer-evidence-link" target="viewer-frame" data-viewer-target data-evidence-image href="{{ marked }}?preview=true">강조 위치 확대</a>
+          <a class="btn" target="viewer-frame" data-viewer-target data-evidence-image href="{{ marked }}">강조된 전체 페이지</a>
+          {% endif %}
           {% if position.page %}<a class="btn" target="viewer-frame" data-viewer-target href="{{ doc_url }}?p={{ position.page }}#page={{ position.page }}">{{ position.page }}페이지로 이동</a>
           {% elif position.line %}<span class="small muted">{{ position.line }}번째 줄</span>
           {% else %}<span class="small muted">위치 미확인</span>{% endif %}
-          {% if position.boxes %}<a class="btn" target="viewer-frame" data-viewer-target href="/mvp/review/{{ run.id }}/evidence/{{ item.id }}/{{ entry.index }}.png">빨간 표시 보기</a>{% endif %}
         </div>
       </li>
       {% endfor %}
@@ -58,7 +62,8 @@
     {% endif %}
   </aside>
   <main class="viewer-main">
-    <iframe class="viewer-frame" name="viewer-frame" title="{{ current.name }} 원본 미리보기" src="{{ initial }}"></iframe>
+    <img class="viewer-evidence-image" alt="{{ current.name }}에서 지적 문구를 강조한 이미지" hidden>
+    <iframe class="viewer-frame" name="viewer-frame" title="{{ current.name }} 원본 미리보기" src="{{ initial }}"{% if image %} loading="lazy" data-evidence-image{% endif %}></iframe>
   </main>
 </div>
 {% endif %}

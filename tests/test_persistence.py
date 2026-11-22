@@ -79,3 +79,14 @@ def test_vercel_postgres_urls_are_normalized(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "postgresql://a:b@neon/db")
     assert normalize_database_url(resolve_database_url(tmp_path)) == "postgresql+psycopg://a:b@neon/db"
     assert normalize_database_url("sqlite:///x.db") == "sqlite:///x.db"
+
+
+def test_viewer_frame_errors_render_inside_the_viewer(client):
+    token = _login(client)
+    _upload(client, token, ("protocol.pdf", make_pdf(1, "Sample size: 100 subjects.")))
+    url = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
+    missing = client.get(f"{url}/documents/nope")
+    assert missing.status_code == 404 and missing.headers["x-frame-options"] == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in missing.headers["content-security-policy"] and "문서를 찾을 수 없습니다" in missing.text
+    page = client.get(f"{url}/nope-page")  # 일반 화면 오류는 그대로 프레임 금지
+    assert page.headers["x-frame-options"] == "DENY"
