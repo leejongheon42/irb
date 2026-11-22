@@ -29,7 +29,7 @@
 <section class="card" aria-labelledby="deductions-heading">
   <h2 id="deductions-heading" tabindex="-1">감점 항목 <span class="mvp-result-count">{{ run.counts.deductions|length }}건</span></h2>
   {% for area in run.counts.areas.values() if area.issue_ids %}
-  <details class="mvp-details" open>
+  <details class="mvp-details"{% if loop.length == 1 or area.issue_ids|length <= 4 %} open{% endif %}>
     <summary>{{ area.label }} <span class="muted">{{ area.issue_ids|length }}건</span></summary>
     <ul class="mvp-findings">
       {% for id in area.issue_ids %}{{ finding(issues[id], run, scoring, source_locations.get(id|string, [])) }}{% endfor %}

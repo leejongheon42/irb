@@ -15,7 +15,7 @@
   <dl class="mvp-finding-actions">
     <dt>확인할 내용</dt>
     <dd>{{ issue.question or {
-      '원문 인용 미확인': '아래 인용 문구와 지적 내용이 제출 원문에 있는지 확인해 주세요.',
+      '원문 인용 미확인': '지적 내용과 인용 문구를 제출 원문에서 직접 확인해 주세요.',
       '개선 조언': '연구 내용에 이 개선 사항을 적용할지 검토해 주세요.'
       }.get(reason, '제출 범위와 적용 기준을 확인해 주세요.') }}</dd>
     {% if issue.basis %}<dt>검토 근거</dt><dd>{{ issue.basis }}</dd>{% endif %}
@@ -45,10 +45,12 @@
       <details class="mvp-context-image">
         <summary>빨간색으로 표시한 원본 이미지 보기</summary>
         <figure>
-          <a href="{{ source_url }}"><img loading="lazy" src="{{ source_url }}" alt="{{ citation.name }} {{ position.page }}페이지 원문에서 인용 위치를 빨간 테두리로 표시"></a>
-          <figcaption class="small muted">{{ '원본 PDF' if citation.name.lower().endswith('.pdf') else '원본 서식을 PDF로 변환한 화면' }} · 이미지를 선택하면 원본 크기로 열립니다.</figcaption>
+          <a href="{{ source_url }}"><img loading="lazy" src="{{ source_url }}?preview=true" alt="{{ citation.name }} {{ position.page }}페이지 원문에서 인용 위치를 빨간 테두리로 표시"></a>
+          <figcaption class="small muted">{{ '원본 PDF' if citation.name.lower().endswith('.pdf') else '원본 서식을 PDF로 변환한 화면' }} · 이미지를 선택하면 전체 페이지가 열립니다.</figcaption>
         </figure>
       </details>
+      {% elif position.page %}
+      <p class="small muted">이 인용의 원본 이미지 표시 위치를 확인할 수 없습니다.</p>
       {% endif %}
     </div>
     {% endfor %}

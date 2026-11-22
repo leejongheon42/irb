@@ -47,6 +47,16 @@ def test_ai_duplicate_quotes_are_added_without_duplicate_candidate(monkeypatch):
     assert len(cross["ai_evidence"]) == 2 and len(cross["locations"]) == 2
 
 
+def test_same_citation_can_support_two_distinct_criteria():
+    location = {"doc": "d1", "quote": "연구 기간 내 적격 환자 전수를 포함하며 목표는 1,500명이다."}
+    known = {"doc": "d1", "category": "context", "rule_id": "E02", "flags": ["대상자 수"],
+             "locations": [location]}
+    duplicate = {**known, "confidence": "ai_verified"}
+    timing = {**duplicate, "rule_id": "M05", "flags": ["기간 구분 오류"]}
+    assert merge_ai_evidence([known], [duplicate, timing]) == [timing]
+    assert known["ai_evidence"] == [location]
+
+
 def test_record_value_does_not_charge_three_times(db, users):
     user = users["researcher"]
     protocol = Protocol(title="Test", pi_id=user.id, expected_subjects=120)

@@ -8,7 +8,9 @@ from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from pypdf import PdfWriter
+from reportlab.pdfgen.canvas import Canvas
 from sqlalchemy import select
 
 from irb_automation.ai import client as ai_client
@@ -241,6 +243,66 @@ def test_unscored_findings_are_listed_for_manual_check(client, settings, monkeyp
     assert "검토 요약 문장" in scores
     verified = re.search(r"원문으로 확인된 지적</strong>\s*<p class=\"small muted\">([^<]+)", scores)
     assert verified and "AI 지적" in verified[1] and "감점" in verified[1]
+
+
+def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, db, settings, monkeypatch):
+    settings.ai_review_enabled = True
+    settings.ai_provider = "openrouter"
+    settings.openrouter_api_key = "test-key"
+    sample_size = "All eligible patients are included. Target: 1,500."
+    timing = "Eligibility applies within the study period."
+    repeated = "Study protocol"
+    pdf = io.BytesIO()
+    document = Canvas(pdf)
+    document.drawString(72, 760, repeated)
+    document.showPage()
+    for index, line in enumerate((repeated, sample_size, timing)):
+        document.drawString(72, 760 - index * 16, line)
+    document.save()
+    monkeypatch.setattr(ai_client, "structured_call", lambda **_request: {"summary": "", "issues": [
+        {"doc_index": 0, "severity": "major", "category": "context", "title": "대상자 수 산출 근거 미흡",
+         "rule_id": "E02", "flag": "대상자 수", "detail": "목표 수와 전수 조사 기준의 관계를 설명해 주세요.",
+         "evidence": sample_size},
+        {"doc_index": 0, "severity": "major", "category": "context", "title": "자료 수집 기간 표현 불명확",
+         "rule_id": "M05", "flag": "기간 구분 오류", "detail": "자료 수집 기간과 연구 수행 기간을 구분해 주세요.",
+         "evidence": timing},
+        {"doc_index": 0, "severity": "minor", "category": "context", "title": "제목 구체화",
+         "rule_id": "M10", "flag": "설명 불명확", "question": "제목이 연구 유형을 드러내는지 확인해 주세요.",
+         "evidence": repeated},
+    ]})
+    token = _login(client)
+    _upload(client, token, ("protocol.pdf", pdf.getvalue()))
+    url = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
+    scores = client.get(f"{url}/scores").text
+    size_card = re.search(r'<li[^>]*>\s*<strong>대상자 수 산출 근거 미흡</strong>(.*?)</li>', scores, re.S)[1]
+    time_card = re.search(r'<li[^>]*>\s*<strong>자료 수집 기간 표현 불명확</strong>(.*?)</li>', scores, re.S)[1]
+    assert "E02 · 대상자 수" in size_card and "· 2번째 줄" in size_card and sample_size in size_card
+    assert "M05 · 기간 구분 오류" in time_card and "· 3번째 줄" in time_card and timing in time_card
+    assert "2페이지" in size_card and "2페이지" in time_card
+    notes = scores.split('id="notes-heading"', 1)[1].split("</section>", 1)[0]
+    assert "제목이 연구 유형을 드러내는지 확인해 주세요." in notes
+    assert "같은 문구가 여러 곳에 있어 위치를 특정할 수 없습니다." in notes and ".png" not in notes
+
+    image_url = re.search(r'href="([^"]+\.png)"', size_card)[1]
+    image_response = client.get(image_url)
+    assert image_response.status_code == 200
+    assert image_response.headers["cache-control"] == "private, no-store"
+    preview_response = client.get(f"{image_url}?preview=true")
+    with Image.open(io.BytesIO(image_response.content)) as image, Image.open(io.BytesIO(preview_response.content)) as preview:
+        reds = [(x, y) for y in range(170, 220) for x in range(120, 700)
+                if image.getpixel((x, y)) == (208, 0, 32)]
+        assert len(reds) > 100 and min(x for x, _ in reds) >= 135
+        colors = preview.getcolors(preview.width * preview.height)
+        assert preview.height < image.height // 2 and any(color == (208, 0, 32) for _, color in colors)
+
+    run = db.get(QCRun, int(url.rsplit("/", 1)[1]))
+    run.counts = {key: value for key, value in run.counts.items() if key != "source_locations"}
+    db.commit()
+    assert "2번째 줄" in client.get(f"{url}/scores").text
+    assert client.get(image_url).content == image_response.content
+
+    _login(client, "admin")
+    assert client.get(image_url).status_code == 404
 
 
 def test_local_env_file_fills_only_unset_variables(tmp_path, monkeypatch):

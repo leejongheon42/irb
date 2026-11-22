@@ -22,8 +22,12 @@ def merge_ai_evidence(rule_issues: list[dict], ai_issues: list[dict]) -> list[di
         duplicate = None
         if cited and issue.get("confidence") == "ai_verified":
             for known in rule_issues:
-                same_flag = (known.get("rule_id") == issue.get("rule_id")
-                             and set(known.get("flags", [])) & set(issue.get("flags", [])))
+                legacy_rule, legacy_label = legacy_flag(known.get("code", ""), known.get("status", ""))
+                known_rule = known.get("rule_id") or legacy_rule
+                if known_rule and issue.get("rule_id") and known_rule != issue["rule_id"]:
+                    continue
+                same_flag = (known_rule == issue.get("rule_id")
+                             and set(known.get("flags") or [legacy_label]) & set(issue.get("flags", [])))
                 if not same_flag and known.get("category") != issue.get("category"):
                     continue
                 quotes = [(loc["doc"], "".join(loc["quote"].split())) for loc in known.get("locations", []) if loc.get("quote")]

@@ -196,6 +196,7 @@ def _run_review(run_id: int, attempt: str) -> None:
             qc.run(db, user, docs, qr=run, use_ai=True, store=store, on_stage=stage, score_run=category_scores.score_run)
             from .evidence import findings_evidence
 
+            stage("원문 위치 확인 중")
             run.counts = {**run.counts, "source_locations": findings_evidence(run)}
             _advance(db, run_id, attempt, "running", "done", "채점 완료")
     except SupersededReview:

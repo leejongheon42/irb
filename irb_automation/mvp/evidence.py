@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypedDict
 
 from pypdfium2 import PdfiumError
 
@@ -22,12 +22,15 @@ class EvidenceDocument(TypedDict):
     fmt: str
 
 
-class Citation(TypedDict):
+class _CitationText(TypedDict):
     doc: str
     name: str
     quote: str
-    state: NotRequired[Literal["located", "ambiguous", "unavailable", "unverified"]]
-    position: NotRequired[SourcePosition]
+    state: Literal["located", "ambiguous", "unavailable", "unverified"]
+
+
+class Citation(_CitationText, total=False):
+    position: SourcePosition
 
 
 def _layout_pdf(doc: EvidenceDocument, path: Path) -> bytes | None:
@@ -107,7 +110,7 @@ def findings_evidence(run: QCRun, only: int | None = None) -> dict[str, list[Cit
     return output
 
 
-def evidence_image(run: QCRun, issue_id: int, index: int) -> bytes | None:
+def evidence_image(run: QCRun, issue_id: int, index: int, *, preview: bool = False) -> bytes | None:
     if index < 0:
         return None
     locations = run.counts.get("source_locations")
@@ -123,6 +126,6 @@ def evidence_image(run: QCRun, issue_id: int, index: int) -> bytes | None:
         return None
     try:
         pdf = _layout_pdf(doc, Path(doc["path"]))
-        return highlighted_page(pdf, position) if pdf else None
+        return highlighted_page(pdf, position, preview=preview) if pdf else None
     except (OSError, PdfiumError, IndexError):
         return None

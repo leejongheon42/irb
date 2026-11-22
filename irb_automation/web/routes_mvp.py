@@ -158,9 +158,9 @@ def score_page(request: Request, run_id: int, user: CurrentUser, db: Db,
 
 
 @router.get("/mvp/review/{run_id}/evidence/{issue_id}/{index}.png")
-def source_image(run_id: int, issue_id: int, index: int, user: CurrentUser, db: Db) -> Response:
+def source_image(run_id: int, issue_id: int, index: int, user: CurrentUser, db: Db, preview: bool = False) -> Response:
     run = _review(db, user, run_id)
-    image = evidence_image(run, issue_id, index) if run.status == "done" else None
+    image = evidence_image(run, issue_id, index, preview=preview) if run.status == "done" else None
     if image is None:
         raise HTTPException(404)
     return Response(image, media_type="image/png", headers={"Cache-Control": "private, no-store"})
