@@ -10,41 +10,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-log = logging.getLogger(__name__)
+from ..qc.pattern_store import ClassificationPatterns, default_classification
 
-# 순서가 중요: 더 구체적인 표현을 먼저 검사한다(예: '동의 면제 사유서'는 '동의서'보다 먼저).
-KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
-    ("assent_form", ("아동용승낙서", "아동승낙서", "승낙서", "assent")),
-    ("questionnaire", ("설문지", "면담질문지", "questionnaire")),
-    ("recruitment", ("모집공고", "모집게시물", "모집안내", "모집문", "recruitment")),
-    ("advisor_pledge", ("지도교수서약서", "지도교수확인서")),
-    ("pledge", ("생명윤리준수서약",)),
-    ("mta", ("물질이전협약", "검체제공협약", "mta")),
-    ("site_agreement", ("기관장합의", "수행기관협약", "공동수행협약")),
-    ("external_staff_agreement", ("외부인력협약", "외부연구자협약")),
-    ("specimen_consent", ("별지제34호", "인체유래물연구법정동의서")),
-    ("waiver_request", ("동의면제", "면제사유", "서면동의면제", "waiver")),
-    ("exemption_request", ("심의면제", "면제확인", "면제신청", "exemption", "exempt")),
-    ("deid_plan", ("가명처리", "비식별", "익명처리", "개인정보보호계획", "연구자료보호계획",
-                   "deidentification", "deid", "pseudonym")),
-    ("linkage_plan", ("결합계획", "데이터결합", "결합신청", "linkage")),
-    ("amendment_table", ("변경대비", "대비표", "변경사항", "amendment")),
-    ("security_pledge", ("보안서약", "비밀유지서약", "서약서", "pledge", "nda")),
-    ("consent_form", ("동의서", "설명문", "설명서", "consent", "icf")),
-    ("training_cert", ("교육이수", "이수증", "수료증", "이수확인", "교육", "certificate", "citi", "gcp")),
-    ("cv", ("이력서", "약력", "경력", "curriculum", "resume", "cv")),
-    ("coi", ("이해상충", "이해관계", "conflictofinterest", "coi")),
-    ("crf", ("증례기록", "자료수집", "수집항목", "변수목록", "항목표", "crf")),
-    ("progress_report", ("경과보고", "중간보고", "지속심의", "progress")),
-    ("final_report", ("종료보고", "결과보고", "최종보고", "finalreport")),
-    ("external_irb_approval", ("타기관", "승인통지", "승인서", "approvalletter")),
-    ("site_list", ("참여기관", "기관목록", "sitelist")),
-    ("destruction_certificate", ("파기확인", "파기", "destruction")),
-    ("budget", ("예산", "연구비", "budget")),
-    ("transfer_agreement", ("자료제공", "제공계약", "반출", "계약서", "협약서", "dua", "agreement")),
-    ("application", ("심의의뢰", "심의신청", "의뢰서", "신청서", "application")),
-    ("protocol", ("연구계획", "계획서", "프로토콜", "protocol")),
-]
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -63,18 +31,25 @@ def _normalize(text: str) -> str:
     return re.sub(r"[\s_\-.()\[\]{}·,]+", "", text.lower())
 
 
-def guess_from_filename(filename: str) -> Guess:
-    stem = _normalize(Path(filename).stem)
+def guess_from_filename(filename: str, *, patterns: ClassificationPatterns | None = None) -> Guess:
+    config = patterns if patterns is not None else default_classification()
+    raw = Path(filename).stem
+    stem = _normalize(raw)
     if not stem:
         return Guess("other", 0.0, "파일명 없음", "none")
-    for doc_type, words in KEYWORDS:
-        for w in words:
+    for doc_type, words in config.filename.items():
+        for expression in words:
+            w = expression.value
+            if expression.is_regex:
+                if expression.matches(raw):
+                    return Guess(doc_type, 0.9, f"파일명 '{w}'", "filename")
+                continue
             nw = _normalize(w)
             if not nw:
                 continue
             # 짧은 영문 약어(cv, coi 등)는 단어 경계가 있을 때만 인정해 오탐을 줄인다.
             if nw.isascii() and len(nw) <= 3:
-                if re.search(rf"(^|[^a-z]){re.escape(nw)}([^a-z]|$)", re.sub(r"[\s_\-.]+", " ", Path(filename).stem.lower())):
+                if re.search(rf"(^|[^a-z]){re.escape(nw)}([^a-z]|$)", re.sub(r"[\s_\-.]+", " ", raw.lower())):
                     return Guess(doc_type, 0.75, f"파일명 '{w}'", "filename")
                 continue
             if nw in stem:
@@ -83,9 +58,9 @@ def guess_from_filename(filename: str) -> Guess:
 
 
 def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str] | None = None,
-                   extracted_text: str | None = None) -> Guess:
+                   extracted_text: str | None = None, patterns: ClassificationPatterns | None = None) -> Guess:
     """파일명 → (필요 시) 텍스트 분류기 순서로 서류 종류를 추정한다."""
-    g = guess_from_filename(filename)
+    g = guess_from_filename(filename, patterns=patterns)
     if allowed is not None and g.doc_type not in allowed:
         g = Guess("other", 0.0, g.reason, "none")
     if g.confidence >= 0.75 or (raw is None and extracted_text is None):
@@ -98,7 +73,10 @@ def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str]
     try:
         if extracted_text is None and raw is not None:
             extracted_text = extract_text(filename, raw, allow_ai_ocr=False).text
-        doc_type, confidence, reason = classify_document(filename, extracted_text or "")
+        if patterns is None:
+            doc_type, confidence, reason = classify_document(filename, extracted_text or "")
+        else:
+            doc_type, confidence, reason = classify_document(filename, extracted_text or "", patterns=patterns)
     except Exception:  # 분류 실패는 업로드를 막지 않는다
         log.exception("document classification failed for %s", filename)
         return g

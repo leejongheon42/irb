@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .patterns import Expression
+
 
 @dataclass(frozen=True, slots=True)
 class Section:
@@ -47,7 +49,9 @@ def split_sections(text: str) -> list[Section]:
     return sections
 
 
-def matches(text: str, pattern: str) -> bool:
+def matches(text: str, pattern: str | Expression) -> bool:
+    if isinstance(pattern, Expression):
+        return pattern.matches(text)
     if pattern.startswith("re:"):
         return re.search(pattern[3:], text, re.I) is not None
     return pattern.casefold() in text.casefold()

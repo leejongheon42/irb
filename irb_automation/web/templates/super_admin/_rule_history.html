@@ -1,0 +1,39 @@
+{% macro state(active) %}{{ '등록 전' if active is none else ('적용 중' if active else '중지') }}{% endmacro %}
+<section class="card" id="rule-history" aria-labelledby="history-heading">
+  <h2 id="history-heading">변경 이력</h2>
+  {% if history %}
+  <p class="muted">복원은 해당 문구에만 적용됩니다. 등록을 되돌리면 문구가 중지됩니다.</p>
+  <ul class="sa-history-list">
+    {% for change, actor, expression, code, scope, format, condition, target in history %}
+    <li class="sa-history-row" id="change-{{ change.id }}">
+      <div class="sa-history-pattern">
+        <strong>{{ doc_types.get(change.doc_type, change.doc_type) }}</strong><br><code>{{ expression }}</code>
+        <span class="small muted sa-pattern-meta">{{ code or classification_labels.get(scope, '오탐 승인 문구') }}{% if format == 'regex' %} · 정규표현식{% endif %}</span>
+        {% if condition %}<span class="small muted sa-pattern-meta">{{ match_labels.get(condition, condition) }}{% if target %} · {{ target }}{% endif %}</span>{% endif %}
+      </div>
+      <div class="sa-history-actor">
+        <time datetime="{{ change.created_at.isoformat() }}">{{ change.created_at|fmt }}</time>
+        <span class="small muted sa-pattern-meta">{{ actor }} · 이력 {{ change.id }}번</span>
+      </div>
+      <div>
+        {{ state(change.before_active) }} → {{ state(change.after_active) }}
+        {% if change.restored_change_id %}<span class="small muted sa-pattern-meta">이력 {{ change.restored_change_id }}번 복원</span>{% endif %}
+      </div>
+      <form method="post" action="/super-admin/rules/history/{{ change.id }}/restore">
+        {{ csrf_input }}<input type="hidden" name="doc_type" value="{{ doc_type }}"><input type="hidden" name="q" value="{{ q }}">
+        <button class="btn-sm sa-rule-button" type="submit"
+                aria-label="이력 {{ change.id }}번의 문구를 이전 적용 상태로 복원">복원</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">표시할 변경 이력이 없습니다.</p>{% endif %}
+  {% if history_page > 1 or history_has_next %}
+  {% set base = '/super-admin/rules?doc_type=' ~ (doc_type|urlencode) ~ '&q=' ~ (q|urlencode) ~ '&history_page=' %}
+  <nav class="actions sa-pages" aria-label="변경 이력 페이지">
+    {% if history_page > 1 %}<a class="btn" href="{{ base }}{{ history_page - 1 }}#rule-history">이전</a>{% endif %}
+    <span>{{ history_page }}페이지</span>
+    {% if history_has_next %}<a class="btn" href="{{ base }}{{ history_page + 1 }}#rule-history">다음</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>

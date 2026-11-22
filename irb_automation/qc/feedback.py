@@ -17,7 +17,8 @@ from ..models import User
 from ..timeutil import now
 from .checks import criteria
 from .models import QCRuleFeedback, QCRuleKeyword, QCRun
-from .required import RequiredAliases
+from .pattern_history import record_registration
+from .required import RequiredAliases, required_groups
 
 
 class Criterion(TypedDict):
@@ -25,17 +26,19 @@ class Criterion(TypedDict):
     doc_type: str
     label: str
     patterns: dict[str, list[str]]
+    groups: dict[tuple[str, str], list[str]]
 
 
 class FeedbackConflict(Exception):
     """The requested review cannot be applied to the current case or rule."""
 
 
-def required_criteria() -> dict[str, Criterion]:
+def required_criteria(db: Session | None = None) -> dict[str, Criterion]:
     return {
         code: Criterion(code=code, doc_type=doc_type, label=item["label"],
-                        patterns={kind: item[kind] for kind in ("any", "all", "must", "reject") if item.get(kind)})
-        for doc_type, items in criteria().get("required", {}).items()
+                        patterns={kind: item[kind] for kind in ("any", "all", "must", "reject") if item.get(kind)},
+                        groups=required_groups(item))
+        for doc_type, items in criteria(db).get("required", {}).items()
         for item in items
         for code in [f"REQ_{doc_type}_{item['id']}".upper()]
     }
@@ -92,7 +95,7 @@ def review_case(db: Session, actor: User, case: QCRuleFeedback, *,
         raise FeedbackConflict("검토 메모를 입력해 주세요.")
     term = unicodedata.normalize("NFC", keyword.strip())
     if decision == "applied":
-        criterion = required_criteria().get(case.rule_code)
+        criterion = required_criteria(db).get(case.rule_code)
         if criterion is None or target not in keyword_targets(criterion):
             raise FeedbackConflict("현재 규칙에서 추가할 매칭 조건을 확인해 주세요.")
         if not 2 <= len(term) <= 80 or not any(char.isalnum() for char in term) or mask_text(term).masked:
@@ -104,20 +107,12 @@ def review_case(db: Session, actor: User, case: QCRuleFeedback, *,
         if changed is None:
             raise FeedbackConflict("이미 검토된 사례입니다.")
         if decision == "applied":
-            db.add(QCRuleKeyword(case_id=case.id, rule_code=case.rule_code, kind=target[0], pattern=target[1],
-                                 keyword=term, keyword_key=term.casefold(), created_by=actor.id))
+            row = QCRuleKeyword(case_id=case.id, rule_code=case.rule_code, kind=target[0], pattern=target[1],
+                                keyword=term, keyword_key=term.casefold(), created_by=actor.id)
+            db.add(row)
             db.flush()
+            record_registration(db, actor, row, criterion["doc_type"])
     except IntegrityError as error:
         raise FeedbackConflict("이 규칙 조건에 같은 문구가 이미 등록되어 있습니다.") from error
     audit.record(db, actor, "qc_feedback_review", "qc_rule_feedback", case.id,
                  {"status": decision, "rule_code": case.rule_code})
-
-
-def set_keyword_active(db: Session, actor: User, keyword_id: int, *, active: bool) -> bool:
-    """Switch an approved alias on or off while retaining the case history."""
-    changed = db.scalar(update(QCRuleKeyword).where(QCRuleKeyword.id == keyword_id, QCRuleKeyword.is_active != active)
-                        .values(is_active=active).returning(QCRuleKeyword.id))
-    if changed is None:
-        return False
-    audit.record(db, actor, "qc_keyword_toggle", "qc_rule_keyword", keyword_id, {"active": active})
-    return True

@@ -44,6 +44,7 @@ from ..engine.prereview import run_prereview
 from ..engine.ruleset import get_ruleset
 from ..models import Document, Protocol, User
 from ..notifications import admins, notify
+from ..qc.pattern_store import active_classification
 from ..timeutil import now
 from ..workflow import service as wf
 from .models import ExtractedTextCache, PipelineRun, PipelineStep
@@ -329,7 +330,7 @@ def step_classify(ctx: _Context) -> dict[str, Any]:
     text = _need_text(ctx)
     if ctx.extracted and ctx.extracted.method == "protocol_fields":
         raise Skip("과제 입력값 분석에는 분류가 필요 없습니다.")
-    doc_type, conf, reason = cls.classify_document(ctx.run.input_name, text)
+    doc_type, conf, reason = cls.classify_document(ctx.run.input_name, text, patterns=active_classification(ctx.db))
     method = "rule"
     if ctx.use_ai and conf < 0.6:
         guarded = privacy.mask_text(text[:6000])

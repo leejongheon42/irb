@@ -137,7 +137,7 @@ python -m irb_automation verify-audit            # 감사 로그 위변조 검�
 | `IRB_SECRET_KEY`, `IRB_PSEUDONYM_SECRET` | 세션 서명 키, 가명처리 HMAC 키(분리 보관) |
 | `IRB_DATABASE_URL`(또는 `DATABASE_URL`·`POSTGRES_URL`), `IRB_DATA_DIR`, `IRB_RULESET_PATH` | DB(PostgreSQL 권장, 미지정 시 로컬 SQLite), 파일 캐시 위치, 사전점검 규칙 파일 |
 | `IRB_FILE_STORE` | 업로드 원본을 DB에도 보관(`db`)할지 여부. PostgreSQL이면 기본 `db` |
-| `IRB_QC_CRITERIA_PATH` | 서류 점검 기준 파일(기관용 사본) |
+| `IRB_QC_CRITERIA_PATH` | 서류 점검 기준을 DB에 처음 적재할 때 사용하는 기관용 파일 |
 | `IRB_SUPER_ADMIN_PASSWORD` | `super_admin` 최초 생성용 비밀번호. 기본 계정 생성이 활성화되어 있으면 기본값은 `medilux_super_admin` |
 | `IRB_APPROVAL_VALIDITY_DAYS` | 결과 입력 시 만료일을 비웠을 때 기본 승인 기간 |
 | `IRB_SOFFICE_PATH` | LibreOffice 경로(DOCX 자동 작성·HWP 변환) |

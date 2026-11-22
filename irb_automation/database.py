@@ -95,10 +95,15 @@ def init_db() -> None:
     from .public_irb import records as _public_records  # noqa: F401
     from .public_irb import source_models as _source_models  # noqa: F401
     from .qc import models as _qc_models  # noqa: F401
+    from .qc.pattern_store import seed_patterns
     from .submission import models as _submission_models  # noqa: F401
 
     engine = get_engine()
-    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # Cold starts must not create the same new tables concurrently.
+            conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 0x1EB_DD01})
+        Base.metadata.create_all(conn)
     added = migrate_columns(engine)
     if added:
         log.info("added columns: %s", ", ".join(added))
@@ -106,6 +111,8 @@ def init_db() -> None:
         if db.get(SchemaRevision, "public-irb-v1") is None:
             db.add(SchemaRevision(revision="public-irb-v1"))
             db.commit()
+        seed_patterns(db)
+        db.commit()
 
 
 def sync_secrets(settings) -> None:

@@ -23,12 +23,39 @@
 .sa-rule dl { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 8px 14px; margin: 0 0 12px; }
 .sa-rule dt { font-weight: 650; }
 .sa-rule dd { margin: 0; min-width: 0; }
+.sa-rule-links { gap: 8px 16px; margin-bottom: 16px; }
+.sa-rule-links a { display: inline-flex; align-items: center; min-height: 36px; }
+.sa-rules .sa-search select { min-height: 38px; margin: 0; }
+.sa-rules .sa-search input { min-height: 38px; }
+.sa-rules code { overflow-wrap: anywhere; white-space: pre-wrap; }
+.sa-rules pre { overflow: auto; }
+.sa-rules .sa-rule { scroll-margin-top: 12px; }
+.sa-condition { font-size: 1rem; margin: 12px 0 4px; }
+.sa-pattern-list { list-style: none; margin: 0; padding: 0; }
+.sa-pattern-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.sa-pattern-row > div { min-width: 0; }
+.sa-pattern-meta { display: block; }
+.sa-rule-button { min-height: 34px; white-space: nowrap; }
+.sa-add-pattern { margin: 0 0 12px; }
+.sa-add-pattern > summary { color: var(--primary); font-size: .875rem; }
+.sa-pattern-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; max-width: 540px; margin-bottom: 16px; }
+.sa-pattern-form :is(label, p, input, select) { margin: 0; }
+.sa-form-wide { grid-column: 1 / -1; }
+.sa-history-list { list-style: none; margin: 0; padding: 0; }
+.sa-history-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(145px, 1fr) minmax(128px, 1fr) auto; align-items: center; gap: 8px 16px; border-top: 1px solid var(--border); padding: 12px 0; }
+.sa-history-actor { font-variant-numeric: tabular-nums; }
 .sa-wrap :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 @media (max-width: 760px) {
   .sa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sa-search :is(input, select) { font-size: 16px; }
+  .sa-pattern-form :is(input, select) { font-size: 16px; }
+  .sa-rule-button, .sa-rule-links a, .sa-rules .sa-search :is(button, .btn) { min-height: 44px; }
+  .sa-history-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .sa-history-pattern, .sa-history-actor { grid-column: 1 / -1; }
 }
 @media (max-width: 500px) {
   .layout-single:has(.sa-header) .main, .sa-header-row { padding-inline: 12px; }
   .sa-fields, .sa-rule dl { grid-template-columns: 1fr; gap: 6px; }
+  .sa-rules .sa-search label { flex-basis: 100%; max-width: none; }
+  .sa-rules .sa-rule summary span { display: block; margin-inline-start: 16px; overflow-wrap: anywhere; }
 }

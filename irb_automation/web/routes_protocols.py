@@ -26,6 +26,7 @@ from ..models import (
     SubmissionKind,
     User,
 )
+from ..qc.pattern_store import active_classification
 from ..submission import service as submission_service
 from ..submission.guess import guess_doc_type
 from ..timeutil import parse_date
@@ -188,7 +189,7 @@ async def upload_document(request: Request, pid: int, user: User = Depends(curre
     filename = Path(upload.filename).name
     content = await upload.read()
     if doc_type not in get_ruleset().catalog("document_types"):
-        g = guess_doc_type(filename, content)
+        g = guess_doc_type(filename, content, patterns=active_classification(db))
         doc_type = g.doc_type if g.confidence >= 0.5 else "other"
     try:
         doc, result = submission_service.store_document(

@@ -131,7 +131,7 @@ def qc_home(request: Request, user: User = Depends(researcher), db: Session = De
                       .order_by(QCRun.id.desc()).limit(30)).all()
     protocols = [p for p in db.scalars(select(Protocol).order_by(Protocol.updated_at.desc())) if wf.is_member(user, p)]
     return render(request, "qc/index.html", db, user, runs=runs, protocols=protocols, ai_on=_ai_on(),
-                  doc_types=_doc_type_options(), criteria=criteria())
+                  doc_types=_doc_type_options(), criteria=criteria(db))
 
 
 def _doc_type_options() -> list[tuple[str, str]]:
@@ -292,14 +292,15 @@ def qc_review_bulk(request: Request, rid: int, user: User = Depends(current_user
 @router.get("/qc/{rid}")
 def qc_run_page(request: Request, rid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     qr = _run(db, user, rid)
-    cats = criteria().get("categories", {})
+    config = criteria(db)
+    cats = config.get("categories", {})
     by_cat: dict[str, int] = {}
     for i in qr.issues:
         by_cat[i["category"]] = by_cat.get(i["category"], 0) + 1
     can_fix = _can_edit(user, qr)
     return render(request, "qc/run.html", db, user, qr=qr, cats=cats, by_cat=by_cat, can_fix=can_fix,
                   fixable={i["id"] for i in qcs.fixable_issues(qr)}, check_options=CHECK_OPTIONS,
-                  detectors=detector_rows(qr.ai_used), scoring=criteria().get("scoring", {}))
+                  detectors=detector_rows(qr.ai_used, db=db), scoring=config.get("scoring", {}))
 
 
 def _saved_answers(qr: QCRun) -> Answers:

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from irb_automation.ai import client as ai
+from irb_automation.database import init_db
 from irb_automation.models import Role, User
 from irb_automation.qc.models import QCRuleFeedback, QCRuleKeyword, QCRun
 from irb_automation.security import verify_password
@@ -111,3 +112,100 @@ def test_verified_rule_dispute_can_be_approved_and_used_in_the_next_review(app, 
         run = db.get(QCRun, case.run_id)
         assert not any(issue["code"] == criterion for issue in run.issues)
         assert db.get(QCRuleFeedback, case.id).status == "applied"
+
+
+def test_filename_rule_can_be_registered_disabled_and_restored_from_history(app, settings) -> None:
+    settings.super_admin_password = BOOTSTRAP_PASSWORD
+    rules = "/super-admin/rules"
+    filename = {"name": "QA-BLUE-482.txt"}
+    pattern = {"scope": "filename", "doc_type": "consent_form", "format": "regex", "expression": r"^QA-BLUE-\d+$"}
+    with TestClient(app) as client:
+        _sign_in(client, "admin", PASSWORD)
+        token = _token(client.get("/admin/users").text)
+        assert client.post(f"{rules}/patterns", data={**pattern, "csrf_token": token}).status_code == 403
+
+        _sign_in(client, "super_admin", BOOTSTRAP_PASSWORD)
+        token = _token(client.get(rules).text)
+        assert client.post(f"{rules}/patterns", data=pattern).status_code == 403
+        invalid = client.post(f"{rules}/patterns", data={**pattern, "expression": "(", "csrf_token": token})
+        assert "정규표현식 문법을 확인" in invalid.text
+        assert client.get("/documents/guess", params=filename).json()["doc_type"] == "other"
+
+        response = client.post(f"{rules}/patterns", data={**pattern, "csrf_token": token})
+        assert response.status_code == 200
+        assert client.get("/documents/guess", params=filename).json()["doc_type"] == "consent_form"
+        selected = client.get(rules, params={"doc_type": "consent_form", "q": "QA-BLUE"}).text
+        elsewhere = client.get(rules, params={"doc_type": "protocol", "q": "QA-BLUE"}).text
+        assert 'id="class-consent_form" open' in selected
+        assert 'id="class-consent_form"' not in elsewhere and '/history/' not in elsewhere
+        button = re.search(r'<code>\^QA-BLUE[^<]+</code>.*?action="(/super-admin/rules/patterns/\d+)"', selected, re.S)
+        assert button
+
+        disabled = client.post(button[1], data={"active": "no", "csrf_token": token})
+        init_db()
+        assert client.get("/documents/guess", params=filename).json()["doc_type"] == "other"
+        restore = re.search(r'action="(/super-admin/rules/history/\d+/restore)"', disabled.text)
+        assert restore
+        assert client.post(restore[1], data={}).status_code == 403
+        restored = client.post(restore[1], data={"csrf_token": token})
+        assert client.get("/documents/guess", params=filename).json()["doc_type"] == "consent_form"
+        assert len(re.findall(r'action="/super-admin/rules/history/\d+/restore"', restored.text)) == 3
+
+
+def test_added_required_regex_is_loaded_on_the_next_document_review(app, db, settings) -> None:
+    settings.mvp_mode = settings.pipeline_sync = True
+    settings.ai_review_enabled = False
+    settings.super_admin_password = BOOTSTRAP_PASSWORD
+    code = "REQ_PROTOCOL_SAMPLE_SIZE"
+    text = "# 1. 연구 제목\n연구명 | 업무 피로 연구\n# 2. 배경\n연구는 피로의 변화를 조사한다.\n"
+    text += "# 8. 참여 인원 설계\n목표 규모는 80명이다. 이전 응답률과 예상 탈락률 20%를 반영하였다."
+    rules = "/super-admin/rules"
+
+    with TestClient(app) as client:
+        _sign_in(client, "researcher", PASSWORD)
+        token = _token(client.get("/mvp").text)
+        _upload(client, token, ("연구계획서.txt", text.encode()))
+        start = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False)
+        url = start.headers["location"]
+        run = db.get(QCRun, int(url.rsplit("/", 1)[-1]))
+        assert any(issue["code"] == code for issue in run.issues)
+
+        _sign_in(client, "super_admin", BOOTSTRAP_PASSWORD)
+        token = _token(client.get(rules).text)
+        response = client.post(f"{rules}/patterns", data={
+            "scope": "required", "doc_type": "protocol", "rule_code": code, "format": "regex",
+            "expression": r"예상 탈락률\s*\d+%", "condition": '["all", "re:산출|근거|검정력|전수"]', "csrf_token": token,
+        }, follow_redirects=False)
+        assert response.status_code == 303
+
+        _sign_in(client, "researcher", PASSWORD)
+        token = _token(client.get("/mvp").text)
+        client.post(f"{url}/retry", data={"csrf_token": token}, follow_redirects=False)
+        db.refresh(run)
+        assert all(issue["code"] != code for issue in run.issues)
+
+
+def test_added_body_keyword_changes_document_type_on_upload(app, settings) -> None:
+    settings.mvp_mode = True
+    settings.super_admin_password = BOOTSTRAP_PASSWORD
+    rules = "/super-admin/rules"
+    file = "synthetic.txt", "옥수수 색상 비교\n녹색과 노란색 중 한 가지를 골라 주세요.".encode()
+
+    with TestClient(app) as client:
+        _sign_in(client, "researcher", PASSWORD)
+        token = _token(client.get("/mvp").text)
+        before, = _upload(client, token, file)
+        assert before["doc_type_label"] != "설문지·면담질문지"
+
+        _sign_in(client, "super_admin", BOOTSTRAP_PASSWORD)
+        token = _token(client.get(rules).text)
+        response = client.post(f"{rules}/patterns", data={
+            "scope": "body", "doc_type": "questionnaire", "format": "literal",
+            "expression": "옥수수 색상 비교", "weight": "8", "csrf_token": token,
+        }, follow_redirects=False)
+        assert response.status_code == 303
+
+        _sign_in(client, "researcher", PASSWORD)
+        token = _token(client.get("/mvp").text)
+        after, = _upload(client, token, file)
+        assert after["doc_type_label"] == "설문지·면담질문지"

@@ -66,7 +66,7 @@
 | `IRB_SOFFICE_PATH` | PATH 자동 탐지 | LibreOffice |
 | `IRB_PIPELINE_SYNC` | false | 동기 실행 |
 
-기관 고유 서식 명칭은 규칙 세트 `document_pipeline.field_aliases`(섹션 제목 별칭), `document_pipeline.classify_keywords`(분류 키워드)에 추가한다.
+기관 고유 서식의 분류 문구는 최고 관리자가 `/super-admin/rules`의 문서 분류에서 추가한다. 기존 규칙 세트의 `document_pipeline.classify_keywords` 값은 DB에 처음 적재할 때 가져온다. 섹션 제목 별칭은 규칙 세트 `document_pipeline.field_aliases`에서 설정한다.
 
 ## 7. 샘플·테스트
 

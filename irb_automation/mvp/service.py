@@ -21,6 +21,7 @@ from ..models import User
 from ..qc import category_scores
 from ..qc import service as qc
 from ..qc.models import QCRun
+from ..qc.pattern_store import active_classification
 from ..submission.guess import guess_doc_type
 from ..submission.validate import ALLOWED_EXT, validate_upload
 from ..timeutil import now
@@ -61,7 +62,7 @@ def save_upload(db: Session, user_id: int, name: str, raw: bytes, size: int, pat
         messages.append("ZIP 파일을 풀어 서류를 개별로 올려 주세요.")
     if result.ok:
         doc = qc._read_doc("", result.filename, raw, "other")
-        guess = guess_doc_type(result.filename, extracted_text=doc.text)
+        guess = guess_doc_type(result.filename, extracted_text=doc.text, patterns=active_classification(db))
         row.doc_type = guess.doc_type if guess.confidence >= 0.5 else "other"
         row.doc_type_label = get_ruleset().label("document_types", row.doc_type)
         if not doc.text.strip():
@@ -182,11 +183,12 @@ def _run_review(run_id: int, attempt: str) -> None:
             use_ai = ai.ai_enabled()
             docs = []
             store = {}
+            patterns = active_classification(db)
             for index, file in enumerate(files, start=1):
                 key = f"d{index}"
                 store[key] = file.path
                 doc = qc._read_doc(key, file.name, filestore.read_bytes(file.path), file.doc_type, allow_ai_ocr=use_ai)
-                guess = guess_doc_type(file.name, extracted_text=doc.text)
+                guess = guess_doc_type(file.name, extracted_text=doc.text, patterns=patterns)
                 if guess.confidence >= 0.5:
                     doc.doc_type = guess.doc_type
                 docs.append(doc)

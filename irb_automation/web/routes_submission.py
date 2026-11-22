@@ -12,6 +12,7 @@ from .. import audit
 from ..database import get_db
 from ..engine.ruleset import get_ruleset
 from ..models import Document, Protocol, User
+from ..qc.pattern_store import active_classification
 from ..submission import service
 from ..submission.bundle import build_pdf, build_zip
 from ..submission.compare import compare_documents
@@ -62,8 +63,8 @@ def _disposition(kind: str, filename: str) -> str:
 
 # ------------------------------------------------------------------ 종류 추정 / 업로드
 @router.get("/documents/guess")
-def guess(name: str = "", user: User = Depends(current_user)):
-    g = guess_from_filename(name)
+def guess(name: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+    g = guess_from_filename(name, patterns=active_classification(db))
     return JSONResponse({**g.to_dict(), "label": get_ruleset().label("document_types", g.doc_type)})
 
 
@@ -83,6 +84,7 @@ async def bulk_upload(request: Request, pid: int, user: User = Depends(current_u
         flash(request, f"한 번에 {limit}개까지 제출할 수 있습니다.", "error")
         return back
     allowed = set(get_ruleset().catalog("document_types"))
+    patterns = active_classification(db)
     details: list[tuple[str, str]] = []
     ok = warned = rejected = 0
     for i, up in enumerate(files):
@@ -90,7 +92,7 @@ async def bulk_upload(request: Request, pid: int, user: User = Depends(current_u
         name = Path(up.filename).name
         chosen = str(form.get(f"doc_type_{i}") or form.get("doc_type_all") or "auto")
         if chosen not in allowed:
-            g = guess_doc_type(name, raw, allowed=allowed)
+            g = guess_doc_type(name, raw, allowed=allowed, patterns=patterns)
             chosen = g.doc_type if g.confidence >= 0.5 else "other"
         try:
             doc, result = service.store_document(db, user, p, doc_type=chosen, filename=name, raw=raw,

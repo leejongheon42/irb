@@ -1,0 +1,55 @@
+{% macro pattern_list(rows, weighted=false) %}
+  {% if rows %}
+  <ul class="sa-pattern-list">
+    {% for row in rows %}
+    <li class="sa-pattern-row">
+      <div>
+        <code>{{ row.expression }}</code>
+        <span class="small muted sa-pattern-meta">{{ '정규표현식' if row.format == 'regex' else '키워드' }}{% if weighted %} · 가중치 {{ '%g'|format(row.weight) }}{% endif %} · {{ '적용 중' if row.is_active else '중지' }}</span>
+      </div>
+      <form method="post" action="/super-admin/rules/patterns/{{ row.id }}">
+        {{ csrf_input }}<input type="hidden" name="q" value="{{ q }}">
+        <button class="btn-sm sa-rule-button" type="submit" name="active" value="{{ 'no' if row.is_active else 'yes' }}"
+                aria-label="{{ row.expression }} {{ '중지' if row.is_active else '다시 적용' }}">{{ '중지' if row.is_active else '다시 적용' }}</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="small muted">등록된 문구가 없습니다.</p>{% endif %}
+{% endmacro %}
+
+{% macro add_form(scope, type, entry=none) %}
+  <details class="sa-add-pattern"{% if form_scope == scope and selected == (entry.code if entry else 'class-' ~ type) %} open{% endif %}>
+    <summary>키워드·정규표현식 추가</summary>
+    <form method="post" action="/super-admin/rules/patterns" class="sa-pattern-form">
+      {{ csrf_input }}
+      <input type="hidden" name="scope" value="{{ scope }}"><input type="hidden" name="doc_type" value="{{ type }}">
+      {% if entry %}
+      <input type="hidden" name="rule_code" value="{{ entry.code }}">
+      <label class="sa-form-wide">매칭 조건
+        <select name="condition" required>
+          <option value="">조건 선택</option>
+          {% for (kind, target), defaults in entry.groups.items() %}
+          <option value="{{ [kind, target]|tojson|forceescape }}">{{ match_labels[kind] }}{% if target %} · {{ target }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <label>문구 유형
+        <select name="format"><option value="literal">키워드</option><option value="regex">정규표현식</option></select>
+      </label>
+      {% if scope == "body" %}
+      <label>가중치<input type="number" name="weight" min="0.1" max="20" step="0.1" value="5" required></label>
+      {% endif %}
+      <label class="sa-form-wide">문구
+        <input type="text" name="expression" maxlength="240" required autocomplete="off" spellcheck="false">
+      </label>
+      <p class="small muted sa-form-wide">
+        정규표현식은 RE2 문법을 사용합니다.
+        {% if scope == "filename" %}파일 확장자를 제외한 이름에 적용됩니다.
+        {% elif scope == "body" %}본문 앞부분과 파일명에 적용되며 제목에서 일치하면 가산점을 받습니다.{% endif %}
+      </p>
+      <div><button class="btn-primary" type="submit">등록</button></div>
+    </form>
+  </details>
+{% endmacro %}

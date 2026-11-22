@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import NotRequired, TypedDict
 
 import yaml
+from sqlalchemy.orm import Session
+
+from .pattern_store import current_settings, database_settings
 
 
 class Flag(TypedDict, total=False):
@@ -68,7 +71,10 @@ def _load(mtime: int) -> Registry:
     return yaml.safe_load(_PATH.read_text(encoding="utf-8"))
 
 
-def rules() -> Registry:
+def rules(db: Session | None = None) -> Registry:
+    config = database_settings(db) if db is not None else current_settings.get()
+    if config is not None:
+        return config.detector_registry
     return _load(_PATH.stat().st_mtime_ns)
 
 
@@ -76,8 +82,8 @@ def flag_meta(rule_id: str, flag: str) -> Flag:
     return rules()["rules"].get(rule_id, {}).get("flags", {}).get(flag, {})
 
 
-def detector_rows(ai_used: bool) -> list[tuple[str, str, str]]:
-    registry = rules()
+def detector_rows(ai_used: bool, *, db: Session | None = None) -> list[tuple[str, str, str]]:
+    registry = rules(db)
     detectors = registry.get("detectors", {})
     return [(rid, flag, "규칙" if flag in detectors.get(rid, {}).get("rule", [])
              else "AI 분석 대상" if ai_used and flag in detectors.get(rid, {}).get("ai", []) else "미점검")

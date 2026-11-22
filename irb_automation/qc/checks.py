@@ -12,11 +12,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from . import facts as F
+from .pattern_store import current_settings, database_settings
 from .profile import Profile
-from .required import RequiredAliases, check_required
+from .required import RequiredAliases, RequiredPatterns, check_required
 
 CRITERIA_PATH = Path(__file__).with_name("criteria.yaml")
 
@@ -26,7 +28,10 @@ def _load(path: str, mtime: float) -> dict[str, Any]:
     return yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
 
 
-def criteria() -> dict[str, Any]:
+def criteria(db: Session | None = None) -> dict[str, Any]:
+    config = database_settings(db) if db is not None else current_settings.get()
+    if config is not None:
+        return config.criteria
     path = Path(getattr(get_settings(), "qc_criteria_path", "") or CRITERIA_PATH)
     if not path.exists():
         path = CRITERIA_PATH
@@ -345,7 +350,8 @@ def check_numbers(doc: QCDoc) -> list[dict]:
 # ------------------------------------------------------------------ 전체
 def run_rules(docs: list[QCDoc], protocol: Any | None, extra: set[str] | None = None,
               profile: Profile | None = None, *, units: list[dict] | None = None,
-              aliases: RequiredAliases | None = None) -> tuple[list[dict], list[dict]]:
+              aliases: RequiredAliases | None = None,
+              patterns: RequiredPatterns | None = None) -> tuple[list[dict], list[dict]]:
     """(phase1 이슈, phase3 이슈)"""
     conds = conditions(protocol) | (extra or set())
     if profile and profile.get("consent"):
@@ -365,7 +371,8 @@ def run_rules(docs: list[QCDoc], protocol: Any | None, extra: set[str] | None = 
         versions = check_version(d)
         numbers = check_numbers(d)
         typos = check_typos(d)
-        p1 += check_required(d, conds, units, aliases=aliases) + versions + check_placeholders(d) + check_pii(d)
+        p1 += check_required(d, conds, units, aliases=aliases, patterns=patterns)
+        p1 += versions + check_placeholders(d) + check_pii(d)
         p1 += check_regulatory(d, protocol)
         p3 += typos + numbers
         if units is not None:
