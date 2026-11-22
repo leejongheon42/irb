@@ -12,6 +12,7 @@ from .security import hash_password, password_problems
 
 DEMO_PASSWORD = None  # None이면 데모 계정 비밀번호 = 아이디 (researcher/researcher, admin/admin)
 SUPER_ADMIN_USERNAME = "super_admin"
+DEFAULT_SUPER_ADMIN_PASSWORD = "medilux_super_admin"
 
 DEMO_USERS = [
     ("admin", "연구지원관리자", "연구지원팀", Role.ADMIN),
@@ -54,8 +55,8 @@ def ensure_builtin_accounts(db: Session) -> list[str]:
 
 
 def ensure_super_admin(db: Session, password: str) -> bool:
-    """Create the explicitly configured account once, without elevating an existing user."""
-    if password_problems(password):
+    """Create the built-in account once, without elevating an existing user."""
+    if password != DEFAULT_SUPER_ADMIN_PASSWORD and password_problems(password):
         raise ValueError("최고 관리자 초기 비밀번호가 비밀번호 정책을 충족하지 않습니다.")
     existing = db.scalar(select(User).where(User.username == SUPER_ADMIN_USERNAME))
     if existing is not None:

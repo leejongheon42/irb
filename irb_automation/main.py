@@ -75,12 +75,12 @@ async def lifespan(app: FastAPI):
             db.commit()
         if created:
             log.info("builtin accounts: %s", ", ".join(created))
-    if settings.super_admin_password:
-        from .seed import ensure_super_admin
+    if settings.builtin_accounts or settings.super_admin_password:
+        from .seed import DEFAULT_SUPER_ADMIN_PASSWORD, ensure_super_admin
 
         with SessionLocal() as db:
             try:
-                created_super_admin = ensure_super_admin(db, settings.super_admin_password)
+                created_super_admin = ensure_super_admin(db, settings.super_admin_password or DEFAULT_SUPER_ADMIN_PASSWORD)
             except ValueError as error:
                 log.error("%s", error)
             else:

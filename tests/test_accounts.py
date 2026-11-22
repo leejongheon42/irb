@@ -1,4 +1,4 @@
-"""기본 계정(guest·admin) 자동 생성과 계정별 AI 등급."""
+"""기본 계정 자동 생성과 계정별 AI 등급."""
 from __future__ import annotations
 
 import re
@@ -51,6 +51,7 @@ def test_server_start_adds_missing_accounts_and_login_is_required(settings) -> N
     from irb_automation.main import create_app
 
     settings.builtin_accounts = True
+    settings.super_admin_password = ""
     with TestClient(create_app()) as client:
         assert client.get("/", follow_redirects=False).headers["location"] == "/login"
         assert "guest / guest" in client.get("/login").text
@@ -59,6 +60,8 @@ def test_server_start_adds_missing_accounts_and_login_is_required(settings) -> N
         assert client.get("/", follow_redirects=False).status_code == 200
         assert _login(client, "admin", "medilux_admin") == 303
         assert client.get("/", follow_redirects=False).status_code == 200
+        assert _login(client, "super_admin", "medilux_super_admin") == 303
+        assert client.get("/super-admin", follow_redirects=False).status_code == 200
 
 
 def test_ai_provider_and_model_follow_the_logged_in_account(settings) -> None:
