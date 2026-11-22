@@ -15,7 +15,7 @@ from . import __version__
 from .api.knowledge import router as knowledge_api_router
 from .api.routes import router as api_router
 from .config import get_settings
-from .database import SessionLocal, init_db
+from .database import SessionLocal, init_db, sync_secrets
 from .web import (
     routes_admin,
     routes_deid,
@@ -55,6 +55,14 @@ async def _scheduler_loop(interval: int) -> None:
 async def lifespan(app: FastAPI):
     init_db()
     settings = get_settings()
+    from .knowledge.service import ensure_ready
+
+    with SessionLocal() as db:  # 내장 지식을 시작 시 한 번 적재(요청마다 동시에 적재하는 경합 방지)
+        try:
+            ensure_ready(db)
+            db.commit()
+        except Exception:  # pragma: no cover - 지식 검색은 첫 사용 시 다시 시도한다
+            log.exception("knowledge seeding failed")
     if settings.builtin_accounts:
         from .seed import ensure_builtin_accounts
 
@@ -75,6 +83,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    sync_secrets(settings)  # PostgreSQL: 세션·가명처리 키를 DB에서 불러와 재배포 후에도 유지
     app = FastAPI(
         title="IRB 자동화 솔루션",
         description="병원 의료데이터 활용 연구를 위한 IRB 심의 자동화 API",

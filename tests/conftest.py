@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from irb_automation.config import Settings, override_settings
+from irb_automation.config import Settings, normalize_database_url, override_settings
 from irb_automation.database import SessionLocal, init_db, reset_engine
 from irb_automation.engine.facts import ProtocolFacts
 
@@ -29,11 +30,31 @@ def make_pdf(pages: int = 1, text: str = "") -> bytes:
     return buf.getvalue()
 
 
+# PostgreSQL에서도 전체 테스트를 돌리려면 IRB_TEST_DATABASE_URL=postgresql://... 을 지정한다(테스트마다 스키마 초기화).
+TEST_DATABASE_URL = os.environ.get("IRB_TEST_DATABASE_URL", "")
+
+
+def _reset_postgres_schema(url: str) -> None:
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(normalize_database_url(url))
+    with engine.begin() as conn:
+        # 이전 테스트의 백그라운드 작업이 남긴 연결이 잠금을 잡고 있으면 스키마 삭제가 교착된다.
+        conn.execute(text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                          "WHERE datname = current_database() AND pid <> pg_backend_pid()"))
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    engine.dispose()
+
+
 @pytest.fixture()
 def settings(tmp_path, monkeypatch):
-    monkeypatch.delenv("IRB_DATABASE_URL", raising=False)
+    for name in ("IRB_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL", "IRB_FILE_STORE"):
+        monkeypatch.delenv(name, raising=False)
+    if TEST_DATABASE_URL:
+        _reset_postgres_schema(TEST_DATABASE_URL)
     s = Settings(data_dir=tmp_path / "data", password_iterations=1000, scheduler_enabled=False, mvp_mode=False,
-                 builtin_accounts=False)
+                 builtin_accounts=False, database_url=TEST_DATABASE_URL)
     override_settings(s)
     reset_engine()
     init_db()

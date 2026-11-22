@@ -1,6 +1,8 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
+# PostgreSQL 드라이버(Vercel·운영 배포). 로컬 개발은 SQLite로도 동작
+psycopg[binary]>=3.2
 jinja2>=3.1
 python-multipart>=0.0.9
 pyyaml>=6.0

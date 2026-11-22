@@ -107,6 +107,20 @@ docker compose up -d --build
 docker compose exec irb python -m irb_automation create-user admin admin --name 관리자
 ```
 
+### Vercel (PostgreSQL)
+
+Vercel 컨테이너는 배포·재시작 때마다 로컬 디스크가 초기화되므로 **데이터는 모두 PostgreSQL에 저장**합니다.
+
+1. Vercel 프로젝트의 **Storage → Postgres(Neon 등)** 를 연결합니다. 연결하면 `DATABASE_URL`/`POSTGRES_URL`이 자동으로 들어오며
+   앱이 이 값을 읽습니다(`postgres://`·`postgresql://` 주소는 자동으로 psycopg 드라이버 주소로 바뀜). 직접 지정하려면 `IRB_DATABASE_URL`.
+2. 환경변수 `IRB_SECRET_KEY`, `IRB_PSEUDONYM_SECRET`, `IRB_ADMIN_PASSWORD`, `IRB_SESSION_HTTPS_ONLY=true`를 지정합니다.
+   (두 비밀값을 비워 두면 최초 실행 시 생성해 DB `app_secrets` 테이블에 보관하고, 재배포 후에도 같은 값을 씁니다.)
+3. 배포합니다. 시작 시 테이블이 자동 생성·보강(`init_db`)됩니다.
+
+영속성: 계정·심사 기록·점수표는 DB 테이블에, **업로드 원본과 PDF 변환본은 `stored_files` 테이블**에 함께 저장됩니다.
+로컬 디스크(`IRB_DATA_DIR`)는 캐시로만 쓰며, 파일이 없으면 DB에서 자동 복원합니다(`IRB_FILE_STORE=db|disk`로 강제 가능,
+기본값: PostgreSQL이면 `db`). 기존 SQLite 데이터는 옮겨 오지 않으므로 필요하면 별도로 이관하십시오.
+
 ## 운영 명령
 
 ```bash
@@ -121,7 +135,8 @@ python -m irb_automation verify-audit            # 감사 로그 위변조 검�
 | 변수 | 설명 |
 |---|---|
 | `IRB_SECRET_KEY`, `IRB_PSEUDONYM_SECRET` | 세션 서명 키, 가명처리 HMAC 키(분리 보관) |
-| `IRB_DATABASE_URL`, `IRB_DATA_DIR`, `IRB_RULESET_PATH` | DB, 파일 저장소, 사전점검 규칙 파일 |
+| `IRB_DATABASE_URL`(또는 `DATABASE_URL`·`POSTGRES_URL`), `IRB_DATA_DIR`, `IRB_RULESET_PATH` | DB(PostgreSQL 권장, 미지정 시 로컬 SQLite), 파일 캐시 위치, 사전점검 규칙 파일 |
+| `IRB_FILE_STORE` | 업로드 원본을 DB에도 보관(`db`)할지 여부. PostgreSQL이면 기본 `db` |
 | `IRB_QC_CRITERIA_PATH` | 서류 점검 기준 파일(기관용 사본) |
 | `IRB_APPROVAL_VALIDITY_DAYS` | 결과 입력 시 만료일을 비웠을 때 기본 승인 기간 |
 | `IRB_SOFFICE_PATH` | LibreOffice 경로(DOCX 자동 작성·HWP 변환) |
@@ -136,6 +151,8 @@ python -m irb_automation verify-audit            # 감사 로그 위변조 검�
 ```bash
 pip install -r requirements-dev.txt
 pytest -q
+# PostgreSQL에서 전체 테스트(테스트마다 public 스키마를 지우므로 전용 DB 사용)
+IRB_TEST_DATABASE_URL=postgresql://irb:irbtest@127.0.0.1:55432/irb pytest -q
 ```
 
 150여 개 시나리오: 서류 점검(사실 추출·버전·교차/과제 정보 대조·점수·AI 단계 가짜 클라이언트), DOCX 자동 교정(변경 추적·형광펜·머리글·글꼴, 재점검 시 이슈 해소), 패키지 자동 완성·ZIP, 보완 요청 분리·답변 초안, 제출·결과·변경·지속·종료·만료, 기관 양식·서식 엔진, 업로드 검증·버전, AI 문서 인식 파이프라인, 지식 검색·권한, 가명처리, 웹 권한·CSRF.

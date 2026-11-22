@@ -1,0 +1,13 @@
+/* 기관 양식(forms) 화면 */
+.form-field { margin-bottom: 12px; }
+.form-field.has-error input, .form-field.has-error textarea, .form-field.has-error select { border-color: #c0392b; }
+.field-error { color: #c0392b; font-size: 0.85em; margin-top: 4px; }
+.institution-fields h3 { margin: 16px 0 6px; }
+.schema-editor { width: 100%; min-height: 480px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; }
+.error-list { margin: 0; padding-left: 20px; }
+.error-list li { color: #c0392b; margin: 2px 0; }
+.form-progress { display: flex; gap: 6px; flex-wrap: wrap; }
+.preview-frame { border: 1px dashed #b8c2cc; border-radius: 8px; padding: 16px; }
+.pledge { border-left: 4px solid #2b6cb0; padding: 8px 12px; background: rgba(43, 108, 176, 0.06); }
+.ref-table td, .ref-table th { font-size: 0.9em; }
+.ref-table th { white-space: nowrap; vertical-align: top; }

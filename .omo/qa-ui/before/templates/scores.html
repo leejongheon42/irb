@@ -1,0 +1,119 @@
+{% extends "mvp/_layout.html" %}
+{% from "mvp/_finding.html" import finding %}
+{% set step = 3 %}
+{% block title %}채점 점수표 · IRB 서류 심사{% endblock %}
+{% block mvp_content %}
+{% set scoring = run.counts.scoring %}
+<h1>채점 점수표</h1>
+<nav class="mvp-tabs" aria-label="점수표 메뉴">
+  <a href="/mvp/review/{{ run.id }}/scores"{% if tab == 'scores' %} aria-current="page"{% endif %}>채점 점수표</a>
+  <a href="/mvp/review/{{ run.id }}/scores?tab=criteria"{% if tab == 'criteria' %} aria-current="page"{% endif %}>점수 기준</a>
+</nav>
+{% if tab == 'scores' %}
+{% set notes = run.counts.notes|default([]) %}
+{% set ai = run.phases.get('2', {}) %}
+<section class="card mvp-result-summary" aria-label="검토 결과 요약">
+  {% if run.counts.na %}
+  <p>제출한 서류에서 본문을 읽지 못해 채점할 수 없습니다.</p>
+  {% else %}
+  <p class="mvp-result-total"><strong>{{ run.score }}점</strong> <span class="muted">/ {{ run.counts.max_score }}점</span>
+    <span class="mvp-verdict" data-verdict="{{ run.verdict }}">{{ verdicts[run.verdict] }}</span></p>
+  {% endif %}
+  <nav class="mvp-result-nav" aria-label="결과 항목으로 이동">
+    <a class="btn btn-primary" href="{{ '#deductions-heading' if run.counts.deductions else '#notes-heading' }}">{{ '감점 항목 보기' if run.counts.deductions else '확인 필요 항목 보기' }}</a>
+    {% if run.counts.deductions %}<a class="btn" href="#notes-heading">확인 필요 {{ notes|length }}건</a>{% endif %}
+    {% if not run.counts.na %}<a href="#summary-heading">영역별 점수</a>{% endif %}
+  </nav>
+</section>
+
+<section class="card" aria-labelledby="deductions-heading">
+  <h2 id="deductions-heading" tabindex="-1">감점 항목 <span class="mvp-result-count">{{ run.counts.deductions|length }}건</span></h2>
+  {% for area in run.counts.areas.values() if area.issue_ids %}
+  <details class="mvp-details"{% if loop.length == 1 or area.issue_ids|length <= 4 %} open{% endif %}>
+    <summary>{{ area.label }} <span class="muted">{{ area.issue_ids|length }}건</span></summary>
+    <ul class="mvp-findings">
+      {% for id in area.issue_ids %}{{ finding(issues[id], run, scoring, source_locations.get(id|string, [])) }}{% endfor %}
+    </ul>
+  </details>
+  {% else %}<p class="muted">감점 항목이 없습니다.</p>{% endfor %}
+</section>
+
+<section class="card" aria-labelledby="notes-heading">
+  <h2 id="notes-heading" tabindex="-1">확인 필요 항목 <span class="mvp-result-count">{{ notes|length }}건 · 감점 없음</span></h2>
+  {% if notes %}
+  <ul class="mvp-findings">
+    {% for id in notes %}{{ finding(issues[id], run, scoring, source_locations.get(id|string, []), manual=true) }}{% endfor %}
+  </ul>
+  {% else %}<p class="muted">확인이 필요한 항목이 없습니다.</p>{% endif %}
+</section>
+
+{% if not run.counts.na %}
+<section class="card" aria-labelledby="summary-heading">
+  <h2 id="summary-heading" tabindex="-1">영역별 점수</h2>
+  <div class="table-wrap" role="region" aria-labelledby="summary-heading" tabindex="0">
+    <table class="mvp-score-table">
+      <thead><tr><th>영역</th><th>배점</th><th>감점</th><th>점수</th>
+        {% for severity in severities %}<th>{{ scoring.severities[severity].label }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for area in run.counts.areas.values() %}
+        <tr><th scope="row">{{ area.label }}</th><td>{{ area.points }}</td><td>{{ area.deduction }}</td><td>{{ area.score }}</td>
+        {% for severity in severities %}<td>{{ area.counts[severity] }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr><th scope="row">총점 · {{ verdicts[run.verdict] }}</th><td>{{ run.counts.max_score }}</td>
+        <td>{{ run.counts.max_score - run.score }}</td><td>{{ run.score }}</td><td colspan="{{ severities|length }}"></td></tr></tfoot>
+    </table>
+  </div>
+</section>
+{% endif %}
+<section class="card" aria-labelledby="document-heading">
+  <h2 id="document-heading">서류별 결과</h2>
+  <p class="small muted">AI 심층 분석 {{ {'done': '완료', 'failed': '실패', 'skipped': '실행 안 함'}.get(ai.status, '기록 없음') }}{% if ai.message %} · {{ ai.message }}{% endif %}</p>
+  <div class="table-wrap" role="region" aria-labelledby="document-heading" tabindex="0">
+    <table class="mvp-files">
+      <thead><tr><th>서류명</th><th>서류 종류</th><th>이슈</th><th>감점 소계</th><th>본문 인식</th></tr></thead>
+      <tbody>{% for doc in run.docs %}
+        <tr><th scope="row">{{ doc.name }}</th><td>{{ doc.label }}</td><td>{{ doc.issues }}건</td>
+          <td>{{ run.counts.documents[doc.key].deduction }}점</td><td>{{ '인식됨' if doc.chars else '본문을 읽지 못함' }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="card">
+  <h2>영역별 배점</h2>
+  <dl class="mvp-definition">
+    {% for area in scoring.areas.values() %}
+    <dt>{{ area.label }} · {{ area.points }}점</dt><dd>{{ area.description }}</dd>
+    {% endfor %}
+  </dl>
+  <h3>심각도별 감점</h3>
+  <dl class="mvp-definition">
+    {% for severity in severities %}
+    <dt>{{ scoring.severities[severity].label }} · {{ scoring[severity] }}점</dt>
+    <dd>{{ scoring.severities[severity].description }}</dd>
+    {% endfor %}
+  </dl>
+  <h3>판정 기준</h3>
+  <dl class="mvp-definition">
+    {% if scoring.critical_fails %}<dt>미통과</dt><dd>Critical 이슈가 하나 이상이면 미통과입니다.</dd>{% endif %}
+    <dt>통과</dt><dd>{{ scoring.pass_score }}점 이상이며 미통과 조건에 해당하지 않습니다.</dd>
+    <dt>보완 필요</dt><dd>{{ scoring.pass_score }}점 미만이며 미통과 조건에 해당하지 않습니다.</dd>
+  </dl>
+  <p class="muted">기준 버전 {{ run.criteria_version }} · {{ scoring.notice }}</p>
+</section>
+<section class="card">
+  <h2>서류 종류별 필수 기재사항</h2>
+  {% for doc_type, entries in run.counts.required.items() %}
+  <details class="mvp-details">
+    <summary>{{ ruleset.label('document_types', doc_type) }}</summary>
+    <ul>{% for entry in entries %}
+      {% set severity = entry.get('severity', 'major') %}
+      <li>{{ entry.label }} · {{ scoring.severities[severity].label }}</li>
+    {% endfor %}</ul>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+<div class="mvp-actions"><a class="btn" href="/mvp/review/{{ run.id }}">심사 결과</a><a class="btn btn-primary" href="/mvp">새 서류 심사하기</a></div>
+{% endblock %}

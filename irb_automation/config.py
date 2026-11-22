@@ -64,9 +64,8 @@ class Settings:
         default_factory=lambda: Path(os.environ.get("IRB_DATA_DIR", str(Path.cwd() / "data")))
     )
     database_url: str = ""
-    secret_key: str = field(
-        default_factory=lambda: os.environ.get("IRB_SECRET_KEY") or secrets.token_hex(32)
-    )
+    # 비우면 IRB_SECRET_KEY, 그것도 없으면 무작위 생성(PostgreSQL 사용 시 DB에 보관해 재배포 후에도 유지)
+    secret_key: str = ""
     # 가명처리용 HMAC 비밀키 (추가정보) - 반드시 별도 보관. 운영 시 환경변수로 주입.
     pseudonym_secret: str = field(
         default_factory=lambda: os.environ.get("IRB_PSEUDONYM_SECRET", "")
@@ -148,15 +147,33 @@ class Settings:
     # 파이프라인을 요청 스레드에서 동기 실행(테스트·디버그용)
     pipeline_sync: bool = field(default_factory=lambda: _env_bool("IRB_PIPELINE_SYNC", False))
 
+    # 환경변수나 생성자로 받지 않고 이 프로세스에서 만든 비밀값 이름(DB 보관 대상)
+    generated_secrets: set[str] = field(default_factory=set, repr=False)
+
     @property
     def ai_enabled(self) -> bool:
         return self.ai_review_enabled
 
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
     def __post_init__(self) -> None:
         if not self.database_url:
-            self.database_url = os.environ.get(
-                "IRB_DATABASE_URL", f"sqlite:///{self.data_dir / 'irb.db'}"
-            )
+            self.database_url = resolve_database_url(self.data_dir)
+        self.database_url = normalize_database_url(self.database_url)
+        if not self.secret_key:
+            self.secret_key = os.environ.get("IRB_SECRET_KEY", "")
+        if not self.secret_key:
+            self.secret_key = secrets.token_hex(32)
+            self.generated_secrets.add("secret_key")
+        if not self.pseudonym_secret:
+            self.generated_secrets.add("pseudonym_secret")
+        if not self.pseudonym_secret and not self.is_sqlite:
+            # 서버 디스크는 재배포 때 초기화되므로 키 파일을 새로 만들지 않는다. 앱 시작 시 DB에 보관된 값을
+            # 불러오고, DB에 없으면 기존 키 파일(로컬에서 옮겨 온 경우) 또는 새 값을 DB에 저장한다.
+            key_file = self.data_dir / "keys" / "pseudonym.key"
+            self.pseudonym_secret = key_file.read_text().strip() if key_file.is_file() else secrets.token_hex(32)
         if not self.pseudonym_secret:
             # 개발 환경용: 데이터 디렉터리에 키를 생성해 둔다(운영에서는 HSM/별도 서버 보관 권장).
             key_file = self.data_dir / "keys" / "pseudonym.key"
@@ -189,6 +206,23 @@ class Settings:
     def ensure_dirs(self) -> None:
         for path in (self.data_dir, self.upload_dir, self.deid_dir, self.mapping_dir, self.pipeline_dir):
             path.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_database_url(data_dir: Path) -> str:
+    """IRB_DATABASE_URL > DATABASE_URL > POSTGRES_URL(Vercel·Neon 연동 변수) > 로컬 SQLite."""
+    for name in ("IRB_DATABASE_URL", "DATABASE_URL", "POSTGRES_URL"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return f"sqlite:///{data_dir / 'irb.db'}"
+
+
+def normalize_database_url(url: str) -> str:
+    """postgres://, postgresql:// 를 SQLAlchemy psycopg(v3) 드라이버 주소로 바꾼다."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 _settings: Settings | None = None

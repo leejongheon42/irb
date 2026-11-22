@@ -1,0 +1,19 @@
+/* 관련 정보 검색 */
+mark { background: #fef08a; color: inherit; padding: 0 1px; border-radius: 2px; }
+.kn-search { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.kn-search input[type=text] { flex: 1 1 320px; width: auto; }
+.kn-search select { width: auto; }
+.kn-facets { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 0; }
+.kn-facets a { text-decoration: none; }
+.kn-hit { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.kn-hit:last-child { border-bottom: 0; }
+.kn-hit h3 { margin: 4px 0; font-size: 15px; }
+.kn-meta { color: var(--muted); font-size: 12.5px; }
+.kn-snippet { margin: 6px 0 0; }
+.kn-answer { white-space: pre-wrap; font-size: 15px; line-height: 1.7; }
+.kn-cite { border-left: 3px solid var(--primary); background: var(--surface-2); padding: 8px 12px; margin: 8px 0; border-radius: 0 var(--radius) var(--radius) 0; }
+.kn-cite blockquote { margin: 6px 0 0; color: var(--text); }
+.kn-examples { display: flex; gap: 6px; flex-wrap: wrap; }
+.kn-chunk { border-top: 1px solid var(--border); padding: 12px 0; }
+.kn-chunk:first-child { border-top: 0; }
+.kn-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }

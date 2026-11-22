@@ -6,9 +6,13 @@
 } %}
 {% set reason = '원문 인용 미확인' if issue.confidence == 'ai_unverified' else
                 '개선 조언' if issue.advice else reasons.get(issue.reason, '담당자 확인') %}
-<li id="finding-{{ issue.id }}" class="mvp-finding">
-  <strong>{{ issue.title }}</strong>
-  <p class="small muted">{{ issue.doc_name or '제출 묶음' }} · {{ 'AI 지적' if issue.source == 'ai' else '규칙 점검' }} · {% if manual %}{{ reason }}{% else %}{{ scoring.severities[issue.severity].label }} · {{ run.counts.deductions[issue.id|string] }}점 감점{% endif %}</p>
+<li id="finding-{{ issue.id }}" class="mvp-finding" data-severity="{{ issue.severity }}" data-status="{{ 'manual' if manual else 'deduction' }}" data-doc="{{ issue.doc or '-' }}" data-keywords="{{ issue.rule_id or '' }} {{ issue.category or '' }}">
+  <div class="mvp-finding-head">
+    {% if issue.severity in scoring.severities %}<span class="mvp-severity" data-severity="{{ issue.severity }}">{{ scoring.severities[issue.severity].label }}</span>{% endif %}
+    <span class="mvp-status" data-status="{{ 'manual' if manual else 'deduction' }}">{{ '확인 필요' if manual else '감점 ' ~ run.counts.deductions[issue.id|string] ~ '점' }}</span>
+    <strong>{{ issue.title }}</strong>
+  </div>
+  <p class="small muted">{{ issue.doc_name or '제출 묶음' }} · {{ 'AI 지적' if issue.source == 'ai' else '규칙 점검' }}{% if manual %} · {{ reason }}{% endif %}</p>
   {% if issue.flags %}<p class="mvp-finding-rule small">{{ issue.rule_id }} · {{ issue.flags|join(' / ') }}</p>{% endif %}
   {% if issue.detail %}<p>{{ issue.detail }}</p>{% endif %}
   {% if manual %}
@@ -39,14 +43,15 @@
         {% elif citation.state == 'unverified' %}<span>AI가 제시한 인용 · 미검증</span>
         {% else %}<span>원문에서 페이지·줄 위치를 확인할 수 없습니다.</span>{% endif %}
         {% if citation.name %}<span>{{ citation.name }}</span>{% endif %}
+        {% if citation.doc %}<a class="mvp-view-link" data-document-viewer target="irb-document-viewer" href="/mvp/review/{{ run.id }}/viewer?doc={{ citation.doc }}&amp;issue={{ issue.id }}&amp;cite={{ loop.index0 }}{% if position.page %}&amp;page={{ position.page }}{% endif %}">문서 뷰어 새 창 ↗</a>{% endif %}
       </div>
       <blockquote>{{ citation.quote }}</blockquote>
       {% if position.boxes %}
       <details class="mvp-context-image">
         <summary>빨간색으로 표시한 원본 이미지 보기</summary>
         <figure>
-          <a href="{{ source_url }}"><img loading="lazy" src="{{ source_url }}?preview=true" alt="{{ citation.name }} {{ position.page }}페이지 원문에서 인용 위치를 빨간 테두리로 표시"></a>
-          <figcaption class="small muted">{{ '원본 PDF' if citation.name.lower().endswith('.pdf') else '원본 서식을 PDF로 변환한 화면' }} · 이미지를 선택하면 전체 페이지가 열립니다.</figcaption>
+          <a href="/mvp/review/{{ run.id }}/viewer?doc={{ citation.doc }}&amp;issue={{ issue.id }}&amp;cite={{ loop.index0 }}" data-document-viewer target="irb-document-viewer"><img loading="lazy" src="{{ source_url }}?preview=true" alt="{{ citation.name }} {{ position.page }}페이지 인용 위치 표시 · 전체 페이지 새 창 열기"></a>
+          <figcaption class="small muted">{{ '원본 PDF' if citation.name.lower().endswith('.pdf') else '원본 서식을 PDF로 변환한 화면' }} · 이미지를 선택하면 전체 페이지가 새 창에서 열립니다.</figcaption>
         </figure>
       </details>
       {% elif position.page %}

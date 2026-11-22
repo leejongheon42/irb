@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ current.name if current else '문서 뷰어' }} · 문서 뷰어</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/mvp.css">
+</head>
+<body class="viewer-body">
+{% set doc_url = '/mvp/review/' ~ run.id ~ '/documents/' ~ (current.key if current else '') %}
+{% set initial = image or (doc_url ~ ('?p=' ~ page ~ '#page=' ~ page if page else '')) %}
+<header class="viewer-bar">
+  <strong class="viewer-title">문서 뷰어</strong>
+  {% if docs %}
+  <form class="viewer-doc-form" method="get" action="/mvp/review/{{ run.id }}/viewer">
+    <label for="viewer-doc" class="visually-hidden">문서 선택</label>
+    <select id="viewer-doc" name="doc" data-viewer-doc>
+      {% for item in docs %}<option value="{{ item.key }}"{% if current and item.key == current.key %} selected{% endif %}>{{ item.name }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit" data-viewer-doc-submit>열기</button>
+  </form>
+  <a class="btn" href="{{ doc_url }}" target="_blank" rel="noopener">원본만 새 탭으로</a>
+  {% endif %}
+  <button class="btn" type="button" data-viewer-close hidden>창 닫기</button>
+</header>
+{% if not current %}
+<main class="viewer-empty card"><p>미리 볼 수 있는 원본 문서가 없습니다.</p></main>
+{% else %}
+<div class="viewer-layout">
+  <aside class="viewer-side" aria-labelledby="viewer-side-heading">
+    <h2 id="viewer-side-heading">이 문서의 지적 <span class="mvp-result-count">{{ entries|length }}건</span></h2>
+    <p class="small muted">항목을 선택하면 오른쪽에서 해당 페이지 또는 빨간 표시 이미지가 열립니다.</p>
+    {% if entries %}
+    <ol class="viewer-list">
+      {% for entry in entries %}
+      {% set item = entry.issue %}
+      {% set position = entry.position %}
+      {% set is_active = active[0] == item.id and active[1] == entry.index %}
+      <li class="viewer-item" data-severity="{{ item.severity }}"{% if is_active %} aria-current="true"{% endif %}>
+        <div class="viewer-item-head">
+          {% if item.severity in scoring.get('severities', {}) %}<span class="mvp-severity" data-severity="{{ item.severity }}">{{ scoring.severities[item.severity].label }}</span>{% endif %}
+          <span class="mvp-status" data-status="{{ entry.status }}">{{ '감점' if entry.status == 'deduction' else '확인 필요' }}</span>
+        </div>
+        <strong>{{ item.title }}</strong>
+        <blockquote class="small">{{ entry.citation.quote|truncate(140) }}</blockquote>
+        <div class="viewer-item-actions">
+          {% if position.page %}<a class="btn" target="viewer-frame" data-viewer-target href="{{ doc_url }}?p={{ position.page }}#page={{ position.page }}">{{ position.page }}페이지로 이동</a>
+          {% elif position.line %}<span class="small muted">{{ position.line }}번째 줄</span>
+          {% else %}<span class="small muted">위치 미확인</span>{% endif %}
+          {% if position.boxes %}<a class="btn" target="viewer-frame" data-viewer-target href="/mvp/review/{{ run.id }}/evidence/{{ item.id }}/{{ entry.index }}.png">빨간 표시 보기</a>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="muted">이 문서에서 위치를 확인한 지적이 없습니다.</p>
+    {% endif %}
+  </aside>
+  <main class="viewer-main">
+    <iframe class="viewer-frame" name="viewer-frame" title="{{ current.name }} 원본 미리보기" src="{{ initial }}"></iframe>
+  </main>
+</div>
+{% endif %}
+<script src="/static/mvp.js" defer></script>
+</body>
+</html>

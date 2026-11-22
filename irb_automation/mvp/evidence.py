@@ -1,17 +1,16 @@
 """Resolve findings against the uploaded source documents for the MVP scorecard."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Literal, TypedDict
 
 from pypdfium2 import PdfiumError
 
+from .. import filestore
 from ..docproc.convert import OFFICE_FORMATS
 from ..docproc.office import soffice_convert
 from ..docproc.source_evidence import SourcePosition, highlighted_page, locate_source
-from ..docproc.text import extract_text
+from ..docproc.text import IMAGE_TYPES, extract_text
 from ..qc.models import QCRun
 
 
@@ -35,24 +34,38 @@ class Citation(_CitationText, total=False):
 
 def _layout_pdf(doc: EvidenceDocument, path: Path) -> bytes | None:
     if doc["fmt"] == "pdf":
-        return path.read_bytes()
+        return filestore.read_bytes(path)
     if doc["fmt"] not in OFFICE_FORMATS - {"text", "html"}:
         return None
     cached = path.with_name(f"{path.name}.layout.pdf")
-    if cached.is_file():
-        return cached.read_bytes()
-    pdf = soffice_convert(doc["name"], path.read_bytes(), timeout=25)
+    try:
+        return filestore.read_bytes(cached)
+    except FileNotFoundError:
+        pass
+    pdf = soffice_convert(doc["name"], filestore.read_bytes(path), timeout=25)
     if pdf:
         # Publish a complete snapshot so the scorecard and PNG use identical pagination.
-        with NamedTemporaryFile(dir=path.parent, delete=False) as file:
-            temporary = Path(file.name)
-            try:
-                file.write(pdf)
-                file.close()
-                os.replace(temporary, cached)
-            finally:
-                temporary.unlink(missing_ok=True)
+        # 재배포 뒤에도 같은 쪽 나눔을 쓰도록 변환 결과도 영속 저장소에 보관한다.
+        filestore.write(cached, pdf)
     return pdf
+
+
+def view_document(doc: EvidenceDocument) -> tuple[bytes, str] | None:
+    """Reuse the paginated source used for citations, with a plain-text fallback."""
+    path = Path(doc["path"])
+    try:
+        pdf = _layout_pdf(doc, path)
+        if pdf:
+            return pdf, "application/pdf"
+        raw = filestore.read_bytes(path)
+        if doc["fmt"] in IMAGE_TYPES:
+            return raw, IMAGE_TYPES[doc["fmt"]]
+        text = extract_text(doc["name"], raw).text
+        if text.strip():
+            return text.encode("utf-8"), "text/plain"
+    except OSError:
+        return None
+    return None
 
 
 def findings_evidence(run: QCRun, only: int | None = None) -> dict[str, list[Citation]]:
@@ -93,7 +106,7 @@ def findings_evidence(run: QCRun, only: int | None = None) -> dict[str, list[Cit
         quotes = {citation["quote"] for citation in citations}
         try:
             if doc["fmt"] == "text":
-                matches = locate_source(quotes, text=extract_text(doc["name"], path.read_bytes()).text)
+                matches = locate_source(quotes, text=extract_text(doc["name"], filestore.read_bytes(path)).text)
             else:
                 matches = locate_source(quotes, pdf=_layout_pdf(doc, path))
         except (OSError, PdfiumError):

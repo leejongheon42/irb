@@ -9,11 +9,13 @@ import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .models import AuditLog, User
 from .timeutil import now
+
+AUDIT_LOCK_KEY = 0x1EB_A0D1  # 감사 로그 체인 잠금(임의 고정값)
 
 
 def _row_digest(prev_hash: str, entry: AuditLog) -> str:
@@ -43,6 +45,10 @@ def record(
     details: dict[str, Any] | None = None,
     ip: str = "",
 ) -> AuditLog:
+    if db.get_bind().dialect.name == "postgresql":
+        # 동시에 기록하는 트랜잭션이 같은 직전 행을 읽어 체인이 갈라지지 않도록 커밋까지 직렬화한다.
+        # (SQLite는 쓰기 자체가 직렬화된다.)
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": AUDIT_LOCK_KEY})
     last = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(1)).first()
     prev_hash = last.row_hash if last else ""
     entry = AuditLog(

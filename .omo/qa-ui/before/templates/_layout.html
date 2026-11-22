@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block styles %}<link rel="stylesheet" href="/static/mvp.css">{% endblock %}
+{% block header %}
+<header class="mvp-header">
+  <div class="mvp-container mvp-header-inner">
+    <a class="mvp-brand" href="/mvp">IRB 서류 심사</a>
+    <div class="mvp-account">
+      <span>{{ user.full_name }}{% if ai_label %} · <span class="small muted">AI: {{ ai_label }}</span>{% endif %}</span>
+      <form method="post" action="/logout">{{ csrf_input }}<button class="btn-ghost" type="submit">로그아웃</button></form>
+    </div>
+  </div>
+</header>
+{% endblock %}
+{% block content %}
+<div class="mvp-container mvp-content">
+  <nav aria-label="심사 진행 단계">
+    <ol class="mvp-steps">
+      {% for label in ['서류 업로드', '심사·채점', '점수표'] %}
+      <li{% if loop.index == step %} aria-current="step"{% endif %}>
+        <span class="mvp-step-number">{{ loop.index }}</span> {{ label }}
+      </li>
+      {% endfor %}
+    </ol>
+  </nav>
+  {% block mvp_content %}{% endblock %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/mvp.js" defer></script>{% endblock %}

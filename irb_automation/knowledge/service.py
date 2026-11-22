@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -56,7 +57,12 @@ def _engine_key(db: Session) -> str:
 def ensure_ready(db: Session) -> None:
     """첫 사용 시 내장 지식을 적재하고, 과제·결정 변경분을 선례 지식에 반영한다."""
     if not builtin_loaded(db):
-        seed_knowledge(db)
+        # 여러 요청·워커가 동시에 적재할 수 있다(PostgreSQL). 먼저 적재한 쪽이 있으면 이쪽만 되돌린다.
+        try:
+            with db.begin_nested():
+                seed_knowledge(db)
+        except IntegrityError:
+            log.info("builtin knowledge was seeded concurrently")
     reindex_protocols(db)
 
 

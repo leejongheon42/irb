@@ -1,0 +1,63 @@
+{% extends "mvp/_layout.html" %}
+{% set step = 1 %}
+{% block title %}서류 업로드 · IRB 서류 심사{% endblock %}
+{% macro upload_row(file) %}
+<tr data-file-status="{{ file.status if file else '' }}">
+  <th scope="row" data-field="name">{{ file.name if file else '' }}</th>
+  <td data-field="fmt">{{ (file.fmt|upper or '—') if file else '' }}</td>
+  <td data-field="size" class="nowrap">{{ '{:,}'.format(file.size) ~ ' B' if file else '' }}</td>
+  <td data-field="doc_type_label">{{ (file.doc_type_label or '—') if file else '' }}</td>
+  <td><span data-field="status" class="mvp-file-status">{% if file %}{{ '업로드됨' if file.status == 'ok' else '거부됨' }}{% endif %}</span>
+    <div data-field="message" class="small muted">{{ file.message if file else '' }}</div>
+  </td>
+  <td><form method="post"{% if file %} action="/mvp/files/{{ file.id }}/delete"{% endif %}>
+    {{ csrf_input }}<button type="submit" class="btn-ghost"{% if file %} aria-label="{{ file.name }} 삭제"{% endif %}>삭제</button>
+  </form></td>
+</tr>
+{% endmacro %}
+{% block mvp_content %}
+<h1>서류 업로드</h1>
+<p class="muted mvp-intro">함께 심사할 IRB 제출 서류를 올리고 목록을 확인해 주세요.</p>
+<section class="card" aria-labelledby="upload-title">
+  <h2 id="upload-title">심사할 서류</h2>
+  <form action="/mvp/files" method="post" enctype="multipart/form-data" id="mvp-upload">
+    {{ csrf_input }}
+    <div class="mvp-dropzone" id="mvp-dropzone">
+      <label for="mvp-files">파일을 끌어 놓거나 선택하세요.</label>
+      <input id="mvp-files" name="files" type="file" multiple required aria-describedby="upload-limit">
+      <p class="muted small" id="upload-limit">파일당 최대 {{ max_mb }}MB · {{ allowed }}</p>
+      <noscript><button type="submit">업로드</button></noscript>
+    </div>
+    <p id="upload-status" role="status" aria-live="polite"></p>
+  </form>
+  <p id="mvp-empty" class="muted"{% if files %} hidden{% endif %}>대기 중인 서류가 없습니다.</p>
+  <div class="table-wrap" id="mvp-file-list" role="region" aria-label="대기 서류" tabindex="0"{% if not files %} hidden{% endif %}>
+    <table class="mvp-files">
+      <thead><tr><th>파일명</th><th>형식</th><th>크기</th><th>추정 서류 종류</th><th>상태</th><th>삭제</th></tr></thead>
+      <tbody id="mvp-file-rows">{% for file in files %}{{ upload_row(file) }}{% endfor %}</tbody>
+    </table>
+  </div>
+  <template id="mvp-upload-row">{{ upload_row(none) }}</template>
+  <div class="mvp-actions">
+    <form method="post" action="/mvp/files/clear" id="mvp-clear">{{ csrf_input }}
+      <button class="btn-ghost" type="submit"{% if not files %} disabled{% endif %}>목록 비우기</button>
+    </form>
+    <form method="post" action="/mvp/review" id="mvp-start">{{ csrf_input }}
+      <button class="btn-primary" type="submit"{% if not can_review %} disabled{% endif %}>AI 서류 심사</button>
+    </form>
+  </div>
+</section>
+<section class="card" aria-labelledby="history-title">
+  <h2 id="history-title">지난 심사</h2>
+  {% if history %}
+  <ul class="mvp-history">
+    {% for run in history %}
+    <li><a href="/mvp/review/{{ run.id }}">{{ run.title }}</a>
+      <span class="muted small">{{ run.created_at|fmt }}</span>
+      <span>{% if run.status == 'done' %}{{ verdicts[run.verdict] }}{% if not run.counts.na %} · {{ run.score }}점{% endif %}
+        {% elif run.status == 'failed' %}실패{% else %}{{ run.stage }}{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">지난 심사가 없습니다.</p>{% endif %}
+</section>
+{% endblock %}

@@ -13,17 +13,35 @@ services:
   irb:
     image: ${COMPOSE_PROJECT_NAME}-irb
     build: .
-    depends_on:
-      irb-data-init:
-        condition: service_completed_successfully
     env_file: .env
     environment:
       IRB_DATA_DIR: /data
+      IRB_DATABASE_URL: postgresql+psycopg://irb:${POSTGRES_PASSWORD:-irb-local-only}@db:5432/irb
+    depends_on:
+      irb-data-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"   # 운영 시 원내 리버스 프록시(HTTPS) 뒤에 배치
     volumes:
       - irb-data:/data
     restart: unless-stopped
 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: irb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-irb-local-only}
+      POSTGRES_DB: irb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U irb -d irb"]
+      interval: 5s
+      retries: 10
+    volumes:
+      - irb-pg:/var/lib/postgresql/data
+    restart: unless-stopped
+
 volumes:
   irb-data:
+  irb-pg:

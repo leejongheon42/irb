@@ -76,7 +76,8 @@ def test_five_uploads_persist_and_review_with_consistent_scorecard(client):
                       "verdict": "FAIL"}
     assert review.text.count("<meter ") == 5 and "AI 심층 분석 없이 채점됨" in review.text
     scorecard = client.get(f"{review_url}/scores")
-    assert scorecard.status_code == 200 and f'<td>{result["score"]}</td><td colspan=' in scorecard.text
+    assert scorecard.status_code == 200 and re.search(rf'<td>{result["score"]}</td>\s*<td data-severity="critical"', scorecard.text)
+    assert 'data-view-panel="chart"' in scorecard.text and 'id="finding-doc"' in scorecard.text
     rules = client.get(f"{review_url}/scores?tab=criteria")
     assert rules.status_code == 200
     for name in ("critical", "major", "minor"):
@@ -241,8 +242,9 @@ def test_unscored_findings_are_listed_for_manual_check(client, settings, monkeyp
     scores = client.get(f"{review}/scores").text
     assert "확인 필요 항목" in scores and "인용이 원문에 없는 지적" in scores and "원문 인용 미확인" in scores
     assert "검토 요약 문장" in scores
-    verified = re.search(r"원문으로 확인된 지적</strong>\s*<p class=\"small muted\">([^<]+)", scores)
-    assert verified and "AI 지적" in verified[1] and "감점" in verified[1]
+    verified = re.search(r'data-status="deduction">(감점 \d+점)</span>\s*<strong>원문으로 확인된 지적</strong>\s*</div>\s*'
+                         r'<p class="small muted">([^<]+)', scores)
+    assert verified and "AI 지적" in verified[2]
 
 
 def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, db, settings, monkeypatch):
@@ -274,8 +276,8 @@ def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, 
     _upload(client, token, ("protocol.pdf", pdf.getvalue()))
     url = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
     scores = client.get(f"{url}/scores").text
-    size_card = re.search(r'<li[^>]*>\s*<strong>대상자 수 산출 근거 미흡</strong>(.*?)</li>', scores, re.S)[1]
-    time_card = re.search(r'<li[^>]*>\s*<strong>자료 수집 기간 표현 불명확</strong>(.*?)</li>', scores, re.S)[1]
+    size_card = re.search(r'<strong>대상자 수 산출 근거 미흡</strong>(.*?)</li>', scores, re.S)[1]
+    time_card = re.search(r'<strong>자료 수집 기간 표현 불명확</strong>(.*?)</li>', scores, re.S)[1]
     assert "E02 · 대상자 수" in size_card and "· 2번째 줄" in size_card and sample_size in size_card
     assert "M05 · 기간 구분 오류" in time_card and "· 3번째 줄" in time_card and timing in time_card
     assert "2페이지" in size_card and "2페이지" in time_card
@@ -283,7 +285,15 @@ def test_scorecard_separates_criteria_and_highlights_verified_pdf_lines(client, 
     assert "제목이 연구 유형을 드러내는지 확인해 주세요." in notes
     assert "같은 문구가 여러 곳에 있어 위치를 특정할 수 없습니다." in notes and ".png" not in notes
 
-    image_url = re.search(r'href="([^"]+\.png)"', size_card)[1]
+    image_url = re.search(r'src="([^"]+\.png)\?preview=true"', size_card)[1]
+    viewer_url = re.search(r'<a href="(/mvp/review/[^"]+/viewer\?[^"]+)" data-document-viewer target="irb-document-viewer"><img',
+                           size_card)[1].replace("&amp;", "&")
+    viewer = client.get(viewer_url)
+    assert viewer.status_code == 200 and f'src="{image_url}"' in viewer.text and "대상자 수 산출 근거 미흡" in viewer.text
+    assert "2페이지로 이동" in viewer.text
+    document_url = re.search(r'href="([^"?]+/documents/d1)\?p=2#page=2"', viewer.text)[1]
+    document = client.get(document_url)
+    assert document.headers["content-type"] == "application/pdf" and document.headers["x-frame-options"] == "SAMEORIGIN"
     image_response = client.get(image_url)
     assert image_response.status_code == 200
     assert image_response.headers["cache-control"] == "private, no-store"

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterator
 
-from sqlalchemy import String, create_engine, event, inspect, text
+from sqlalchemy import String, Text, create_engine, event, inspect, select, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .config import get_settings
@@ -23,6 +25,15 @@ class SchemaRevision(Base):
     revision: Mapped[str] = mapped_column(String(80), primary_key=True)
 
 
+class AppSecret(Base):
+    """환경변수로 주지 않은 비밀값(세션 서명 키, 가명처리 키)을 재배포 후에도 유지하기 위한 보관소."""
+
+    __tablename__ = "app_secrets"
+
+    name: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+
+
 _engine: Engine | None = None
 _SessionLocal: sessionmaker[Session] | None = None
 
@@ -31,6 +42,11 @@ def _make_engine(url: str) -> Engine:
     kwargs: dict = {}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        # 서버리스 PostgreSQL(Neon·Vercel Postgres 등)은 유휴 연결을 끊으므로 사용 전 확인·주기적 재연결
+        kwargs.update(pool_pre_ping=True, pool_recycle=280,
+                      pool_size=int(os.environ.get("IRB_DB_POOL_SIZE", "5")),
+                      max_overflow=int(os.environ.get("IRB_DB_MAX_OVERFLOW", "5")))
     engine = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
 
@@ -67,6 +83,7 @@ def SessionLocal() -> Session:
 
 
 def init_db() -> None:
+    from . import filestore as _filestore  # noqa: F401
     from . import models  # noqa: F401  (모델 등록)
     from .demo import models as _demo_models  # noqa: F401
     from .doctemplates import models as _doctemplates_models  # noqa: F401
@@ -89,6 +106,31 @@ def init_db() -> None:
         if db.get(SchemaRevision, "public-irb-v1") is None:
             db.add(SchemaRevision(revision="public-irb-v1"))
             db.commit()
+
+
+def sync_secrets(settings) -> None:
+    """PostgreSQL 사용 시, 이 프로세스에서 생성한 비밀값을 DB에 보관된 값으로 바꾼다(없으면 저장).
+
+    재배포마다 세션 키가 바뀌어 로그인이 풀리거나 가명처리 키가 바뀌어 가명 ID가 달라지는 것을 막는다.
+    """
+    names = [name for name in ("secret_key", "pseudonym_secret") if name in settings.generated_secrets]
+    if settings.is_sqlite or not names:
+        return
+    engine = get_engine()
+    AppSecret.__table__.create(engine, checkfirst=True)
+    for name in names:
+        with Session(engine) as db:
+            stored = db.scalar(select(AppSecret.value).where(AppSecret.name == name))
+            if stored is None:
+                db.add(AppSecret(name=name, value=getattr(settings, name)))
+                try:
+                    db.commit()
+                    continue
+                except IntegrityError:  # 다른 워커가 먼저 저장함
+                    db.rollback()
+                    stored = db.scalar(select(AppSecret.value).where(AppSecret.name == name))
+            setattr(settings, name, stored)
+        settings.generated_secrets.discard(name)
 
 
 def migrate_columns(engine: Engine) -> list[str]:

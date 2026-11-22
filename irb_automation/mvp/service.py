@@ -12,6 +12,7 @@ from sqlalchemy import delete, event, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
+from .. import filestore
 from ..ai import client as ai
 from ..config import get_settings
 from ..database import SessionLocal
@@ -70,7 +71,7 @@ def save_upload(db: Session, user_id: int, name: str, raw: bytes, size: int, pat
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{uuid4().hex}_{result.safe_name}"
         paths.append(path)
-        path.write_bytes(raw)
+        filestore.write(path, raw, db)  # PostgreSQL 사용 시 DB에도 보관(재배포 후 복원)
         row.path = str(path)
     row.message = " · ".join(messages)
     db.add(row)
@@ -82,6 +83,7 @@ def remove_pending(db: Session, user_id: int, file_id: int | None = None) -> boo
     if file_id is not None:
         filters += (MvpUpload.id == file_id,)
     paths = db.scalars(delete(MvpUpload).where(*filters).returning(MvpUpload.path)).all()
+    filestore.remove([path for path in paths if path], db)
     db.commit()
     for path in filter(None, paths):
         try:
@@ -183,7 +185,7 @@ def _run_review(run_id: int, attempt: str) -> None:
             for index, file in enumerate(files, start=1):
                 key = f"d{index}"
                 store[key] = file.path
-                doc = qc._read_doc(key, file.name, Path(file.path).read_bytes(), file.doc_type, allow_ai_ocr=use_ai)
+                doc = qc._read_doc(key, file.name, filestore.read_bytes(file.path), file.doc_type, allow_ai_ocr=use_ai)
                 if use_ai and file.doc_type == "other" and doc.text.strip():
                     guess = guess_doc_type(file.name, extracted_text=doc.text)
                     if guess.confidence >= 0.5:

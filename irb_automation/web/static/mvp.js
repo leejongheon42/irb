@@ -72,6 +72,127 @@
     });
   }
 
+  const filters = document.querySelector('.mvp-filters');
+  if (filters) {
+    const query = filters.querySelector('#finding-query');
+    const severity = filters.querySelector('#finding-severity');
+    const status = filters.querySelector('#finding-status');
+    const docSelect = filters.querySelector('#finding-doc');
+    const normalize = value => value.normalize('NFC').toLowerCase().replace(/\s+/g, ' ');
+    const entries = Array.from(document.querySelectorAll('.mvp-finding'), node => ({
+      node, text: normalize(`${node.textContent} ${node.dataset.keywords || ''}`)
+    }));
+    const groups = document.querySelectorAll('details.mvp-details');
+    const sections = document.querySelectorAll('[aria-labelledby="deductions-heading"], [aria-labelledby="notes-heading"]');
+    const toggles = document.querySelectorAll('[data-filter-severity], [data-filter-status]');
+    const openBeforeSearch = new Map();
+    function applyFilters() {
+      const terms = normalize(query.value).trim().split(' ').filter(Boolean);
+      const active = Boolean(terms.length || severity.value || status.value || docSelect.value);
+      let visible = 0;
+      for (const {node, text} of entries) {
+        node.hidden = Boolean((severity.value && node.dataset.severity !== severity.value)
+          || (status.value && node.dataset.status !== status.value)
+          || (docSelect.value && node.dataset.doc !== docSelect.value)
+          || !terms.every(term => text.includes(term)));
+        if (!node.hidden) visible++;
+      }
+      for (const group of groups) {
+        if (active && !openBeforeSearch.has(group)) openBeforeSearch.set(group, group.open);
+        group.hidden = active && !group.querySelector('.mvp-finding:not([hidden])');
+        if (active) group.open = !group.hidden;
+        else if (openBeforeSearch.has(group)) group.open = openBeforeSearch.get(group);
+      }
+      if (!active) openBeforeSearch.clear();
+      for (const section of sections) {
+        section.hidden = active && !section.querySelector('.mvp-finding:not([hidden])');
+      }
+      for (const button of toggles) {
+        const pressed = button.dataset.filterSeverity
+          ? severity.value === button.dataset.filterSeverity
+          : status.value === button.dataset.filterStatus;
+        button.setAttribute('aria-pressed', String(pressed));
+      }
+      filters.querySelector('#finding-matches').textContent = active && !visible
+        ? '검색 결과가 없습니다. 키워드나 필터를 변경해 주세요.'
+        : `전체 ${entries.length}건 중 ${visible}건 표시`;
+    }
+    filters.hidden = false;
+    filters.addEventListener('input', applyFilters);
+    for (const button of toggles) {
+      button.addEventListener('click', () => {
+        if (button.dataset.filterSeverity) {
+          severity.value = severity.value === button.dataset.filterSeverity ? '' : button.dataset.filterSeverity;
+        } else {
+          status.value = status.value === button.dataset.filterStatus ? '' : button.dataset.filterStatus;
+        }
+        applyFilters();
+        if (!filters.contains(button)) filters.scrollIntoView({behavior: 'smooth', block: 'start'});
+      });
+    }
+    filters.querySelector('#finding-reset').addEventListener('click', () => {
+      query.value = severity.value = status.value = docSelect.value = '';
+      applyFilters();
+      query.focus();
+    });
+    applyFilters();
+  }
+
+  const viewToggle = document.querySelector('[data-view-toggle]');
+  if (viewToggle) {
+    const panels = document.querySelectorAll('[data-view-panel]');
+    let saved = 'table';
+    try { saved = localStorage.getItem('irb-summary-view') || 'table'; } catch (error) { /* storage blocked */ }
+    function show(view) {
+      for (const button of viewToggle.querySelectorAll('[data-view]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.view === view));
+      }
+      for (const panel of panels) panel.hidden = view !== 'both' && panel.dataset.viewPanel !== view;
+      try { localStorage.setItem('irb-summary-view', view); } catch (error) { /* storage blocked */ }
+    }
+    viewToggle.hidden = false;
+    viewToggle.addEventListener('click', event => {
+      const button = event.target.closest('[data-view]');
+      if (button) show(button.dataset.view);
+    });
+    show(['table', 'chart', 'both'].includes(saved) ? saved : 'table');
+  }
+
+  // 문서 뷰어는 현재 화면을 바꾸지 않고 화면 오른쪽 절반에 별도 창으로 연다(같은 창을 재사용).
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[data-document-viewer]');
+    if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    const screen = window.screen;
+    const width = Math.round(Math.max(480, Math.min(1100, screen.availWidth * 0.5)));
+    const left = (screen.availLeft || 0) + screen.availWidth - width;
+    const features = `popup=yes,width=${width},height=${screen.availHeight},left=${left},top=${screen.availTop || 0}`;
+    const popup = window.open(link.href, 'irb-document-viewer', features);
+    if (popup) {
+      popup.focus();
+      event.preventDefault();
+    }
+  });
+
+  if (document.body.classList.contains('viewer-body')) {
+    const docSelect = document.querySelector('[data-viewer-doc]');
+    if (docSelect) {
+      docSelect.form.querySelector('[data-viewer-doc-submit]').hidden = true;
+      docSelect.addEventListener('change', () => docSelect.form.submit());
+    }
+    document.addEventListener('click', event => {
+      const target = event.target.closest('[data-viewer-target]');
+      if (!target) return;
+      for (const item of document.querySelectorAll('.viewer-item[aria-current]')) item.removeAttribute('aria-current');
+      target.closest('.viewer-item').setAttribute('aria-current', 'true');
+    });
+    const close = document.querySelector('[data-viewer-close]');
+    if (close && window.opener) {
+      close.hidden = false;
+      close.addEventListener('click', () => window.close());
+    }
+    document.querySelector('.viewer-item[aria-current]')?.scrollIntoView({block: 'nearest'});
+  }
+
   const review = document.querySelector('[data-review-status]');
   if (review) {
     const stage = document.querySelector('#review-stage');
