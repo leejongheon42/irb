@@ -126,6 +126,15 @@ def _record_usage(purpose: str, model: str, ok: bool, elapsed: float, response: 
         "output_tokens": getattr(usage, "output_tokens", None),
         "error": error,
     })
+    try:
+        from .. import metrics
+        from . import tier
+
+        metrics.record_ai_call(provider=tier.provider(), purpose=purpose, model=getattr(response, "model", None) or model,
+                               ok=ok, elapsed_s=elapsed, input_tokens=getattr(usage, "input_tokens", None),
+                               output_tokens=getattr(usage, "output_tokens", None), error=error)
+    except Exception:  # 사용 기록 실패가 AI 기능을 막지 않는다.
+        log.warning("AI usage metric failed", exc_info=True)
 
 
 # ------------------------------------------------------------------ 호출

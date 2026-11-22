@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
@@ -12,7 +13,7 @@ from sqlalchemy import delete, event, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from .. import filestore
+from .. import filestore, metrics
 from ..ai import client as ai
 from ..config import get_settings
 from ..database import SessionLocal
@@ -174,11 +175,29 @@ def _review(run_id: int, attempt: str) -> None:
 
 
 def _run_review(run_id: int, attempt: str) -> None:
+    with metrics.review_scope(run_id) as scope:
+        _timed_review(run_id, attempt, scope)
+
+
+def _timings(queue_s: float, started: float, marks: list[tuple[str, float]], ended: float) -> dict:
+    """Seconds spent waiting in the queue, in total, and in each stage label in order."""
+    stages = [{"label": label, "seconds": round(end - begin, 2)}
+              for (label, begin), (_next, end) in zip(marks, [*marks[1:], ("", ended)], strict=True)]
+    return {"queue_s": round(queue_s, 1), "total_s": round(ended - started, 2), "stages": stages}
+
+
+def _timed_review(run_id: int, attempt: str, scope: metrics.Scope) -> None:
+    started = time.monotonic()
+    marks: list[tuple[str, float]] = [("서류 읽는 중", started)]
     try:
         with SessionLocal() as db:
+            queued_at = db.scalar(select(QCRun.stage_updated_at).where(QCRun.id == run_id))
+            queue_s = max(0.0, (now() - queued_at).total_seconds()) if queued_at else 0.0
             _advance(db, run_id, attempt, "queued", "running", "서류 읽는 중")
             run = db.scalars(select(QCRun).where(QCRun.id == run_id)).one()
+            run.started_at = now()
             user = db.scalars(select(User).where(User.id == run.created_by)).one()
+            scope.user_id = user.id
             files = db.scalars(select(MvpUpload).where(MvpUpload.run_id == run_id).order_by(MvpUpload.id)).all()
             use_ai = ai.ai_enabled()
             docs = []
@@ -194,6 +213,7 @@ def _run_review(run_id: int, attempt: str) -> None:
                 docs.append(doc)
 
             def stage(label: str) -> None:
+                marks.append((label, time.monotonic()))
                 _advance(db, run_id, attempt, "running", "running", label)
 
             qc.run(db, user, docs, qr=run, use_ai=True, store=store, on_stage=stage, score_run=category_scores.score_run)
@@ -201,6 +221,8 @@ def _run_review(run_id: int, attempt: str) -> None:
 
             stage("원문 위치 확인 중")
             run.counts = {**run.counts, "source_locations": findings_evidence(run)}
+            run.finished_at = now()
+            run.timings = _timings(queue_s, started, marks, time.monotonic())
             _advance(db, run_id, attempt, "running", "done", "채점 완료")
     except SupersededReview:
         log.info("MVP review %s no longer owns its attempt", run_id)
@@ -208,5 +230,7 @@ def _run_review(run_id: int, attempt: str) -> None:
         log.exception("MVP review %s failed", run_id)
         with SessionLocal() as db:
             db.execute(update(QCRun).where(QCRun.id == run_id, QCRun.mvp_attempt == attempt, QCRun.status.in_(ACTIVE))
-                       .values(status="failed", stage="", error="서류 심사 중 오류가 발생했습니다. 다시 심사해 주세요."))
+                       .values(status="failed", stage="", finished_at=now(),
+                               timings={"total_s": round(time.monotonic() - started, 2), "failed_at": marks[-1][0]},
+                               error="서류 심사 중 오류가 발생했습니다. 다시 심사해 주세요."))
             db.commit()

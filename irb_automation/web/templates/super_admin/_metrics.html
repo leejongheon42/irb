@@ -1,0 +1,115 @@
+{% macro secs(v) -%}
+{%- if v is none -%}–{%- elif v < 60 -%}{{ '%.1f'|format(v) }}초{%- else -%}{{ (v // 60)|int }}분 {{ (v % 60)|round|int }}초{%- endif -%}
+{%- endmacro %}
+{% macro pct(v) -%}{% if v is none %}–{% else %}{{ v|round(1) }}%{% endif %}{%- endmacro %}
+{% macro num(v) -%}{% if v is none %}–{% else %}{{ '{:,}'.format(v) }}{% endif %}{%- endmacro %}
+{% macro size(b) -%}
+{%- if b >= 1073741824 -%}{{ '%.1f'|format(b / 1073741824) }} GB{%- elif b >= 1048576 -%}{{ '%.1f'|format(b / 1048576) }} MB{%- else -%}{{ '%.0f'|format(b / 1024) }} KB{%- endif -%}
+{%- endmacro %}
+{% macro tile(label, value, note='', tone='') %}
+<div class="card stat sa-tile{% if tone %} sa-tile-{{ tone }}{% endif %}"><div class="label">{{ label }}</div><div class="value">{{ value }}</div>{% if note %}<p class="small muted">{{ note }}</p>{% endif %}</div>
+{% endmacro %}
+{% macro bars(id, title, rows, unit='건', empty='기록 없음') %}
+<figure class="sa-figure" aria-labelledby="{{ id }}-title">
+  <figcaption id="{{ id }}-title">{{ title }}</figcaption>
+  {% set top = rows|map(attribute=1)|max if rows else 0 %}
+  {% if rows %}
+  <ul class="sa-hbars">{% for label, value in rows %}
+    <li><span class="sa-hbar-label">{{ label }}</span><span class="sa-hbar-track"><span class="sa-hbar" data-width="{{ (value * 100 / top)|round(1) if top else 0 }}"></span></span><span class="sa-hbar-value">{{ num(value) }}{{ unit }}</span></li>
+  {% endfor %}</ul>
+  {% else %}<p class="muted small">{{ empty }}</p>{% endif %}
+</figure>
+{% endmacro %}
+
+{% macro dashboard(m, periods, verdict_labels) %}
+{% set u, up, r, p, l = m.usage, m.uploads, m.reviews, m.pipeline, m.llm %}
+<div class="sa-period-row">
+  <p class="muted sa-description">{{ m.start }} ~ {{ m.end }} ({{ m.period }}일) 기준 실측치입니다. 시간은 처리 완료된 건만 집계합니다.</p>
+  <nav class="sa-period" aria-label="집계 기간">{% for d in periods %}<a href="/super-admin?period={{ d }}"{% if d == m.period %} aria-current="true"{% endif %}>{{ d }}일</a>{% endfor %}</nav>
+</div>
+
+<section aria-labelledby="kpi-heading" class="sa-section">
+  <h2 id="kpi-heading" class="sa-h2">핵심 지표</h2>
+  <div class="sa-kpis sa-kpis-wide">
+    {{ tile('활성 사용자', num(u.active_users) ~ '명', '오늘 ' ~ u.dau_today ~ '명 · 일평균 ' ~ u.dau_avg ~ '명') }}
+    {{ tile('문서 업로드', num(up.accepted) ~ '건', size(up.bytes) ~ ' · 거부 ' ~ up.rejected ~ '건(' ~ pct(up.reject_rate) ~ ')') }}
+    {{ tile('완료 심사', num(r.done) ~ '건', '성공률 ' ~ pct(r.success_rate) ~ ' · 실패 ' ~ r.failed ~ '건' ~ (' · 진행 ' ~ r.active ~ '건' if r.active else '')) }}
+    {{ tile('전체 파이프라인 (중앙값)', secs(p.total.p50), 'p90 ' ~ secs(p.total.p90) ~ ' · 최대 ' ~ secs(p.total.max)) }}
+    {{ tile('LLM 호출', num(l.calls) ~ '건', '성공률 ' ~ pct(l.success_rate) ~ ' · 실패 ' ~ l.failed ~ '건') }}
+    {{ tile('LLM 응답 시간 (중앙값)', secs(l.latency.p50), 'p90 ' ~ secs(l.latency.p90) ~ ' · 평균 ' ~ secs(l.latency.avg)) }}
+    {{ tile('LLM 토큰', num(l.input_tokens + l.output_tokens), '입력 ' ~ num(l.input_tokens) ~ ' · 출력 ' ~ num(l.output_tokens)) }}
+    {{ tile('심사당 문서', (up.per_review ~ '건') if up.per_review is not none else '–', '사용자당 완료 심사 ' ~ (u.reviews_per_user if u.reviews_per_user is not none else '–') ~ '건') }}
+  </div>
+</section>
+
+<section class="card sa-section" aria-labelledby="trend-heading">
+  <h2 id="trend-heading">일별 추이</h2>
+  <div class="sa-chart-grid">
+    <div class="sa-chart" data-chart="lines" data-unit="건" data-title="일별 사용량"
+         data-series='[{"key":"uploads","label":"문서 업로드"},{"key":"reviews","label":"완료 심사"},{"key":"active","label":"활성 사용자","unit":"명"}]'></div>
+    <div class="sa-chart" data-chart="lines" data-unit="초" data-title="일별 처리 시간 (중앙값)"
+         data-series='[{"key":"pipeline_p50","label":"전체 파이프라인"},{"key":"llm_p50","label":"LLM 1회 응답"}]'></div>
+    <div class="sa-chart" data-chart="stack" data-unit="건" data-title="일별 LLM 호출"
+         data-series='[{"key":"ai_ok","label":"성공"},{"key":"ai_failed","label":"실패"}]'></div>
+    <div class="sa-chart" data-chart="stack" data-unit="건" data-title="일별 심사 결과"
+         data-series='[{"key":"reviews","label":"완료"},{"key":"failed","label":"실패"}]'></div>
+  </div>
+</section>
+
+<section class="card sa-section" aria-labelledby="pipeline-heading">
+  <h2 id="pipeline-heading">파이프라인 처리 속도</h2>
+  <div class="sa-kpis">
+    {{ tile('대기열 대기 (중앙값)', secs(p.queue.p50), 'p90 ' ~ secs(p.queue.p90)) }}
+    {{ tile('문서 1건당 처리', secs(p.per_doc.p50), 'p90 ' ~ secs(p.per_doc.p90)) }}
+    {{ tile('LLM이 차지한 비중', pct(p.llm_share.p50), '심사 1건 처리 시간 중 LLM 대기 비율(중앙값)') }}
+    {{ tile('측정된 심사', num(p.total.n) ~ '건', '단계별 기록 ' ~ (p.stages[0].n if p.stages else 0) ~ '건') }}
+  </div>
+  {% if p.stages %}
+  {% set slowest = p.stages|map(attribute='p90')|max %}
+  <figure class="sa-figure" aria-labelledby="stage-title">
+    <figcaption id="stage-title">단계별 소요 시간 <span class="muted small">막대 = 중앙값, 옅은 막대 = p90</span></figcaption>
+    <ul class="sa-hbars sa-stage-bars">{% for s in p.stages %}
+      <li><span class="sa-hbar-label">{{ s.label }}</span>
+        <span class="sa-hbar-track"><span class="sa-hbar sa-hbar-p90" data-width="{{ (s.p90 * 100 / slowest)|round(1) if slowest else 0 }}"></span><span class="sa-hbar" data-width="{{ (s.p50 * 100 / slowest)|round(1) if slowest else 0 }}"></span></span>
+        <span class="sa-hbar-value">{{ secs(s.p50) }} <span class="muted">/ {{ secs(s.p90) }}</span></span></li>
+    {% endfor %}</ul>
+  </figure>
+  <div class="table-wrap" role="region" aria-label="단계별 소요 시간 표" tabindex="0">
+    <table class="sa-table"><thead><tr><th scope="col">단계</th><th scope="col">측정</th><th scope="col">평균</th><th scope="col">중앙값</th><th scope="col">p90</th><th scope="col">최대</th></tr></thead>
+      <tbody>{% for s in p.stages %}<tr><th scope="row">{{ s.label }}</th><td>{{ s.n }}건</td><td>{{ secs(s.avg) }}</td><td>{{ secs(s.p50) }}</td><td>{{ secs(s.p90) }}</td><td>{{ secs(s.max) }}</td></tr>{% endfor %}</tbody></table>
+  </div>
+  {% else %}<p class="muted">단계별 시간은 이번 업데이트 이후 실행된 심사부터 기록됩니다.</p>{% endif %}
+</section>
+
+<section class="card sa-section" aria-labelledby="llm-heading">
+  <h2 id="llm-heading">LLM 처리 성능</h2>
+  {% if l.purposes %}
+  <div class="table-wrap" role="region" aria-label="용도별 LLM 성능 표" tabindex="0">
+    <table class="sa-table"><thead><tr><th scope="col">용도</th><th scope="col">호출</th><th scope="col">실패</th><th scope="col">평균</th><th scope="col">중앙값</th><th scope="col">p90</th><th scope="col">최대</th><th scope="col">토큰</th></tr></thead>
+      <tbody>{% for row in l.purposes %}<tr><th scope="row">{{ row.purpose }}</th><td>{{ num(row.calls) }}</td><td>{{ row.fail }}{% if row.fail %} <span class="small muted">({{ (row.fail * 100 / row.calls)|round(1) }}%)</span>{% endif %}</td><td>{{ secs(row.avg) }}</td><td>{{ secs(row.p50) }}</td><td>{{ secs(row.p90) }}</td><td>{{ secs(row.max) }}</td><td>{{ num(row.tokens) }}</td></tr>{% endfor %}</tbody></table>
+  </div>
+  <div class="sa-split">
+    {{ bars('model-bars', '모델별 호출', l.models) }}
+    {{ bars('error-bars', '실패 유형', l.errors, empty='실패한 호출이 없습니다.') }}
+  </div>
+  <p class="small muted">토큰 수를 돌려준 호출 기준 1회 평균 {{ num(l.tokens_per_call) }} 토큰.</p>
+  {% else %}<p class="muted">이 기간에 기록된 LLM 호출이 없습니다. 호출 기록은 이번 업데이트 이후부터 쌓입니다.</p>{% endif %}
+</section>
+
+<section class="card sa-section" aria-labelledby="dist-heading">
+  <h2 id="dist-heading">문서·심사 분포</h2>
+  <div class="sa-split sa-split-3">
+    {{ bars('doc-bars', '문서 유형', up.doc_types) }}
+    {{ bars('fmt-bars', '파일 형식', up.formats) }}
+    {% set verdict_rows = [] %}{% for v, c in r.verdicts %}{% set _ = verdict_rows.append((verdict_labels.get(v, v), c)) %}{% endfor %}
+    {{ bars('verdict-bars', '심사 판정', verdict_rows) }}
+  </div>
+  <p class="small muted">평균 점수 {{ r.avg_score if r.avg_score is not none else '–' }}점 · AI 분석 사용 {{ pct(r.ai_rate) }} · 오탐 피드백 {{ m.feedback }}건 · 로그인 {{ num(u.logins) }}회 · 신규 계정 {{ u.new_users }}명</p>
+</section>
+
+<section class="card sa-section" aria-labelledby="heat-heading">
+  <h2 id="heat-heading">요일·시간대별 활동</h2>
+  <p class="small muted">업로드와 심사 시작 건수 합계입니다. 칸이 진할수록 많습니다.</p>
+  <div class="sa-heatmap" data-chart="heatmap"></div>
+</section>
+{% endmacro %}

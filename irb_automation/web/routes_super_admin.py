@@ -14,7 +14,7 @@ from ..models import Role, User
 from ..qc.category_scores import VERDICTS
 from ..qc.feedback import FeedbackConflict, keyword_targets, required_criteria, review_case
 from ..qc.models import QCRuleFeedback, QCRuleKeyword
-from . import super_admin_stats
+from . import super_admin_metrics, super_admin_stats
 from .deps import flash, render, require_roles, verify_csrf
 from .routes_super_admin_rules import MATCH_LABELS
 from .routes_super_admin_rules import router as rules_router
@@ -35,9 +35,13 @@ def _page(request: Request, name: str, db: Session, user: User, **ctx):
 
 
 @router.get("")
-def overview(request: Request, user: SuperAdmin, db: Db, q: Search = "", page: Page = 1):
+def overview(request: Request, user: SuperAdmin, db: Db, q: Search = "", page: Page = 1,
+             period: Annotated[int, Query(ge=1, le=366)] = 30):
+    if period not in super_admin_metrics.PERIODS:
+        raise HTTPException(422, "집계 기간은 7, 30, 90일 중 하나입니다.")
     return _page(request, "overview", db, user, stats=super_admin_stats.overview(db, q.strip(), page),
-                 page=page, q=q, verdict_labels=VERDICTS)
+                 metrics=super_admin_metrics.dashboard(db, period), periods=super_admin_metrics.PERIODS,
+                 page=page, q=q, period=period, verdict_labels=VERDICTS)
 
 
 @router.get("/cases")

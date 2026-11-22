@@ -209,3 +209,43 @@ def test_added_body_keyword_changes_document_type_on_upload(app, settings) -> No
         token = _token(client.get("/mvp").text)
         after, = _upload(client, token, file)
         assert after["doc_type_label"] == "설문지·면담질문지"
+
+
+def test_usage_dashboard_reports_upload_pipeline_and_llm_metrics(app, db, settings) -> None:
+    from irb_automation import metrics
+    from irb_automation.web.super_admin_metrics import dashboard, percentile
+
+    settings.mvp_mode = settings.pipeline_sync = True
+    settings.super_admin_password = BOOTSTRAP_PASSWORD
+    with TestClient(app) as client:
+        _sign_in(client, "researcher", PASSWORD)
+        token = _token(client.get("/mvp").text)
+        before = dashboard(db, 7)
+        _upload(client, token, ("연구계획서.txt", "# 1. 연구 제목\n업무 피로 연구".encode()))
+        client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False)
+        run = db.scalars(select(QCRun).order_by(QCRun.id.desc())).first()
+        db.refresh(run)
+        assert run.status == "done" and run.started_at and run.finished_at
+        assert run.timings["total_s"] >= 0 and run.timings["stages"][0]["label"] == "서류 읽는 중"
+
+        with metrics.review_scope(run.id, run.created_by):
+            metrics.record_ai_call(provider="openrouter", purpose="서류 품질 점검", model="m", ok=True,
+                                   elapsed_s=2.5, input_tokens=100, output_tokens=20)
+            metrics.record_ai_call(provider="openrouter", purpose="서류 품질 점검", model="m", ok=False,
+                                   elapsed_s=30, error="AI API 응답 시간 초과")
+            assert not db.scalars(select(metrics.AICall)).all()  # 심사가 끝난 뒤에 한 번에 기록한다.
+        result = dashboard(db, 7)
+        assert result["uploads"]["accepted"] == before["uploads"]["accepted"] + 1
+        assert result["reviews"]["done"] == before["reviews"]["done"] + 1
+        assert result["llm"]["calls"] == 2 and result["llm"]["success_rate"] == 50.0
+        assert result["llm"]["latency"]["p50"] == 2.5 and result["llm"]["errors"] == [("시간 초과", 1)]
+        assert result["llm"]["input_tokens"] == 100 and result["usage"]["active_users"] >= 1
+        assert result["daily"][-1]["uploads"] == before["daily"][-1]["uploads"] + 1
+        assert result["daily"][-1]["ai_failed"] == 1 and result["pipeline"]["stages"]
+        assert percentile([1, 2, 3, 4], 0.5) == 2.5 and percentile([], 0.9) is None
+
+        _sign_in(client, "super_admin", BOOTSTRAP_PASSWORD)
+        page = client.get("/super-admin?period=7")
+        assert page.status_code == 200 and "LLM 처리 성능" in page.text and "단계별 소요 시간" in page.text
+        assert 'data-metrics="' in page.text and "super_admin_metrics.js" in page.text
+        assert client.get("/super-admin?period=5").status_code == 422

@@ -36,6 +36,9 @@ class QCRun(Base):
     error: Mapped[str] = mapped_column(String(200), default="")
     mvp_attempt: Mapped[str | None] = mapped_column(String(32), default=None)
     stage_updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)  # 대기열에서 꺼낸 시각
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    timings: Mapped[dict] = mapped_column(JSON, default=dict)  # {queue_s, total_s, stages: [{label, seconds}]}
 
     protocol: Mapped[Protocol | None] = relationship()
     creator: Mapped[User] = relationship()

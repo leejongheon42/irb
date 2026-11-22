@@ -1,11 +1,17 @@
 {% extends "super_admin/_layout.html" %}
 {% from "super_admin/_macros.html" import pagination %}
+{% from "super_admin/_metrics.html" import dashboard %}
 {% set tab = 'overview' %}
 {% block admin_title %}사용량 통계{% endblock %}
+{% block scripts %}<script src="/static/super_admin_metrics.js" defer></script>{% endblock %}
 {% block admin_content %}
 <h1>사용량 통계</h1>
-<p class="muted sa-description">서비스 DB에 기록된 누적 사용량입니다.</p>
-<div class="sa-kpis">
+<div class="sa-metrics" data-metrics="{{ {'daily': metrics.daily, 'heatmap': metrics.heatmap}|kjson }}">
+{{ dashboard(metrics, periods, verdict_labels) }}
+</div>
+<h2 class="sa-h2">누적 합계</h2>
+<p class="muted sa-description">서비스 DB에 기록된 전체 기간 누적 사용량입니다.</p>
+<div class="sa-kpis sa-section">
   <div class="card stat"><div class="label">사용자</div><div class="value">{{ stats.total_users }}</div><p class="small muted">활성 계정 {{ stats.active_users }}명</p></div>
   <div class="card stat"><div class="label">완료된 심사</div><div class="value">{{ stats.total_reviews }}</div><p class="small muted">{% for verdict, count in stats.verdicts|dictsort %}{{ verdict_labels.get(verdict, verdict) }} {{ count }}건{% if not loop.last %} · {% endif %}{% else %}심사 기록 없음{% endfor %}</p></div>
   <div class="card stat"><div class="label">AI 전송</div><div class="value">{{ stats.ai_calls }}</div><p class="small muted">{{ '{:,}'.format(stats.ai_bytes) }} B 전송</p></div>
@@ -15,6 +21,7 @@
   <h2 id="account-heading">사용자별 활동</h2>
   <form method="get" class="sa-search" role="search">
     <label>사용자 검색<input type="search" name="q" value="{{ q }}" maxlength="100" placeholder="아이디 또는 이름"></label>
+    <input type="hidden" name="period" value="{{ period }}">
     <button type="submit" class="btn">검색</button>
   </form>
   <div class="table-wrap" role="region" aria-labelledby="account-heading" tabindex="0">
@@ -30,6 +37,6 @@
       {% else %}<tr><td colspan="7">검색 조건에 해당하는 사용자가 없습니다.</td></tr>{% endfor %}</tbody>
     </table>
   </div>
-  {{ pagination('/super-admin', page, stats.has_next, q) }}
+  {{ pagination('/super-admin', page, stats.has_next, q, period=period) }}
 </section>
 {% endblock %}
