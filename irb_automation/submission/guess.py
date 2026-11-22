@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("assent_form", ("아동용승낙서", "아동승낙서", "승낙서", "assent")),
     ("questionnaire", ("설문지", "면담질문지", "questionnaire")),
-    ("recruitment", ("모집공고", "모집게시물", "모집안내", "recruitment")),
+    ("recruitment", ("모집공고", "모집게시물", "모집안내", "모집문", "recruitment")),
     ("advisor_pledge", ("지도교수서약서", "지도교수확인서")),
     ("pledge", ("생명윤리준수서약",)),
     ("mta", ("물질이전협약", "검체제공협약", "mta")),
@@ -25,7 +25,8 @@ KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("specimen_consent", ("별지제34호", "인체유래물연구법정동의서")),
     ("waiver_request", ("동의면제", "면제사유", "서면동의면제", "waiver")),
     ("exemption_request", ("심의면제", "면제확인", "면제신청", "exemption", "exempt")),
-    ("deid_plan", ("가명처리", "비식별", "익명처리", "deidentification", "deid", "pseudonym")),
+    ("deid_plan", ("가명처리", "비식별", "익명처리", "개인정보보호계획", "연구자료보호계획",
+                   "deidentification", "deid", "pseudonym")),
     ("linkage_plan", ("결합계획", "데이터결합", "결합신청", "linkage")),
     ("amendment_table", ("변경대비", "대비표", "변경사항", "amendment")),
     ("security_pledge", ("보안서약", "비밀유지서약", "서약서", "pledge", "nda")),

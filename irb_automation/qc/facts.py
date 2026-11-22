@@ -109,6 +109,8 @@ _SUBJECTS = re.compile(
     r"(?:총|약|최대|전체)?\s*(" + NUM + r")\s*(?:명|례|건)"
     r"|(?:총|약)\s*(" + NUM + r")\s*명(?:의|이|을)?\s*(?:연구대상자|대상자|환자|피험자|참여)"
     r"|(" + NUM + r")\s*명(?:이|의\s*대상자가)\s*참여"
+    r"|(?:목표\s*규모\s*(?:는|은|[:：|])?\s*|(?m:^[ \t]*규모\s*\|\s*))"
+    r"(?:총|약|최대|전체)?\s*(" + NUM + r")\s*명"
 )
 _GROUPS = re.compile(r"(?:시험군|실험군|치료군)\s*(" + NUM + r")\s*명\s*[,，·및]+\s*대조군\s*(" + NUM + r")\s*명")
 DOSE_AMOUNT = re.compile(r"\d+(?:\.\d+)?\s*(?:mg|㎎|g|mL|ml|㎖|μg|mcg|IU|단위)(?![A-Za-z])(?:\s*/\s*(?:kg|m2|㎡|day|일))?")
@@ -120,6 +122,7 @@ _DOSAGE = re.compile(
 _KOREAN_NUMBERS = {"한": 1, "두": 2, "세": 3, "네": 4, "다섯": 5, "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10}
 _VISIT_NUMBER = r"\d+|" + "|".join(_KOREAN_NUMBERS)
 _VISITS = re.compile(r"(?:총|전체)\s*(" + _VISIT_NUMBER + r")\s*(?:회|차례)\s*(?:의\s*)?(?:방문|내원)|(?:방문|내원)\s*(?:횟수)?\s*(?:는|은|:|：)?\s*(?:총)?\s*(" + _VISIT_NUMBER + r")\s*(?:회|차례)")
+_VISIT_SLOT = re.compile(r"(?:첫(?:째)?|(?:두|세|네|\d+)[ \t]*번째|\d+차|추적|기저|초기|마지막)[ \t]*$")
 _DURATION = re.compile(
     r"(?:시험|참여|투약|투여|치료|관찰)\s*기간\s*(?:은|는|:|：)?\s*(?:총|약)?\s*(\d+)\s*(주|개월|달|일|년)"
 )
@@ -151,7 +154,7 @@ def extract(text: str) -> list[Fact]:
 
     facts: list[Fact] = []
     for m in _SUBJECTS.finditer(text):
-        n = m.group(1) or m.group(2) or m.group(3)
+        n = next(group for group in m.groups() if group is not None)
         if n and 1 <= _num(n) <= 10_000_000:
             facts.append(_with_scope(Fact("subjects", str(_num(n)), m.group(0).strip(),
                                           _line_of(text, m.start())), _near(text, m.start(), m.end())))
@@ -173,6 +176,8 @@ def extract(text: str) -> list[Fact]:
         facts.append(_with_scope(Fact("dosage", f"{int(m.group(1) or 1)}회/{amount.normalize():f}{unit}",
                                       m.group(0).strip(), _line_of(text, m.start())), _near(text, m.start(), m.end())))
     for m in _VISITS.finditer(text):
+        if m.group(2) and _VISIT_SLOT.search(text[max(0, m.start() - 16):m.start()]):
+            continue  # 첫 방문·추적 방문 각각의 횟수는 전체 방문 횟수와 비교하지 않는다.
         n = m.group(1) or m.group(2)
         facts.append(_with_scope(Fact("visits", str(_KOREAN_NUMBERS[n] if n in _KOREAN_NUMBERS else int(n)),
                                       m.group(0).strip(), _line_of(text, m.start())), _near(text, m.start(), m.end())))

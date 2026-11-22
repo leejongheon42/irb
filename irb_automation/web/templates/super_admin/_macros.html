@@ -1,0 +1,9 @@
+{% macro pagination(base, page, has_next, q, status='') %}
+{% if page > 1 or has_next %}
+<nav class="actions sa-pages" aria-label="목록 페이지">
+  {% if page > 1 %}<a class="btn" href="{{ base }}?page={{ page - 1 }}&amp;q={{ q|urlencode }}{% if status %}&amp;status={{ status }}{% endif %}">이전</a>{% endif %}
+  <span>{{ page }}페이지</span>
+  {% if has_next %}<a class="btn" href="{{ base }}?page={{ page + 1 }}&amp;q={{ q|urlencode }}{% if status %}&amp;status={{ status }}{% endif %}">다음</a>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}

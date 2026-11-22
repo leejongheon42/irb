@@ -45,7 +45,7 @@ def merge_ai_evidence(rule_issues: list[dict], ai_issues: list[dict]) -> list[di
 def group_issues(issues: list[dict]) -> None:
     groups: dict[str, list[dict]] = {}
     for issue in issues:
-        if issue.get("group"):
+        if issue.get("group") and issue.get("review") != "dismissed":
             groups.setdefault(issue["group"], []).append(issue)
     for group in groups.values():
         if len(group) < 2:

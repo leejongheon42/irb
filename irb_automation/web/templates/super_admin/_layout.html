@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{% block admin_title %}서비스 관리{% endblock %}{% endblock %}
+{% block styles %}<link rel="stylesheet" href="/static/super_admin.css">{% endblock %}
+{% block header %}
+<header class="sa-header">
+  <div class="sa-wrap sa-header-row">
+    <a class="sa-brand" href="/super-admin">IRB 서비스 관리</a>
+    <div class="actions">
+      <a class="btn" href="/mvp">서류 심사</a>
+      <form method="post" action="/logout">{{ csrf_input }}<button class="btn" type="submit">로그아웃</button></form>
+    </div>
+  </div>
+</header>
+{% endblock %}
+{% block content %}
+<div class="sa-wrap sa-content">
+  <nav class="sa-tabs" aria-label="서비스 관리 메뉴">
+    {% for href, label, name in [('/super-admin', '사용량 통계', 'overview'), ('/super-admin/cases', '오탐 검토', 'cases'), ('/super-admin/rules', '규칙·키워드', 'rules')] %}
+    <a href="{{ href }}"{% if tab == name %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% block admin_content %}{% endblock %}
+</div>
+{% endblock %}
+

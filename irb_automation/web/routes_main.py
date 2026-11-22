@@ -37,6 +37,8 @@ S = ProtocolStatus
 @router.get("/login")
 def login_form(request: Request, user: User | None = Depends(current_user_optional)):
     if user:
+        if user.is_super_admin:
+            return RedirectResponse("/super-admin", status_code=303)
         return RedirectResponse("/mvp" if get_settings().mvp_mode else "/", status_code=303)
     return render(request, "login.html")
 
@@ -62,6 +64,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
     request.session["ai_tier"] = ai_tier.tier_for(user)
     audit.record(db, user, "login", "user", user.id, {"ai": request.session["ai_tier"]}, client_ip(request))
     db.commit()
+    if user.is_super_admin:
+        return RedirectResponse("/super-admin", status_code=303)
     return RedirectResponse("/mvp" if get_settings().mvp_mode else "/", status_code=303)
 
 

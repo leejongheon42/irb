@@ -47,6 +47,9 @@ def build_profile(answers: Answers | None, protocol: "Protocol | None", docs: It
     if consent:
         result.update(consent=consent)
         result["source"]["consent"] = "doc"
+    if any(doc.doc_type == "questionnaire" and doc.text.strip() for doc in documents):
+        result.update(method=["survey"])
+        result["source"]["method"] = "doc"
     sentences = re.split(r"\n|[.!?](?:\s|$)", body)
     relevant = [s for s in sentences if not re.search(r"제외|미포함|포함하지|해당하지 않", s)]
     vulnerable = []

@@ -116,6 +116,7 @@ class Settings:
     admin_password: str = field(
         default_factory=lambda: os.environ.get("IRB_ADMIN_PASSWORD", "medilux_admin"), repr=False
     )
+    super_admin_password: str = field(default_factory=lambda: os.environ.get("IRB_SUPER_ADMIN_PASSWORD", ""), repr=False)
     openrouter_api_key: str = field(
         default_factory=lambda: os.environ.get("OPENROUTER_API_KEY", "").strip(), repr=False
     )

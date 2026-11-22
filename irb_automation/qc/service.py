@@ -125,9 +125,12 @@ def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None
         if applied.get(condition) is False:
             bundle_units.extend({"rule": rid, "field": condition, "scope": "제출 묶음", "docs": [],
                                  "result": "na", "reason": "연구 조건에 해당하지 않습니다."} for rid in rule_ids)
-    p1, p3 = run_rules(docs, protocol, profile_conditions(applied), applied, units=bundle_units)
+    from .feedback import active_aliases, capture_rule_feedback
+
+    p1, p3 = run_rules(docs, protocol, profile_conditions(applied), applied, units=bundle_units, aliases=active_aliases(db))
     mix = [] if applied.get("compare_only") else mixed_study_findings(docs)
     p1 = bundle_issues + mix + p1
+    rule_issues = [annotate(issue) for issue in p1 + p3]
     if qr is None:
         qr = QCRun(protocol_id=protocol.id if protocol else None, created_by=user.id, title=title[:200])
         db.add(qr)
@@ -140,22 +143,21 @@ def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None
         from .ai_verify import verify_rule_findings
 
         if on_stage:
-            on_stage("규칙 지적 AI 재검토 중")
-        verify_info = verify_rule_findings(docs, p1 + p3, db=db, user=user, entity_id=qr.id)
-        if on_stage:
             on_stage("AI 심층 분석 중")
-        ai_issues, ai_info = run_ai(docs, p1 + p3, _summary(protocol), db=db, user=user, entity_id=qr.id)
-        ai_issues = merge_ai_evidence(p1 + p3, ai_issues)
+        ai_issues, ai_info = run_ai(docs, rule_issues, _summary(protocol), db=db, user=user, entity_id=qr.id)
+        ai_issues = [annotate(issue) for issue in merge_ai_evidence(rule_issues, ai_issues)]
+        if on_stage:
+            on_stage("원문 근거 최종 AI 재검토 중")
+        verify_info = verify_rule_findings(docs, rule_issues + ai_issues, db=db, user=user, entity_id=qr.id)
     if on_stage:
         on_stage("점수 계산 중")
     qr.criteria_version = f"{criteria().get('version', '')}+r{rules()['version']}"[:32]
     qr.profile = applied
-    issues = sorted(p1 + ai_issues + p3, key=lambda i: (SEVERITY_ORDER.get(i["severity"], 9), i["phase"], i["doc"] or ""))
+    issues = sorted(rule_issues + ai_issues, key=lambda i: (SEVERITY_ORDER.get(i["severity"], 9), i["phase"], i["doc"] or ""))
+    auto = criteria().get("review", {}).get("auto_confirm", [])
     for n, it in enumerate(issues, start=1):
         it["id"] = n
-        annotate(it)
-        auto = criteria().get("review", {}).get("auto_confirm", [])
-        if (it["confidence"] == "rule" and it["result"] != "needs_check" and not it.get("advice")
+        if (it["confidence"] == "rule" and it["review"] == "candidate" and it["result"] != "needs_check" and not it.get("advice")
                 and (it.get("rule_id") in auto or set(it.get("flags", [])) & set(auto))):
             it["review"] = "confirmed"
             it["review_note"] = "기관 설정에 따라 자동 확정"
@@ -165,13 +167,12 @@ def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None
     qr.ai_used = ai_info.get("status") == "done"
     qr.phases = {
         "1": {"label": "규칙 기반 스캔", "status": "done", "issues": len(p1)},
-        "verify": {"label": "규칙 지적 AI 재검토", "status": verify_info.get("status"),
-                   "issues": verify_info.get("dismissed", 0), "message": verify_info.get("message", "")},
+        "verify": {"label": "원문 근거 최종 AI 재검토", **verify_info, "issues": verify_info.get("dismissed", 0)},
         "2": {"label": "AI 심층 분석", "status": ai_info.get("status"), "issues": len(ai_issues),
               "message": ai_info.get("message", "")},
         "3": {"label": "오탈자·숫자·날짜 검증", "status": "done", "issues": len(p3)},
     }
-    by_doc = Counter(i["doc"] for i in issues)
+    by_doc = Counter(i["doc"] for i in issues if i["review"] != "dismissed" and not i.get("merged_into"))
     qr.docs = [{
         "key": d.key, "name": d.name, "doc_type": d.doc_type, "label": d.label, "document_id": d.document_id,
         "path": (store or {}).get(d.key, ""), "fmt": d.fmt, "chars": len(d.text.strip()), "warnings": d.warnings,
@@ -179,6 +180,7 @@ def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None
         "facts": [{"key": f.key, "value": f.value, "raw": f.raw} for f in d.facts][:40],
     } for d in docs]
     score_run(qr)
+    capture_rule_feedback(db, qr)
     audit.record(db, user, "qc_run", "protocol" if protocol else "qc_run", protocol.id if protocol else qr.id,
                  {"run": qr.id, "score": qr.score, "verdict": qr.verdict, **qr.counts, "docs": len(docs), "ai": qr.ai_used}, ip)
     return qr

@@ -6,7 +6,7 @@
 #  any/all은 후보 문단 탐색에 쓰고, 최소 분량·must·reject 조건으로 내용을 점검한다.
 #  when: 과제 조건(children, identifiable, waiver, obtain, clinical, ai_ml, external_transfer)
 # =====================================================================
-version: "2026.11.11"
+version: "2026.11.22"
 required_min_chars: 15   # 서술 문장 한 개(공백 제외 15자 이상)면 항목을 기재한 것으로 본다. 키워드 나열은 길이와 무관하게 불충분
 
 scoring:
@@ -69,10 +69,18 @@ required:
     - {id: guardian, label: "법정대리인 동의", severity: critical, any: ["법정대리인"], when: [children]}
     - {id: assent, label: "아동 동의(assent) 절차", severity: major, any: ["아동 동의", "assent", "어린이 동의", "아동용"], when: [children]}
   protocol:
-    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "과제명", "연구 과제명"], structured: true, min_chars: 12}
+    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "연구명", "과제명", "연구 과제명"], structured: true, min_chars: 12}
     - {id: objective, label: "연구 목적", severity: critical, any: ["연구 목적", "연구의 목적", "목적"]}
     - {id: background, label: "연구 배경·필요성", severity: major, any: ["배경", "필요성", "이론적 근거"]}
-    - {id: population, label: "연구 대상(선정·제외 기준)", severity: critical, structured: true, min_chars: 20, all: ["re:선정\\s*기준|포함\\s*기준", "re:제외\\s*기준"]}
+    - id: population
+      label: "연구 대상(선정·제외 기준)"
+      severity: critical
+      structured: true
+      min_chars: 20
+      all: ['re:선정\s*기준|포함\s*기준', 're:제외\s*기준']
+      equivalent_sections:
+        title: 're:^(?:#\s*)?(?:\d+[.)]?\s*)?(?:연구\s*)?대상(?:자)?\s*$'
+        all: ['re:(?:\d+\s*세\s*(?:이상|이하|미만)|참여\s*자격|참여할\s*수\s*있는|선정\s*기준|포함\s*기준)', 're:제외\s*(?:기준|한다|됩니다)|모집하지\s*않|참여할\s*수\s*없']
     - {id: design, label: "연구 방법·설계", severity: critical, any: ["연구 방법", "연구방법", "연구 설계", "연구설계"]}
     - {id: sample_size, label: "대상자 수 및 산출 근거", severity: major, quantified: true, all: ["re:\\d[\\d,]*\\s*명", "re:산출|근거|검정력|전수"]}
     - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간"], structured: true, must: ["re:\\d+\\s*(?:일|주|개월|년|[./-])"]}
@@ -92,14 +100,14 @@ required:
     - {id: items, label: "처리 대상 항목", severity: major, any: ["항목", "변수", "컬럼"]}
     - {id: methods, label: "처리 방법(삭제·가명·범주화 등)", severity: critical, any: ["삭제", "가명", "범주화", "마스킹", "일반화"]}
     - {id: adequacy, label: "적정성 평가(k-익명성 등)", severity: major, any: ["적정성", "익명성", "k-", "재식별 위험"]}
-    - {id: separation, label: "추가정보 분리 보관", severity: major, any: ["분리 보관", "분리보관", "추가정보", "매핑", "연결표"]}
+    - {id: separation, label: "추가정보 분리 보관", severity: major, any: ["분리 보관", "분리보관", "추가정보", "매핑", "연결표", 're:대응표[^.\n]{0,60}(?:별도|다른)\s*(?:경로|저장소|서버)']}
     - {id: access, label: "처리자·접근 권한", severity: major, any: ["접근", "권한", "처리자"]}
     - {id: no_reid, label: "재식별 금지", severity: major, any: ["재식별"]}
     - {id: destruction, label: "보관 기간 및 파기", severity: major, any: ["파기", "폐기", "삭제"]}
   application:
-    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "과제명"], structured: true, min_chars: 12}
+    - {id: title, label: "연구 제목", severity: critical, any: ["연구 제목", "연구제목", "연구명", "과제명"], structured: true, min_chars: 12}
     - {id: pi, label: "연구책임자", severity: critical, any: ["연구책임자", "책임연구자"], structured: true}
-    - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간"], structured: true, must: ["re:\\d+\\s*(?:일|주|개월|년|[./-])"]}
+    - {id: period, label: "연구 기간", severity: major, any: ["연구 기간", "연구기간", 're:전체\s*예정\s*기간'], structured: true, must: ["re:\\d+\\s*(?:일|주|개월|년|[./-])"]}
     - {id: subjects, label: "연구대상자 수", severity: major, any: ["대상자 수", "re:\\d[\\d,]*\\s*명"], structured: true, min_chars: 3, must: ["re:\\d[\\d,]*\\s*명"]}
   exemption_request:
     - {id: basis, label: "면제 근거(시행규칙 제13조)", severity: major, any: ["제13조", "면제"]}

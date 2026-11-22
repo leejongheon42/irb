@@ -75,9 +75,12 @@ def score_run(run: QCRun) -> None:
             doc["issues"] += 1
             doc["deduction"] += applied
     critical = sum(area["counts"]["critical"] for area in areas.values())
+    disputed_critical = any(issue["id"] in notes and issue["severity"] == "critical"
+                            and issue.get("reason") == "review_pending" and issue.get("ai_review")
+                            for issue in run.issues)
     run.score = sum(area["score"] for area in areas.values()) if readable_keys else 0
     run.verdict = ("HOLD" if not readable_keys else "FAIL" if critical and scoring["critical_fails"]
-                   else "PASS" if run.score >= scoring["pass_score"] else "REVISE")
+                   else "PASS" if run.score >= scoring["pass_score"] and not disputed_critical else "REVISE")
     run.counts = {
         "na": not readable_keys, "areas": areas, "documents": documents, "deductions": deductions, "notes": notes,
         "max_score": sum(area["points"] for area in areas.values()), "scoring": scoring,

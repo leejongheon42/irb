@@ -16,7 +16,7 @@ import yaml
 from ..config import get_settings
 from . import facts as F
 from .profile import Profile
-from .required import check_required
+from .required import RequiredAliases, check_required
 
 CRITERIA_PATH = Path(__file__).with_name("criteria.yaml")
 
@@ -344,7 +344,8 @@ def check_numbers(doc: QCDoc) -> list[dict]:
 
 # ------------------------------------------------------------------ 전체
 def run_rules(docs: list[QCDoc], protocol: Any | None, extra: set[str] | None = None,
-              profile: Profile | None = None, *, units: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
+              profile: Profile | None = None, *, units: list[dict] | None = None,
+              aliases: RequiredAliases | None = None) -> tuple[list[dict], list[dict]]:
     """(phase1 이슈, phase3 이슈)"""
     conds = conditions(protocol) | (extra or set())
     if profile and profile.get("consent"):
@@ -364,7 +365,7 @@ def run_rules(docs: list[QCDoc], protocol: Any | None, extra: set[str] | None = 
         versions = check_version(d)
         numbers = check_numbers(d)
         typos = check_typos(d)
-        p1 += check_required(d, conds, units) + versions + check_placeholders(d) + check_pii(d)
+        p1 += check_required(d, conds, units, aliases=aliases) + versions + check_placeholders(d) + check_pii(d)
         p1 += check_regulatory(d, protocol)
         p3 += typos + numbers
         if units is not None:

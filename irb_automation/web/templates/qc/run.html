@@ -37,7 +37,7 @@
       {% if ph.message %}<div class="small muted">{{ ph.message }}</div>{% endif %}</div>
     {% endfor %}
     {% set vf = qr.phases.get("verify") %}{% if vf and vf.status != "skipped" %}
-    <div class="phase"><strong>규칙 지적 AI 재검토</strong>
+    <div class="phase"><strong>{{ vf.label }}</strong>
       <div>{{ {"done": "완료", "failed": "실패"}.get(vf.status, vf.status) }} · 오탐 철회 {{ vf.issues }}건</div>
       {% if vf.message %}<div class="small muted">{{ vf.message }}</div>{% endif %}</div>
     {% endif %}

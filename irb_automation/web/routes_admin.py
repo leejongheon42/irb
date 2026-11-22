@@ -1,7 +1,7 @@
 """시스템 관리: 사용자, 감사 로그, 규칙 세트, 스케줄러."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from ..database import get_db
 from ..engine.ruleset import get_ruleset
 from ..models import AuditLog, Role, User
 from ..security import hash_password, password_problems
+from ..seed import SUPER_ADMIN_USERNAME
 from ..timeutil import parse_date
 from ..workflow.service import run_scheduler
 from .deps import client_ip, flash, render, require_roles, verify_csrf
@@ -19,18 +20,22 @@ from .deps import client_ip, flash, render, require_roles, verify_csrf
 router = APIRouter(prefix="/admin")
 admin_only = require_roles(Role.ADMIN)
 staff_only = require_roles(Role.ADMIN)
+MANAGED_ROLES = tuple(role for role in Role if role != Role.SUPER_ADMIN)
 
 
 @router.get("/users")
 def users(request: Request, user: User = Depends(admin_only), db: Session = Depends(get_db)):
-    items = db.scalars(select(User).order_by(User.role, User.full_name)).all()
-    return render(request, "admin/users.html", db, user, items=items, roles=list(Role))
+    items = db.scalars(select(User).where(User.role != Role.SUPER_ADMIN).order_by(User.role, User.full_name)).all()
+    return render(request, "admin/users.html", db, user, items=items, roles=MANAGED_ROLES)
 
 
 @router.post("/users", dependencies=[Depends(verify_csrf)])
 async def create_user(request: Request, user: User = Depends(admin_only), db: Session = Depends(get_db)):
     form = await request.form()
     username = str(form.get("username", "")).strip()
+    requested_role = str(form.get("role", "researcher"))
+    if username.casefold() == SUPER_ADMIN_USERNAME or requested_role not in MANAGED_ROLES:
+        raise HTTPException(403, "이 계정 또는 역할은 사용자 관리 화면에서 지정할 수 없습니다.")
     password = str(form.get("password", ""))
     problems = password_problems(password)
     if not username or db.scalars(select(User).where(User.username == username)).first():
@@ -44,7 +49,7 @@ async def create_user(request: Request, user: User = Depends(admin_only), db: Se
             full_name=str(form.get("full_name", "")).strip() or username,
             department=str(form.get("department", "")).strip(),
             email=str(form.get("email", "")).strip(),
-            role=Role(str(form.get("role", "researcher"))),
+            role=Role(requested_role),
             training_expires_on=parse_date(str(form.get("training_expires_on", ""))),
         )
         db.add(u)
@@ -63,6 +68,8 @@ async def update_user(request: Request, uid: int, user: User = Depends(admin_onl
         return RedirectResponse("/admin/users", status_code=303)
     changes: dict = {}
     role = form.get("role")
+    if u.is_super_admin or (role and role not in MANAGED_ROLES):
+        raise HTTPException(403, "이 계정 또는 역할은 사용자 관리 화면에서 변경할 수 없습니다.")
     if role and role != u.role.value:
         changes["role"] = [u.role.value, role]
         u.role = Role(str(role))

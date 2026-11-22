@@ -125,7 +125,7 @@ Vercel 컨테이너는 배포·재시작 때마다 로컬 디스크가 초기화
 
 ```bash
 python -m irb_automation init-db                 # DB 생성(기존 DB는 새 컬럼 자동 추가)
-python -m irb_automation create-user ID 역할      # researcher | admin
+python -m irb_automation create-user ID 역할      # researcher | reviewer | admin | super_admin
 python -m irb_automation run-scheduler           # 승인 만료 전 알림(지속심의 준비), 웹 서버에도 내장
 python -m irb_automation verify-audit            # 감사 로그 위변조 검증
 ```
@@ -138,6 +138,7 @@ python -m irb_automation verify-audit            # 감사 로그 위변조 검�
 | `IRB_DATABASE_URL`(또는 `DATABASE_URL`·`POSTGRES_URL`), `IRB_DATA_DIR`, `IRB_RULESET_PATH` | DB(PostgreSQL 권장, 미지정 시 로컬 SQLite), 파일 캐시 위치, 사전점검 규칙 파일 |
 | `IRB_FILE_STORE` | 업로드 원본을 DB에도 보관(`db`)할지 여부. PostgreSQL이면 기본 `db` |
 | `IRB_QC_CRITERIA_PATH` | 서류 점검 기준 파일(기관용 사본) |
+| `IRB_SUPER_ADMIN_PASSWORD` | 서버 시작 시 `super_admin` 최초 생성에 사용하는 초기 비밀번호 |
 | `IRB_APPROVAL_VALIDITY_DAYS` | 결과 입력 시 만료일을 비웠을 때 기본 승인 기간 |
 | `IRB_SOFFICE_PATH` | LibreOffice 경로(DOCX 자동 작성·HWP 변환) |
 | `IRB_AI_ENABLED`, `IRB_AI_MODEL`, `ANTHROPIC_API_KEY` | (선택) AI 초안·심층 점검·문서 인식·질의응답 |

@@ -1,0 +1,26 @@
+{% extends "super_admin/_layout.html" %}
+{% from "super_admin/_macros.html" import pagination %}
+{% set tab = 'cases' %}
+{% block admin_title %}오탐 검토{% endblock %}
+{% block admin_content %}
+<h1>오탐 검토</h1>
+<p class="muted sa-description">AI가 해당 서류의 원문 근거를 제시한 규칙 지적이 여기에 쌓입니다.</p>
+<section class="card" aria-labelledby="case-list-heading">
+  <h2 id="case-list-heading">오탐 사례</h2>
+  <form method="get" class="sa-search" role="search">
+    <label>사례 검색<input type="search" name="q" value="{{ q }}" maxlength="100" placeholder="규칙 코드 또는 지적 제목"></label>
+    <label>검토 상태<select name="status">{% for key, label in statuses.items() %}<option value="{{ key }}"{% if key == status %} selected{% endif %}>{{ label }}</option>{% endfor %}<option value="all"{% if status == 'all' %} selected{% endif %}>전체</option></select></label>
+    <button class="btn" type="submit">검색</button>
+  </form>
+  <div class="table-wrap" role="region" aria-labelledby="case-list-heading" tabindex="0">
+    <table class="sa-table">
+      <thead><tr><th scope="col">규칙 지적</th><th scope="col">심사 반영</th><th scope="col">검토 상태</th><th scope="col">기록 시각</th></tr></thead>
+      <tbody>{% for item in cases %}
+      <tr><th scope="row"><a href="/super-admin/cases/{{ item.id }}">{{ item.title }}</a><br><span class="muted">{{ item.rule_code }} · {{ item.severity|capitalize }}</span></th>
+        <td>{{ '감점 제외' if item.outcome == 'dismissed' else '사람 확인 필요' }}</td><td><span class="badge">{{ statuses[item.status] }}</span></td><td>{{ item.created_at|fmt }}</td></tr>
+      {% else %}<tr><td colspan="4">표시할 오탐 사례가 없습니다.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {{ pagination('/super-admin/cases', page, has_next, q, status) }}
+</section>
+{% endblock %}

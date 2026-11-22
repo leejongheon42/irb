@@ -34,6 +34,7 @@
       <li><a href="/deid">가명처리 도구</a></li>
       {% if user.is_admin %}
       <li class="section">기관 설정(관리자)</li>
+      {% if user.is_super_admin %}<li><a href="/super-admin">서비스 관리</a></li>{% endif %}
       <li><a href="/admin/profile">기관 프로필</a></li>
       <li><a href="/admin/forms">기관 양식(신청서 항목·웹 서식)</a></li>
       <li><a href="/admin/templates">기관 서식(DOCX·HWPX)</a></li>

@@ -1,0 +1,48 @@
+{% extends "super_admin/_layout.html" %}
+{% set tab = 'rules' %}
+{% block admin_title %}규칙·키워드{% endblock %}
+{% block admin_content %}
+<h1>규칙·키워드</h1>
+<p class="muted sa-description">기재사항 기준 {{ criteria_version }} · 탐지 규칙 {{ registry_version }}</p>
+<section class="card" aria-labelledby="criteria-heading">
+  <h2 id="criteria-heading">필수항목 매칭</h2>
+  <p class="muted">문서 종류별로 섹션을 찾은 뒤 필수 조건, 본문 분량과 제외 조건을 확인합니다.</p>
+  <form method="get" class="sa-search" role="search">
+    <label>필수항목·문구 검색<input type="search" name="q" value="{{ q }}" maxlength="100" placeholder="항목명, 규칙 코드, 문구"></label>
+    <button class="btn" type="submit">검색</button>
+  </form>
+  {% for entry in entries %}
+  <details class="sa-rule"{% if q and loop.length == 1 %} open{% endif %}>
+    <summary>{{ entry.label }} <span class="small muted">{{ rs.label('document_types', entry.doc_type) }} · {{ entry.code }}</span></summary>
+    <dl>{% for key, values in entry.patterns.items() %}<dt>{{ match_labels[key] }}</dt><dd>{% for value in values %}<code>{{ value }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}</dd>{% endfor %}</dl>
+  </details>
+  {% else %}<p>일치하는 필수항목이 없습니다.</p>{% endfor %}
+</section>
+<section class="card" id="approved-keywords" aria-labelledby="approved-heading">
+  <h2 id="approved-heading">승인한 문구</h2>
+  <div class="table-wrap" role="region" aria-labelledby="approved-heading" tabindex="0">
+    <table class="sa-table">
+      <thead><tr><th scope="col">문구</th><th scope="col">규칙·조건</th><th scope="col">상태</th><th scope="col">관리</th></tr></thead>
+      <tbody>{% for alias in aliases %}
+      <tr><th scope="row">{{ alias.keyword }}</th><td>{{ alias.rule_code }}<br><span class="small muted">{{ match_labels[alias.kind] }} {{ alias.pattern }}</span></td>
+        <td><span class="badge">{{ '적용 중' if alias.is_active else '중지' }}</span> <a href="/super-admin/cases/{{ alias.case_id }}">사례</a></td>
+        <td><form method="post" action="/super-admin/rules/keywords/{{ alias.id }}">{{ csrf_input }}<button class="btn-sm" name="active" value="{{ 'no' if alias.is_active else 'yes' }}" type="submit">{{ '중지' if alias.is_active else '다시 적용' }}</button></form></td></tr>
+      {% else %}<tr><td colspan="4">표시할 문구가 없습니다. 오탐 사례를 검토하면서 문구를 추가할 수 있습니다.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+<section class="card" aria-labelledby="detectors-heading">
+  <h2 id="detectors-heading">탐지 및 문서 분류</h2>
+  <details class="sa-rule"><summary>탐지 기준과 판정 방식</summary>
+    <div class="table-wrap"><table><thead><tr><th scope="col">규칙</th><th scope="col">탐지 내용</th><th scope="col">판정 방식</th></tr></thead>
+      <tbody>{% for rid, flag, method in detectors %}<tr><td>{{ rid }}</td><td>{{ flag }}</td><td>{{ method }}</td></tr>{% endfor %}</tbody></table></div>
+  </details>
+  <details class="sa-rule"><summary>파일명 키워드</summary>
+    <dl>{% for kind, terms in filename_keywords %}<dt>{{ rs.label('document_types', kind) }}</dt><dd>{{ terms|join(', ') }}</dd>{% endfor %}</dl>
+  </details>
+  <details class="sa-rule"><summary>본문 분류 키워드와 가중치</summary>
+    <dl>{% for kind, terms in body_keywords.items() %}<dt>{{ rs.label('document_types', kind) }}</dt><dd>{% for phrase, weight in terms %}{{ phrase }} ({{ weight }}){% if not loop.last %}, {% endif %}{% endfor %}</dd>{% endfor %}</dl>
+  </details>
+  <details class="sa-rule"><summary>적용 중인 기본 점검 기준 YAML</summary><pre>{{ criteria_data }}</pre></details>
+</section>
+{% endblock %}

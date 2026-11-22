@@ -118,7 +118,7 @@ def current_user_optional(request: Request, db: Session = Depends(get_db)) -> Us
         auto = get_settings().auto_login_user
         if auto and request.url.path != "/logout":
             u = db.scalars(select(User).where(User.username == auto)).first()
-            if u is not None and u.is_active:
+            if u is not None and u.is_active and not u.is_super_admin:
                 request.session["uid"] = u.id
                 request.session["ai_tier"] = ai_tier.tier_for(u)
                 return u
@@ -138,7 +138,7 @@ def current_user(user: User | None = Depends(current_user_optional)) -> User:
 
 def require_roles(*roles: Role):
     def checker(user: User = Depends(current_user)) -> User:
-        if user.role not in roles and user.role != Role.ADMIN:
+        if user.role not in roles and not (user.is_admin and Role.SUPER_ADMIN not in roles):
             raise HTTPException(status_code=403, detail="이 기능에 대한 권한이 없습니다.")
         return user
 

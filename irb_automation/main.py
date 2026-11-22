@@ -33,6 +33,7 @@ from .web import (
     routes_public_irb,
     routes_reports,
     routes_submission,
+    routes_super_admin,
 )
 from .web.deps import LoginRequired, current_user_optional, render
 
@@ -74,6 +75,18 @@ async def lifespan(app: FastAPI):
             db.commit()
         if created:
             log.info("builtin accounts: %s", ", ".join(created))
+    if settings.super_admin_password:
+        from .seed import ensure_super_admin
+
+        with SessionLocal() as db:
+            try:
+                created_super_admin = ensure_super_admin(db, settings.super_admin_password)
+            except ValueError as error:
+                log.error("%s", error)
+            else:
+                db.commit()
+                if created_super_admin:
+                    log.info("super_admin account created")
     task = None
     if settings.scheduler_enabled:
         task = asyncio.create_task(_scheduler_loop(settings.scheduler_interval_seconds))
@@ -139,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_public_irb.router)
     app.include_router(routes_deid.router)
     app.include_router(routes_admin.router)
+    app.include_router(routes_super_admin.router)
     app.include_router(routes_reports.router)
     app.include_router(routes_doctemplates.router)
     app.include_router(routes_knowledge.router)

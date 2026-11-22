@@ -106,6 +106,8 @@ def test_safe_filename():
     ("Protocol_v1.0.docx", "protocol"),
     ("증례기록서(CRF).xlsx", "crf"),
     ("가명처리 계획서.pdf", "deid_plan"),
+    ("05_모집문_제공요청서.docx", "recruitment"),
+    ("06_개인정보보호계획서.docx", "deid_plan"),
     ("보안서약서.pdf", "security_pledge"),
     ("scan_0001.pdf", "other"),
 ])

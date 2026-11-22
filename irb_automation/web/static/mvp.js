@@ -84,7 +84,7 @@
     const entries = Array.from(document.querySelectorAll('.mvp-finding'), node => ({
       node, text: normalize(`${node.textContent} ${node.dataset.keywords || ''}`)
     }));
-    const groups = document.querySelectorAll('details.mvp-details');
+    const groups = document.querySelectorAll('[aria-labelledby="deductions-heading"] details.mvp-details');
     const sections = document.querySelectorAll('[aria-labelledby="deductions-heading"], [aria-labelledby="notes-heading"]');
     const toggles = document.querySelectorAll('[data-filter-severity], [data-filter-status]');
     const openBeforeSearch = new Map();

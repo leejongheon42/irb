@@ -131,11 +131,11 @@ def start_review(db: Session, user: User) -> int:
 def retry_review(db: Session, run_id: int, user_id: int) -> None:
     attempt = uuid4().hex
     claimed = db.scalar(update(QCRun).where(QCRun.id == run_id, QCRun.created_by == user_id,
-                       QCRun.mvp_attempt.is_not(None), QCRun.status == "failed")
+                       QCRun.mvp_attempt.is_not(None), QCRun.status.in_(("done", "failed")))
                        .values(mvp_attempt=attempt, status="queued", stage=QUEUED, error="", stage_updated_at=now())
                        .returning(QCRun.id))
     if claimed is None:
-        raise ReviewUnavailable("실패한 심사만 다시 실행할 수 있습니다.")
+        raise ReviewUnavailable("진행 중인 심사는 완료 후 다시 실행할 수 있습니다.")
     _dispatch(db, run_id, attempt)
 
 
@@ -186,10 +186,9 @@ def _run_review(run_id: int, attempt: str) -> None:
                 key = f"d{index}"
                 store[key] = file.path
                 doc = qc._read_doc(key, file.name, filestore.read_bytes(file.path), file.doc_type, allow_ai_ocr=use_ai)
-                if use_ai and file.doc_type == "other" and doc.text.strip():
-                    guess = guess_doc_type(file.name, extracted_text=doc.text)
-                    if guess.confidence >= 0.5:
-                        doc.doc_type = guess.doc_type
+                guess = guess_doc_type(file.name, extracted_text=doc.text)
+                if guess.confidence >= 0.5:
+                    doc.doc_type = guess.doc_type
                 docs.append(doc)
 
             def stage(label: str) -> None:

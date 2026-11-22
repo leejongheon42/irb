@@ -15,6 +15,9 @@
   <p class="small muted">{{ issue.doc_name or '제출 묶음' }} · {{ 'AI 지적' if issue.source == 'ai' else '규칙 점검' }}{% if manual %} · {{ reason }}{% endif %}</p>
   {% if issue.flags %}<p class="mvp-finding-rule small">{{ issue.rule_id }} · {{ issue.flags|join(' / ') }}</p>{% endif %}
   {% if issue.detail %}<p>{{ issue.detail }}</p>{% endif %}
+  {% if issue.ai_review and issue.ai_review.verdict in ('valid', 'uncertain') and issue.ai_review.reason %}
+  <p class="small muted">AI 재검토 의견 · {{ issue.ai_review.reason }}</p>
+  {% endif %}
   {% if manual %}
   <dl class="mvp-finding-actions">
     <dt>확인할 내용</dt>

@@ -29,6 +29,7 @@ class Role(str, enum.Enum):
     RESEARCHER = "researcher"
     ADMIN = "admin"
     REVIEWER = "reviewer"
+    SUPER_ADMIN = "super_admin"
 
     @property
     def label(self) -> str:
@@ -39,6 +40,7 @@ ROLE_LABELS = {
     Role.RESEARCHER: "연구자",
     Role.ADMIN: "관리자(연구지원)",
     Role.REVIEWER: "사전검토자",
+    Role.SUPER_ADMIN: "최고 관리자",
 }
 
 
@@ -154,7 +156,11 @@ class User(Base):
     @property
     def is_admin(self) -> bool:
         """기관 설정(양식·서식·지식) 관리와 전체 과제 열람 권한."""
-        return self.role == Role.ADMIN
+        return self.role in (Role.ADMIN, Role.SUPER_ADMIN)
+
+    @property
+    def is_super_admin(self) -> bool:
+        return self.role == Role.SUPER_ADMIN
 
 
 class Protocol(Base):

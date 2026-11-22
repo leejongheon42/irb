@@ -1,0 +1,44 @@
+{% extends "super_admin/_layout.html" %}
+{% set tab = 'cases' %}
+{% block admin_title %}오탐 사례 검토{% endblock %}
+{% block admin_content %}
+<p><a href="/super-admin/cases">오탐 목록으로</a></p>
+<h1>{{ case.title }}</h1>
+<p class="muted sa-description"><a href="/super-admin/rules?q={{ case.rule_code|urlencode }}">{{ case.rule_code }}</a> · 기준 {{ case.criteria_version }} · 심사 {{ case.run_id }}번 · {{ case.created_at|fmt }}</p>
+<section class="card" aria-labelledby="evidence-heading">
+  <h2 id="evidence-heading">AI 재검토 근거 <span class="badge">{{ '감점 제외' if case.outcome == 'dismissed' else '사람 확인 필요' }}</span></h2>
+  <p>{{ case.reason }}</p>
+  {% for citation in case.citations %}
+  <blockquote class="sa-quote"><p>{{ citation.quote }}</p><footer class="small muted">{{ rs.label('document_types', citation.doc_type) }} · {{ citation.doc }}</footer></blockquote>
+  {% endfor %}
+</section>
+<section class="card" aria-labelledby="decision-heading">
+  <h2 id="decision-heading">수동 검토 <span class="badge">{{ statuses[case.status] }}</span></h2>
+  {% if case.status == 'pending' %}
+  <form method="post">
+    {{ csrf_input }}
+    <label for="review-note">검토 메모</label>
+    <textarea id="review-note" name="note" maxlength="1000" required></textarea>
+    {% if targets %}
+    <div class="sa-fields">
+      <label>추가할 문구<input name="keyword" type="text" maxlength="80" aria-describedby="keyword-hint"></label>
+      <label>적용할 조건<select name="condition"><option value="">선택</option>{% for key, target in targets.items() %}
+        <option value="{{ key }}">{{ match_labels[target[0]] }}{% if target[1] %} · {{ target[1] }}{% endif %}</option>{% endfor %}</select></label>
+    </div>
+    <p class="small muted" id="keyword-hint">조건 하나에 일반 문구를 추가합니다. 다음 심사부터 적용됩니다.</p>
+    {% else %}
+    <p class="small muted">이 규칙은 검토 메모를 남겨 별도로 수정할 수 있습니다.</p>
+    {% endif %}
+    <div class="actions sa-decision">
+      {% if targets %}<button class="btn-primary" name="decision" value="applied" type="submit">문구 추가 및 적용</button>{% endif %}
+      <button name="decision" value="reviewed" type="submit">검토 완료</button>
+      <button name="decision" value="rejected" type="submit">반려</button>
+    </div>
+  </form>
+  {% else %}
+  <p>{{ case.review_note }}</p>
+  <p class="small muted">{{ case.reviewer.username if case.reviewer else '' }} · {{ case.reviewed_at|fmt }}</p>
+  {% if keyword %}<p>등록 문구 <code>{{ keyword.keyword }}</code> · {{ '적용 중' if keyword.is_active else '중지' }} <a href="/super-admin/rules#approved-keywords">규칙에서 보기</a></p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

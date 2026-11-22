@@ -82,7 +82,8 @@ def findings_evidence(run: QCRun, only: int | None = None) -> dict[str, list[Cit
             continue
         citations: list[Citation] = []
         output[str(issue_id)] = citations
-        locations = [*issue.get("locations", []), *issue.get("ai_evidence", [])]
+        locations = [*issue.get("locations", []), *issue.get("ai_evidence", []),
+                     *issue.get("ai_review", {}).get("locations", [])]
         if not locations and issue.get("evidence"):
             locations = [{"doc": issue.get("doc"), "name": issue.get("doc_name"), "quote": issue["evidence"]}]
         seen: set[tuple[str, str]] = set()

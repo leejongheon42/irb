@@ -4,12 +4,14 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .models import Document, Protocol, Role, User
-from .security import hash_password
+from .security import hash_password, password_problems
 
 DEMO_PASSWORD = None  # None이면 데모 계정 비밀번호 = 아이디 (researcher/researcher, admin/admin)
+SUPER_ADMIN_USERNAME = "super_admin"
 
 DEMO_USERS = [
     ("admin", "연구지원관리자", "연구지원팀", Role.ADMIN),
@@ -49,6 +51,27 @@ def ensure_builtin_accounts(db: Session) -> list[str]:
             changed.append(f"{username} 역할·활성 복구")
     db.flush()
     return changed
+
+
+def ensure_super_admin(db: Session, password: str) -> bool:
+    """Create the explicitly configured account once, without elevating an existing user."""
+    if password_problems(password):
+        raise ValueError("최고 관리자 초기 비밀번호가 비밀번호 정책을 충족하지 않습니다.")
+    existing = db.scalar(select(User).where(User.username == SUPER_ADMIN_USERNAME))
+    if existing is not None:
+        if not existing.is_super_admin:
+            raise ValueError("super_admin 아이디가 다른 역할의 계정에 이미 사용되고 있습니다.")
+        return False
+    try:
+        db.add(User(username=SUPER_ADMIN_USERNAME, password_hash=hash_password(password),
+                    full_name="최고 관리자", role=Role.SUPER_ADMIN))
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        if db.scalar(select(User.id).where(User.username == SUPER_ADMIN_USERNAME)) is None:
+            raise
+        return False
+    return True
 
 
 def _doc(p: Protocol, doc_type: str, uid: int) -> Document:

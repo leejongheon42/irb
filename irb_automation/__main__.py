@@ -38,13 +38,15 @@ def seed_extensions(db, demo: bool = False) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .models import Role
+
     parser = argparse.ArgumentParser(prog="irb_automation")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_init = sub.add_parser("init-db")
     p_init.add_argument("--demo", action="store_true", help="데모 사용자·과제 생성")
     p_user = sub.add_parser("create-user")
     p_user.add_argument("username")
-    p_user.add_argument("role", choices=["researcher", "coordinator", "reviewer", "chair", "data_steward", "admin"])
+    p_user.add_argument("role", choices=[role.value for role in Role])
     p_user.add_argument("--name", default="")
     sub.add_parser("run-scheduler")
     sub.add_parser("verify-audit")
@@ -88,9 +90,13 @@ def main(argv: list[str] | None = None) -> int:
                 seed_extensions(db)
                 print("DB 초기화 완료")
         elif args.cmd == "create-user":
-            from .models import Role, User
+            from .models import User
             from .security import hash_password, password_problems
+            from .seed import SUPER_ADMIN_USERNAME
 
+            if args.username.casefold() == SUPER_ADMIN_USERNAME and args.role != Role.SUPER_ADMIN.value:
+                print("super_admin 아이디는 최고 관리자 역할에 예약되어 있습니다.", file=sys.stderr)
+                return 1
             if db.scalars(select(User).where(User.username == args.username)).first():
                 print("이미 존재하는 아이디입니다.", file=sys.stderr)
                 return 1

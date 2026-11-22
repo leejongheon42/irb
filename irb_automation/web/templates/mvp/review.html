@@ -37,6 +37,8 @@
     {% else %}
     <p class="mvp-notice" role="status"><strong>AI 심층 분석 없이 채점됨</strong>{% if ai.message %} · {{ ai.message }}{% endif %}</p>
     {% endif %}
+    {% set verification = run.phases.get('verify', {}) %}
+    {% if verification.message %}<p class="small muted">최종 AI 재검토 · {{ verification.message }}</p>{% endif %}
     <div class="mvp-areas">
       {% for key, area in run.counts.areas.items() %}
       <div><label for="area-{{ key }}">{{ area.label }}</label><span>{{ area.score }} / {{ area.points }}점</span>

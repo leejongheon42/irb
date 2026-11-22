@@ -198,6 +198,31 @@ def test_heading_only_required_section_is_still_reported() -> None:
     assert found["REQ_PROTOCOL_VARIABLES"]["section"].startswith("# 7.")
 
 
+@pytest.mark.parametrize(("body", "missing"), [
+    ("만 19세 이상이며 두 번 방문할 수 있는 성인이다. 연구진의 감독을 받는 직원은 모집하지 않는다.", False),
+    ("만 19세 이상이며 두 번 방문할 수 있는 성인이다.", True),
+    ("추후 기재", True),
+])
+def test_population_section_checks_eligibility_and_exclusion_in_prose(body: str, missing: bool) -> None:
+    from irb_automation.qc.required import check_required
+
+    text = f"# 1. 연구 목적\n업무 피로를 조사한다.\n# 7. 연구대상자\n{body}\n# 8. 산출 근거\n목표 규모는 80명이다."
+    findings = check_required(checks.QCDoc("p", "계획서.docx", "protocol", text), set())
+    assert any(issue["code"] == "REQ_PROTOCOL_POPULATION" for issue in findings) == missing
+
+
+def test_visit_comparison_uses_totals_and_still_detects_a_real_mismatch() -> None:
+    from irb_automation.qc.facts import extract
+
+    consent = "첫 방문 1회와 28일 후 추적 방문 1회에 각각 설문을 작성합니다."
+    assert not any(fact.key == "visits" for fact in extract(consent))
+    docs = [checks.QCDoc("p", "계획서.txt", "protocol", "총 2회 방문하며 결과를 기록한다."),
+            checks.QCDoc("c", "동의서.txt", "consent_form", f"{consent}\n전체 3회 방문합니다.")]
+    findings, _ = checks.run_rules(docs, None)
+    cross, = [issue for issue in findings if issue["code"] == "CROSS_VISITS"]
+    assert {loc["norm"] for loc in cross["locations"]} == {"2", "3"}
+
+
 def _verify(monkeypatch: pytest.MonkeyPatch, issues: list[dict], reviews: list[dict], text: str) -> dict:
     from irb_automation.ai import client
     from irb_automation.qc.ai_verify import verify_rule_findings
@@ -254,3 +279,26 @@ def test_ai_recheck_failure_leaves_rule_findings_untouched(monkeypatch: pytest.M
     info = verify_rule_findings([checks.QCDoc("p", "계획서.docx", "protocol", "본문 내용입니다.")], [issue])
 
     assert info["status"] == "failed" and issue == _rule_issue()
+
+
+def test_ai_recheck_citations_must_cover_the_documents_in_the_finding(monkeypatch: pytest.MonkeyPatch) -> None:
+    from irb_automation.ai import client
+    from irb_automation.qc.ai_verify import verify_rule_findings
+
+    docs = [checks.QCDoc("p", "계획서.txt", "protocol", "목표 인원은 총 80명입니다."),
+            checks.QCDoc("a", "신청서.txt", "application", "최종적으로 분석 가능한 인원은 64명입니다.")]
+    wrong_doc, partial, complete = _rule_issue(), _rule_issue(), _rule_issue()
+    for issue in (partial, complete):
+        issue.update(doc=None, category="cross", locations=[{"doc": doc.key} for doc in docs])
+    first, second = ({"doc_index": n, "quote": doc.text} for n, doc in enumerate(docs))
+    rows = [{"index": n, "verdict": "false_positive", "reason": "비교한 수치의 범위가 다릅니다.", "locations": locations}
+            for n, locations in enumerate(([second], [first], [first, second]))]
+    monkeypatch.setattr(client, "ai_enabled", lambda: True)
+    monkeypatch.setattr(client, "structured_call", lambda **kwargs: {"reviews": rows})
+
+    info = verify_rule_findings(docs, [wrong_doc, partial, complete])
+
+    assert info["dismissed"] == 1 and info["reviewed"] == 3
+    assert wrong_doc["review"] == partial["review"] == "candidate"
+    assert complete["review"] == "dismissed"
+    assert {location["doc"] for location in complete["ai_review"]["locations"]} == {"p", "a"}

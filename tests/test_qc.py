@@ -147,6 +147,10 @@ def test_ai_phase_with_fake_client(db, users, monkeypatch):
 
     def structured_call(**kw):
         calls.append(kw)
+        if kw["purpose"] == "규칙 점검 결과 재검토":
+            targets = [line for line in kw["content"][-1]["text"].splitlines() if line.startswith("- index ")]
+            return {"reviews": [{"index": index, "verdict": "valid", "reason": "지적 확인", "locations": []}
+                                for index in range(len(targets))]}
         return {"summary": "동의서의 위험 설명이 계획서보다 축소됨", "issues": [{
             "doc_index": 1, "severity": "major", "category": "context", "title": "위험 설명 축소",
             "detail": "계획서에는 저혈당 위험이 있으나 동의서에 없음", "evidence": "예상되는 부작용으로는 두통",
@@ -162,9 +166,10 @@ def test_ai_phase_with_fake_client(db, users, monkeypatch):
     assert ai_issues and ai_issues[0]["confidence"] == "ai_verified"
     assert ai_issues[0]["fixes"] == [] and ai_issues[0]["review"] == "candidate"
     assert qr.ai_used and qr.phases["2"]["status"] == "done"
-    assert [c["purpose"] for c in calls] == ["규칙 점검 결과 재검토", "서류 품질 점검"]
-    assert "이미 찾은 이슈" in calls[1]["content"][-1]["text"]
+    assert [c["purpose"] for c in calls] == ["서류 품질 점검", "규칙 점검 결과 재검토"]
+    assert "이미 찾은 이슈" in calls[0]["content"][-1]["text"]
     assert qr.phases["verify"]["status"] == "done"
+    assert ai_issues[0]["ai_review"]["verdict"] == "valid"
 
 
 def test_package_autocomplete(db, users):

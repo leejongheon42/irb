@@ -100,6 +100,54 @@ def test_only_pending_owner_can_delete_and_binary_is_removed(client, db):
     assert row["name"] not in client.get("/mvp").text
 
 
+def test_final_review_withdraws_cited_rule_error_and_keeps_real_mismatch_on_rerun(client, settings, db, monkeypatch):
+    token = _login(client)
+    plan = "연구명 | 성인 수면 연구\n목표 규모는 80명이다.\n"
+    period = "수행 계획 | 2027년 1월 1일부터 2027년 6월 30일까지"
+    application = f"연구명 | 성인 수면 연구\n규모 | 90명\n{period}\n"
+    _upload(client, token, ("연구계획서.txt", plan.encode()), ("심의신청서.txt", application.encode()))
+    url = client.post("/mvp/review", data={"csrf_token": token}, follow_redirects=False).headers["location"]
+    run_id = int(url.rsplit("/", 1)[1])
+    first = db.get(QCRun, run_id)
+    assert any(issue["code"] == "REQ_APPLICATION_PERIOD" and str(issue["id"]) in first.counts["deductions"]
+               for issue in first.issues)
+
+    settings.ai_review_enabled = True
+    settings.ai_provider = "openrouter"
+    settings.openrouter_api_key = "test-key"
+
+    def review(**request):
+        if request["purpose"] == "서류 품질 점검":
+            return {"issues": [], "summary": ""}
+        reviews = []
+        for line in request["content"][-1]["text"].splitlines():
+            match = re.match(r"- index (\d+) \|", line)
+            if not match:
+                continue
+            if "필수 기재사항 누락: 연구 기간 | 문서 번호: [1]" in line:
+                reviews.append({"index": int(match[1]), "verdict": "false_positive", "reason": "신청서에 전체 기간이 있습니다.",
+                                "locations": [{"doc_index": 1, "quote": period}]})
+            elif "연구대상자 수 불일치" in line:
+                reviews.append({"index": int(match[1]), "verdict": "false_positive", "reason": "인원은 같습니다.",
+                                "locations": [{"doc_index": 0, "quote": plan.strip()},
+                                              {"doc_index": 1, "quote": application.strip()}]})
+            else:
+                reviews.append({"index": int(match[1]), "verdict": "valid", "reason": "규칙 지적을 확인했습니다.", "locations": []})
+        return {"reviews": reviews}
+
+    monkeypatch.setattr(ai_client, "structured_call", review)
+    retry = client.post(f"{url}/retry", data={"csrf_token": token}, follow_redirects=False)
+    assert retry.status_code == 303 and retry.headers["location"] == url
+    db.refresh(first)
+    withdrawn, = [issue for issue in first.issues if issue["code"] == "REQ_APPLICATION_PERIOD"]
+    mismatch, = [issue for issue in first.issues if issue["code"] == "CROSS_SUBJECTS"]
+    assert withdrawn["review"] == "dismissed" and str(withdrawn["id"]) not in first.counts["deductions"]
+    assert str(mismatch["id"]) in first.counts["deductions"] and mismatch["ai_review"]["verdict"] == "uncertain"
+    assert len(mismatch["ai_review"]["locations"]) == 2
+    scorecard = client.get(f"{url}/scores").text
+    assert "AI 재검토로 철회한 지적" in scorecard and "신청서에 전체 기간이 있습니다." in scorecard
+
+
 def test_rejected_uploads_cannot_start_review(client, settings):
     settings.max_upload_mb = 1
     token = _login(client)
