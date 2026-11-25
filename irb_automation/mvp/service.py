@@ -26,7 +26,7 @@ from ..qc.pattern_store import active_classification
 from ..submission.guess import guess_doc_type
 from ..submission.validate import ALLOWED_EXT, validate_upload
 from ..timeutil import now
-from .models import MvpUpload
+from .models import MvpUpload, MvpUploadPart
 
 log = logging.getLogger(__name__)
 ALLOWED_UPLOADS = ALLOWED_EXT - {".zip"}
@@ -50,6 +50,10 @@ class SupersededReview(Exception):
 
 def pending(user_id: int) -> tuple[ColumnElement[bool], ...]:
     return (MvpUpload.user_id == user_id, MvpUpload.run_id.is_(None))
+
+
+def purge_expired_parts(db: Session) -> None:
+    db.execute(delete(MvpUploadPart).where(MvpUploadPart.expires_at <= now()))
 
 
 def save_upload(db: Session, user_id: int, name: str, raw: bytes, size: int, paths: list[Path]) -> MvpUpload:

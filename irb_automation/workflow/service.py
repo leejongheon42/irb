@@ -631,6 +631,9 @@ def add_comment(db: Session, user: User, protocol: Protocol, body: str, ip: str 
 # ---------------------------------------------------------------------- 스케줄러
 def run_scheduler(db: Session) -> dict[str, int]:
     """승인 만료 처리와 만료 예정(지속심의 준비) 알림. 매일 1회 이상 실행."""
+    from ..mvp.service import purge_expired_parts
+
+    purge_expired_parts(db)
     settings = get_settings()
     t = today()
     stats = {"expired": 0, "expiry_notices": 0}

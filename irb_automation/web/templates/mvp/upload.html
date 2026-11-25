@@ -20,7 +20,8 @@
 <p class="muted mvp-intro">함께 심사할 IRB 제출 서류를 올리고 목록을 확인해 주세요.</p>
 <section class="card" aria-labelledby="upload-title">
   <h2 id="upload-title">심사할 서류</h2>
-  <form action="/mvp/files" method="post" enctype="multipart/form-data" id="mvp-upload">
+  <form action="/mvp/files" method="post" enctype="multipart/form-data" id="mvp-upload"
+        data-part-bytes="{{ part_bytes }}" data-max-mb="{{ max_mb }}">
     {{ csrf_input }}
     <div class="mvp-dropzone" id="mvp-dropzone">
       <label for="mvp-files">파일을 끌어 놓거나 선택하세요.</label>

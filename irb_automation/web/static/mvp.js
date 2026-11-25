@@ -10,23 +10,55 @@
     const clear = document.querySelector('#mvp-clear button');
     let uploading = false;
 
-    async function upload(files) {
-      if (uploading || !files.length) return;
+    async function sendFile(file) {
       const data = new FormData(form);
       data.delete('files');
-      for (const file of files) data.append('files', file);
+      const send = async url => {
+        const response = await fetch(url, {method: 'POST', body: data, headers: {Accept: 'application/json'}});
+        if (response.redirected || response.status === 401 || response.status === 403) {
+          throw new Error('로그인 상태를 확인한 뒤 다시 올려 주세요.');
+        }
+        if (!response.ok) throw new Error(`파일을 전송하지 못했습니다 (HTTP ${response.status}).`);
+        return response.json();
+      };
+      const partBytes = Number(form.dataset.partBytes);
+      if (file.size > Number(form.dataset.maxMb) * 1024 * 1024) {
+        throw new Error(`파일당 ${form.dataset.maxMb}MB까지 올릴 수 있습니다.`);
+      }
+      if (file.size <= partBytes) {
+        data.set('files', file);
+        return send(form.action);
+      }
+      data.set('size', String(file.size));
+      for (let offset = 0; offset < file.size; offset += partBytes) {
+        const end = Math.min(offset + partBytes, file.size);
+        data.set('index', String(offset / partBytes));
+        data.set('part', file.slice(offset, end), file.name);
+        status.textContent = `${file.name} 전송 중 (${Math.floor(100 * offset / file.size)}%)`;
+        const result = await send(`${form.action}/parts`);
+        if (end === file.size) return result;
+        data.set('transfer', result.transfer);
+      }
+    }
+
+    async function upload(files) {
+      if (uploading || !files.length) return;
+      const selected = Array.from(files);
       delete status.dataset.error;
       status.textContent = '서류를 업로드하고 있습니다.';
       uploading = start.disabled = clear.disabled = input.disabled = true;
       try {
-        const response = await fetch(form.action, { method: 'POST', body: data, headers: { Accept: 'application/json' } });
-        if (!response.ok || response.redirected) {
-          status.dataset.error = '';
-          status.textContent = '업로드하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
-          return;
-        }
-        const added = await response.json();
-        for (const file of added) {
+        let accepted = 0;
+        let rejected = 0;
+        const failures = [];
+        for (const selectedFile of selected) {
+          let file;
+          try {
+            [file] = await sendFile(selectedFile);
+          } catch (error) {
+            failures.push(`${selectedFile.name} · ${error.message}`);
+            continue;
+          }
           const row = rowTemplate.content.firstElementChild.cloneNode(true);
           const fields = {
             name: file.name, fmt: file.fmt.toUpperCase() || '—', size: `${file.size.toLocaleString()} B`,
@@ -38,9 +70,11 @@
           row.querySelector('button').setAttribute('aria-label', `${file.name} 삭제`);
           row.dataset.fileStatus = file.status;
           rows.append(row);
+          if (file.status === 'ok') accepted++;
+          else rejected++;
         }
-        const accepted = added.filter(file => file.status === 'ok').length;
-        status.textContent = `업로드 ${accepted}건 · 거부 ${added.length - accepted}건`;
+        if (failures.length) status.dataset.error = '';
+        status.textContent = [`업로드 ${accepted}건 · 거부 ${rejected}건`, ...failures].join(' / ');
       } catch (error) {
         console.warn('MVP upload failed', error);
         status.dataset.error = '';

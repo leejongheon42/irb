@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Literal
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -17,7 +21,7 @@ from ..engine.ruleset import get_ruleset
 from ..models import User
 from ..mvp import service
 from ..mvp.evidence import evidence_image, findings_evidence, view_document
-from ..mvp.models import MvpUpload
+from ..mvp.models import MvpUpload, MvpUploadPart
 from ..qc.category_scores import SEVERITIES, VERDICTS
 from ..qc.models import QCRun
 from ..timeutil import now
@@ -27,6 +31,7 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 CurrentUser = Annotated[User, Depends(current_user)]
 Db = Annotated[Session, Depends(get_db)]
+PART_BYTES = 3 * 1024 * 1024
 
 
 class UploadRow(BaseModel):
@@ -67,32 +72,81 @@ def upload_page(request: Request, user: CurrentUser, db: Db) -> HTMLResponse:
     return render(request, "mvp/upload.html", db, user, files=files, history=history,
                   can_review=any(file.status == "ok" for file in files),
                   allowed=", ".join(ext[1:].upper() for ext in sorted(service.ALLOWED_UPLOADS)),
-                  max_mb=get_settings().max_upload_mb, verdicts=VERDICTS)
+                  max_mb=get_settings().max_upload_mb, part_bytes=PART_BYTES, verdicts=VERDICTS)
+
+
+@contextmanager
+def _upload_transaction(db: Session) -> Iterator[list[Path]]:
+    paths: list[Path] = []
+    try:
+        yield paths
+        db.commit()
+    except Exception:
+        db.rollback()
+        for path in paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                log.exception("Failed to clean up an uncommitted MVP upload")
+        raise
 
 
 @router.post("/mvp/files", dependencies=[Depends(verify_csrf)], response_model=None)
 def add_files(request: Request, user: CurrentUser, db: Db,
               files: Annotated[list[UploadFile] | None, File()] = None) -> list[UploadRow] | RedirectResponse:
     limit = get_settings().max_upload_mb * 1024 * 1024
-    paths: list[Path] = []
     rows = []
-    committed = False
-    try:
+    with _upload_transaction(db) as paths:
         for file in files or []:
             raw = file.file.read(limit + 1)
             rows.append(service.save_upload(db, user.id, file.filename or "", raw, file.size or len(raw), paths))
-        db.commit()
-        committed = True
-    finally:
-        if not committed:
-            for path in paths:
-                try:
-                    path.unlink(missing_ok=True)
-                except OSError:
-                    log.exception("Failed to clean up an uncommitted MVP upload")
     if "application/json" in request.headers.get("accept", ""):
         return [UploadRow.model_validate(row) for row in rows]
     return RedirectResponse("/mvp", status_code=303)
+
+
+@router.post("/mvp/files/parts", dependencies=[Depends(verify_csrf)])
+def add_file_part(user: CurrentUser, db: Db, part: Annotated[UploadFile, File()],
+                  size: Annotated[int, Form(gt=0)], index: Annotated[int, Form(ge=0)],
+                  transfer: Annotated[str, Form(max_length=32)] = "") -> dict[str, str] | list[UploadRow]:
+    if size > get_settings().max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, "파일 크기 제한을 초과했습니다.")
+    remaining = size - index * PART_BYTES
+    raw = part.file.read(PART_BYTES + 1)
+    if size <= PART_BYTES or remaining <= 0 or len(raw) != min(PART_BYTES, remaining):
+        raise HTTPException(400, "전송된 파일 조각의 크기가 올바르지 않습니다.")
+
+    name = part.filename or ""
+    if index == 0:
+        if transfer:
+            raise HTTPException(400, "새 업로드를 다시 시작해 주세요.")
+        transfer = uuid4().hex
+        expires_at = now() + timedelta(hours=1)
+        service.purge_expired_parts(db)
+    else:
+        group = (MvpUploadPart.transfer == transfer, MvpUploadPart.user_id == user.id)
+        # A row write serializes parts on both SQLite and PostgreSQL.
+        expires_at = db.scalar(update(MvpUploadPart).where(
+            *group, MvpUploadPart.index == 0, MvpUploadPart.name == name,
+            MvpUploadPart.size == size, MvpUploadPart.expires_at > now(),
+        ).values(expires_at=MvpUploadPart.expires_at).returning(MvpUploadPart.expires_at))
+        if expires_at is None:
+            raise HTTPException(409, "파일 전송이 만료되었거나 일치하지 않습니다.")
+        count = db.scalar(select(func.count()).select_from(MvpUploadPart).where(*group))
+        if count != index:
+            raise HTTPException(409, "파일 전송 순서가 올바르지 않습니다.")
+        if remaining <= PART_BYTES:
+            with _upload_transaction(db) as paths:
+                parts = db.scalars(select(MvpUploadPart.content).where(*group).order_by(MvpUploadPart.index))
+                content = b"".join([*parts, raw])
+                row = service.save_upload(db, user.id, name, content, size, paths)
+                db.execute(delete(MvpUploadPart).where(*group))
+            return [UploadRow.model_validate(row)]
+
+    db.add(MvpUploadPart(transfer=transfer, index=index, user_id=user.id, name=name, size=size,
+                         content=raw, expires_at=expires_at))
+    db.commit()
+    return {"transfer": transfer}
 
 
 @router.post("/mvp/files/{file_id}/delete", dependencies=[Depends(verify_csrf)])

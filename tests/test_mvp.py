@@ -14,7 +14,7 @@ from reportlab.pdfgen.canvas import Canvas
 from sqlalchemy import select
 
 from irb_automation.ai import client as ai_client
-from irb_automation.mvp.models import MvpUpload
+from irb_automation.mvp.models import MvpUpload, MvpUploadPart
 from irb_automation.qc.category_scores import score_run
 from irb_automation.qc.checks import criteria
 from irb_automation.qc.models import QCRun
@@ -98,6 +98,73 @@ def test_only_pending_owner_can_delete_and_binary_is_removed(client, db):
     assert client.post(route, data={"csrf_token": token}, follow_redirects=False).status_code == 303
     assert not path.exists()
     assert row["name"] not in client.get("/mvp").text
+
+
+@pytest.mark.parametrize("size_mb", [5, 8])
+def test_large_file_parts_reassemble_once_for_the_uploading_user(client, db, size_mb):
+    token = _login(client)
+    name = "검증.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.add_attachment("data.bin", b" " * (size_mb * 1024 * 1024))
+    stream = io.BytesIO()
+    writer.write(stream)
+    content = stream.getvalue()
+    page = client.get("/mvp").text
+    split = int(re.search(r'data-part-bytes="(\d+)"', page)[1])
+    assert 0 < split <= 4 * 1024 * 1024
+
+    def post(part, index, token, transfer=None):
+        fields = {"csrf_token": token, "index": index, "size": len(content)}
+        if transfer:
+            fields["transfer"] = transfer
+        return client.post("/mvp/files/parts", data=fields, files={"part": (name, part)})
+
+    first = post(content[:split], 0, token)
+    assert first.status_code == 200
+    transfer = first.json()["transfer"]
+    assert name not in client.get("/mvp").text
+    other = _login(client, "admin")
+    assert post(content[split:2 * split], 1, other, transfer).status_code == 409
+    token = _login(client)
+    last_index = (len(content) - 1) // split
+    tail = content[last_index * split:]
+    if last_index > 1:
+        assert post(tail, last_index, token, transfer).status_code == 409
+    for index in range(1, last_index):
+        chunk = content[index * split:(index + 1) * split]
+        assert post(chunk, index, token, transfer).json() == {"transfer": transfer}
+    assert post(tail[:-1], last_index, token, transfer).status_code == 400
+    last = post(tail, last_index, token, transfer)
+    assert last.status_code == 200
+    row, = last.json()
+    assert (row["name"], row["size"], row["status"]) == (name, len(content), "ok")
+    assert Path(db.get(MvpUpload, row["id"]).path).read_bytes() == content
+    assert post(tail, last_index, token, transfer).status_code == 409
+    assert db.scalar(select(MvpUploadPart)) is None
+
+
+def test_incomplete_pdf_upload_enforces_limits_and_expires(client, settings, db):
+    from irb_automation.mvp.service import purge_expired_parts
+    from irb_automation.web.routes_mvp import PART_BYTES
+
+    token = _login(client)
+    settings.max_upload_mb = 4
+    fields = {"csrf_token": token, "size": PART_BYTES + 1, "index": 0}
+    files = {"part": ("scan.pdf", b"%" * PART_BYTES)}
+    url = "/mvp/files/parts"
+    assert client.post(url, data={**fields, "csrf_token": ""}, files=files).status_code == 403
+    assert client.post(url, data={**fields, "size": 4 * 1024 * 1024 + 1}, files=files).status_code == 413
+    assert client.post(url, data=fields, files=files).status_code == 200
+    part = db.scalars(select(MvpUploadPart)).one()
+    part.expires_at = now() - timedelta(seconds=1)
+    db.commit()
+    tail = {**fields, "index": 1, "transfer": part.transfer}
+    assert client.post(url, data=tail, files={"part": ("scan.pdf", b"x")}).status_code == 409
+    purge_expired_parts(db)
+    db.commit()
+    assert db.scalar(select(MvpUploadPart)) is None
+    assert db.scalar(select(MvpUpload)) is None
 
 
 def test_final_review_withdraws_cited_rule_error_and_keeps_real_mismatch_on_rerun(client, settings, db, monkeypatch):
