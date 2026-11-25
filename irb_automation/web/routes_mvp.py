@@ -39,6 +39,7 @@ class UploadRow(BaseModel):
 
     id: int
     name: str
+    relative_path: str | None
     fmt: str
     size: int
     doc_type_label: str
@@ -93,22 +94,34 @@ def _upload_transaction(db: Session) -> Iterator[list[Path]]:
 
 @router.post("/mvp/files", dependencies=[Depends(verify_csrf)], response_model=None)
 def add_files(request: Request, user: CurrentUser, db: Db,
-              files: Annotated[list[UploadFile] | None, File()] = None) -> list[UploadRow] | RedirectResponse:
+              files: Annotated[list[UploadFile] | None, File()] = None,
+              relative_path: Annotated[str, Form(max_length=4096)] = "") -> list[UploadRow] | RedirectResponse:
     limit = get_settings().max_upload_mb * 1024 * 1024
     rows = []
     with _upload_transaction(db) as paths:
         for file in files or []:
             raw = file.file.read(limit + 1)
-            rows.append(service.save_upload(db, user.id, file.filename or "", raw, file.size or len(raw), paths))
+            row = service.save_upload(db, user.id, file.filename or "", raw, file.size or len(raw), paths)
+            if relative_path and len(files) == 1:
+                row.relative_path = _display_path(relative_path, file.filename)
+            rows.append(row)
     if "application/json" in request.headers.get("accept", ""):
         return [UploadRow.model_validate(row) for row in rows]
     return RedirectResponse("/mvp", status_code=303)
 
 
+def _display_path(value: str, filename: str | None) -> str | None:
+    parts = value.split("/")
+    if len(parts) > 1 and parts[-1] == filename and all(p not in ("", ".", "..") for p in parts):
+        return value
+    return None
+
+
 @router.post("/mvp/files/parts", dependencies=[Depends(verify_csrf)])
 def add_file_part(user: CurrentUser, db: Db, part: Annotated[UploadFile, File()],
                   size: Annotated[int, Form(gt=0)], index: Annotated[int, Form(ge=0)],
-                  transfer: Annotated[str, Form(max_length=32)] = "") -> dict[str, str] | list[UploadRow]:
+                  transfer: Annotated[str, Form(max_length=32)] = "",
+                  relative_path: Annotated[str, Form(max_length=4096)] = "") -> dict[str, str] | list[UploadRow]:
     if size > get_settings().max_upload_mb * 1024 * 1024:
         raise HTTPException(413, "파일 크기 제한을 초과했습니다.")
     remaining = size - index * PART_BYTES
@@ -140,6 +153,7 @@ def add_file_part(user: CurrentUser, db: Db, part: Annotated[UploadFile, File()]
                 parts = db.scalars(select(MvpUploadPart.content).where(*group).order_by(MvpUploadPart.index))
                 content = b"".join([*parts, raw])
                 row = service.save_upload(db, user.id, name, content, size, paths)
+                row.relative_path = _display_path(relative_path, name)
                 db.execute(delete(MvpUploadPart).where(*group))
             return [UploadRow.model_validate(row)]
 

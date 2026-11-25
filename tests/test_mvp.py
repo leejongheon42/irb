@@ -115,7 +115,7 @@ def test_large_file_parts_reassemble_once_for_the_uploading_user(client, db, siz
     assert 0 < split <= 4 * 1024 * 1024
 
     def post(part, index, token, transfer=None):
-        fields = {"csrf_token": token, "index": index, "size": len(content)}
+        fields = {"csrf_token": token, "index": index, "size": len(content), "relative_path": f"심사/서류/{name}"}
         if transfer:
             fields["transfer"] = transfer
         return client.post("/mvp/files/parts", data=fields, files={"part": (name, part)})
@@ -139,9 +139,25 @@ def test_large_file_parts_reassemble_once_for_the_uploading_user(client, db, siz
     assert last.status_code == 200
     row, = last.json()
     assert (row["name"], row["size"], row["status"]) == (name, len(content), "ok")
+    assert row["relative_path"] == f"심사/서류/{name}"
     assert Path(db.get(MvpUpload, row["id"]).path).read_bytes() == content
     assert post(tail, last_index, token, transfer).status_code == 409
     assert db.scalar(select(MvpUploadPart)) is None
+
+
+def test_folder_files_with_same_name_keep_their_paths(client):
+    token = _login(client)
+    names = ["서류/A/계획서.txt", "서류/B/계획서.txt"]
+    ids = []
+    for path in names:
+        response = client.post("/mvp/files", data={"csrf_token": token, "relative_path": path},
+                               files={"files": ("계획서.txt", b"draft")}, headers={"Accept": "application/json"})
+        row, = response.json()
+        assert (row["status"], row["name"], row["relative_path"]) == ("ok", "계획서.txt", path)
+        ids.append(row["id"])
+    assert ids[0] != ids[1]
+    page = client.get("/mvp").text
+    assert all(path in page for path in names)
 
 
 def test_incomplete_pdf_upload_enforces_limits_and_expires(client, settings, db):

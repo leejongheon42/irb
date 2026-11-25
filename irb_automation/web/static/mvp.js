@@ -1,7 +1,11 @@
+import {droppedFiles} from './mvp-folders.mjs';
+
 (() => {
   const form = document.querySelector('#mvp-upload');
   if (form) {
     const input = document.querySelector('#mvp-files');
+    const folder = document.querySelector('#mvp-folder');
+    const pickFolder = document.querySelector('#mvp-pick-folder');
     const zone = document.querySelector('#mvp-dropzone');
     const status = document.querySelector('#upload-status');
     const rows = document.querySelector('#mvp-file-rows');
@@ -10,9 +14,10 @@
     const clear = document.querySelector('#mvp-clear button');
     let uploading = false;
 
-    async function sendFile(file) {
+    async function sendFile(file, path) {
       const data = new FormData(form);
       data.delete('files');
+      if (path) data.set('relative_path', path);
       const send = async url => {
         const response = await fetch(url, {method: 'POST', body: data, headers: {Accept: 'application/json'}});
         if (response.redirected || response.status === 401 || response.status === 403) {
@@ -41,40 +46,45 @@
       }
     }
 
-    async function upload(files) {
-      if (uploading || !files.length) return;
-      const selected = Array.from(files);
+    async function upload(selected) {
+      if (uploading) return;
       delete status.dataset.error;
       status.textContent = '서류를 업로드하고 있습니다.';
-      uploading = start.disabled = clear.disabled = input.disabled = true;
+      uploading = start.disabled = clear.disabled = input.disabled = pickFolder.disabled = true;
       try {
         let accepted = 0;
         let rejected = 0;
         const failures = [];
-        for (const selectedFile of selected) {
+        for await (const item of selected) {
+          if (item.error) {
+            failures.push(`${item.path} · ${item.error}`);
+            continue;
+          }
           let file;
           try {
-            [file] = await sendFile(selectedFile);
+            [file] = await sendFile(item.file, item.path);
           } catch (error) {
-            failures.push(`${selectedFile.name} · ${error.message}`);
+            failures.push(`${item.path || item.file.name} · ${error.message}`);
             continue;
           }
           const row = rowTemplate.content.firstElementChild.cloneNode(true);
           const fields = {
-            name: file.name, fmt: file.fmt.toUpperCase() || '—', size: `${file.size.toLocaleString()} B`,
+            name: file.relative_path || file.name, fmt: file.fmt.toUpperCase() || '—', size: `${file.size.toLocaleString()} B`,
             doc_type_label: file.doc_type_label || '—', status: file.status === 'ok' ? '업로드됨' : '거부됨',
             message: file.message,
           };
           for (const [key, value] of Object.entries(fields)) row.querySelector(`[data-field="${key}"]`).textContent = value;
           row.querySelector('form').action = `/mvp/files/${file.id}/delete`;
-          row.querySelector('button').setAttribute('aria-label', `${file.name} 삭제`);
+          row.querySelector('button').setAttribute('aria-label', `${fields.name} 삭제`);
           row.dataset.fileStatus = file.status;
           rows.append(row);
           if (file.status === 'ok') accepted++;
           else rejected++;
         }
         if (failures.length) status.dataset.error = '';
-        status.textContent = [`업로드 ${accepted}건 · 거부 ${rejected}건`, ...failures].join(' / ');
+        status.textContent = accepted || rejected || failures.length
+          ? [`업로드 ${accepted}건 · 거부 ${rejected}건`, ...failures].join(' / ')
+          : '선택한 항목에 파일이 없습니다.';
       } catch (error) {
         console.warn('MVP upload failed', error);
         status.dataset.error = '';
@@ -85,13 +95,17 @@
         document.querySelector('#mvp-file-list').hidden = empty;
         start.disabled = !rows.querySelector('[data-file-status="ok"]');
         clear.disabled = empty;
-        input.value = '';
-        uploading = input.disabled = false;
+        input.value = folder.value = '';
+        uploading = input.disabled = pickFolder.disabled = false;
       }
     }
 
-    form.addEventListener('submit', event => { event.preventDefault(); upload(input.files); });
-    input.addEventListener('change', () => upload(input.files));
+    const fromInput = picker => Array.from(picker.files, file => ({file, path: file.webkitRelativePath}));
+    form.addEventListener('submit', event => { event.preventDefault(); upload(fromInput(input)); });
+    input.addEventListener('change', () => upload(fromInput(input)));
+    pickFolder.hidden = !('webkitdirectory' in folder);
+    pickFolder.addEventListener('click', () => folder.click());
+    folder.addEventListener('change', () => upload(fromInput(folder)));
     zone.addEventListener('dragover', event => {
       event.preventDefault();
       zone.classList.add('is-dragging');
@@ -102,7 +116,7 @@
     zone.addEventListener('drop', event => {
       event.preventDefault();
       zone.classList.remove('is-dragging');
-      upload(event.dataTransfer.files);
+      upload(droppedFiles(event.dataTransfer));
     });
   }
 

@@ -3,7 +3,7 @@
 {% block title %}서류 업로드 · IRB 서류 심사{% endblock %}
 {% macro upload_row(file) %}
 <tr data-file-status="{{ file.status if file else '' }}">
-  <th scope="row" data-field="name">{{ file.name if file else '' }}</th>
+  <th scope="row" data-field="name">{{ (file.relative_path or file.name) if file else '' }}</th>
   <td data-field="fmt">{{ (file.fmt|upper or '—') if file else '' }}</td>
   <td data-field="size" class="nowrap">{{ '{:,}'.format(file.size) ~ ' B' if file else '' }}</td>
   <td data-field="doc_type_label">{{ (file.doc_type_label or '—') if file else '' }}</td>
@@ -11,7 +11,7 @@
     <div data-field="message" class="small muted">{{ file.message if file else '' }}</div>
   </td>
   <td><form method="post"{% if file %} action="/mvp/files/{{ file.id }}/delete"{% endif %}>
-    {{ csrf_input }}<button type="submit" class="btn-ghost"{% if file %} aria-label="{{ file.name }} 삭제"{% endif %}>삭제</button>
+    {{ csrf_input }}<button type="submit" class="btn-ghost"{% if file %} aria-label="{{ file.relative_path or file.name }} 삭제"{% endif %}>삭제</button>
   </form></td>
 </tr>
 {% endmacro %}
@@ -24,8 +24,10 @@
         data-part-bytes="{{ part_bytes }}" data-max-mb="{{ max_mb }}">
     {{ csrf_input }}
     <div class="mvp-dropzone" id="mvp-dropzone">
-      <label for="mvp-files">파일을 끌어 놓거나 선택하세요.</label>
+      <label for="mvp-files">파일이나 폴더를 끌어 놓으세요.</label>
       <input id="mvp-files" name="files" type="file" multiple required aria-describedby="upload-limit">
+      <input id="mvp-folder" type="file" webkitdirectory multiple hidden>
+      <button id="mvp-pick-folder" class="btn" type="button" hidden>폴더 선택</button>
       <p class="muted small" id="upload-limit">파일당 최대 {{ max_mb }}MB · {{ allowed }}</p>
       <noscript><button type="submit">업로드</button></noscript>
     </div>

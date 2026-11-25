@@ -28,6 +28,7 @@ class MvpUpload(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     name: Mapped[str] = mapped_column(String(255))
+    relative_path: Mapped[str | None] = mapped_column(Text)
     path: Mapped[str] = mapped_column(Text, default="")
     size: Mapped[int]
     fmt: Mapped[str] = mapped_column(String(12))
