@@ -9,10 +9,12 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from unicodedata import normalize
 
 from ..qc.pattern_store import ClassificationPatterns, default_classification
 
 log = logging.getLogger(__name__)
+_SPECIMEN_FORM_HEADER = re.compile(r"별지\s*제?\s*34\s*호\s*서식")
 
 
 @dataclass
@@ -33,7 +35,7 @@ def _normalize(text: str) -> str:
 
 def guess_from_filename(filename: str, *, patterns: ClassificationPatterns | None = None) -> Guess:
     config = patterns if patterns is not None else default_classification()
-    raw = Path(filename).stem
+    raw = normalize("NFC", Path(filename).stem)
     stem = _normalize(raw)
     if not stem:
         return Guess("other", 0.0, "파일명 없음", "none")
@@ -63,6 +65,10 @@ def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str]
     g = guess_from_filename(filename, patterns=patterns)
     if allowed is not None and g.doc_type not in allowed:
         g = Guess("other", 0.0, g.reason, "none")
+    # The statutory form can also have a filename ending simply in "동의서".
+    if (g.doc_type in ("other", "consent_form") and (allowed is None or "specimen_consent" in allowed)
+            and _SPECIMEN_FORM_HEADER.search((extracted_text or "")[:500])):
+        return Guess("specimen_consent", 0.97, "본문의 별지 제34호서식 표시", "classifier")
     if g.confidence >= 0.75 or (raw is None and extracted_text is None):
         return g
     try:  # 문서 인식 모듈(선택): 텍스트 추출 + 분류

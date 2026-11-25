@@ -19,6 +19,7 @@ from . import facts as F
 from .pattern_store import current_settings, database_settings
 from .profile import Profile
 from .required import RequiredAliases, RequiredPatterns, check_required
+from .study_consistency import study_findings
 
 CRITERIA_PATH = Path(__file__).with_name("criteria.yaml")
 
@@ -386,5 +387,6 @@ def run_rules(docs: list[QCDoc], protocol: Any | None, extra: set[str] | None = 
                                   "result": "match" if applies else "na",
                                   "reason": "" if applies else "점검할 표기가 없습니다."})
     readable = [d for d in docs if d.text.strip()]
+    p1.extend(study_findings(readable))
     p1 += check_terminology(readable) + cross_check(readable, protocol, profile)
     return p1, p3

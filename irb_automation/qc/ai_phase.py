@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from .checks import QCDoc, criteria
+from .grouping import merge_ai_evidence
 from .rules import flag_meta, rules
 
 log = logging.getLogger(__name__)
@@ -16,6 +17,10 @@ log = logging.getLogger(__name__)
 MAX_TOTAL_CHARS = 600_000  # 큰 묶음은 한도를 넘지 않는 단위로 나누어 분석한다.
 _SINGLE_DOC_CATEGORY = {"M06": "required", "M07": "terminology", "M08": "typo", "M09": "numbers"}
 _QUOTED = re.compile(r'["“”「『]([^"“”「」『』]{4,300})["“”」』]')
+_FOCUS_TYPES = {"protocol", "consent_form", "crf"}
+_FOCUS_TAGS = {"M10": "서술 모순", "E06": "개인정보·이용·제공"}
+_FOCUS_PURPOSE = "연구계획·수집항목 집중 점검"
+_ENDPOINT_ANCHOR = re.compile(r"평가\s*(?:변수|지표)|결과\s*측정\s*지표|(?:primary|secondary)\s+endpoint", re.I)
 
 SYSTEM = """당신은 한국 병원 기관생명윤리위원회(IRB)에 제출할 연구 서류를 제출 전에 점검하는 품질 검토자입니다.
 연구자가 IRB 보완 요청을 받지 않도록, 심의위원이 지적할 만한 문제를 찾아냅니다.
@@ -40,6 +45,16 @@ SYSTEM = """당신은 한국 병원 기관생명윤리위원회(IRB)에 제출�
 - 전자 입력·승인 여부·적용 기준·약물 별칭을 추정하지 마십시오. 가독성 지적은 설명 불명확 또는 전문용어 미설명을 사용하십시오.
 - severity: critical(IRB 반려·연구대상자 안전·법 위반 소지), major(보완 요청 가능성 높음), minor(개선 권고).
 - 문제가 없으면 issues를 빈 배열로 두십시오."""
+
+FOCUS_SYSTEM = """다음 두 항목만 별도로 검토하십시오. 섹션 번호와 제목이 분리되어 추출되거나 줄바꿈이 단어를 가를 수 있습니다. 인용은 원문의 철자와 숫자를 유지하십시오.
+1. 연구계획서 안에서 일차·이차 목적, 측정 방법과 평가변수를 같은 우선순위끼리 대조하십시오.
+   목적 또는 방법에서 명시적으로 분석하는 지표와 평가변수에서 명시한 지표가 충돌하면 M10 / 서술 모순 / context로 보고하십시오.
+   목표 또는 측정 설명과 평가변수의 서로 다른 구절을 최소 두 개 인용하십시오.
+2. 계획서와 참여 설명문의 수집 목록을 증례기록서의 실제 기재 필드와 대조하십시오.
+   증례기록서에만 있는 항목을 수집 목록의 구체적인 문장과 비교해 E06 / 개인정보·이용·제공 / cross로 보고하십시오.
+   제목·배경·한계에서 언급된 항목이나 적격성 확인은 분석 자료 수집 명세로 간주하지 마십시오.
+   약어·같은 뜻의 표현·공개한 수집 범위로 설명되는 경우에는 지적하지 마십시오.
+   비교에 사용한 목록과 실제 기록 필드를 서로 다른 문서에서 각각 인용하십시오."""
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -78,11 +93,9 @@ SCHEMA: dict[str, Any] = {
 def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=None, user=None,
            entity_id: int | None = None) -> tuple[list[dict], dict[str, Any]]:
     """(AI 이슈 목록, 단계 정보). AI가 꺼져 있거나 실패하면 빈 목록과 사유를 돌려준다."""
-    try:
-        from ..ai import client as ai
-        from ..ai.privacy import mask_text, record_transmission
-    except ImportError:  # pragma: no cover
-        return [], {"status": "skipped", "message": "AI 모듈이 없습니다."}
+    from ..ai import client as ai
+    from ..ai import tier
+
     if not ai.ai_enabled():
         return [], {"status": "skipped", "message": "AI 기능이 꺼져 있어 규칙 기반 점검만 수행했습니다(IRB_AI_ENABLED)."}
     readable = [d for d in docs if d.text.strip()]
@@ -98,15 +111,40 @@ def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=
             return [], {"status": "skipped", "message": "개별 문서가 AI 분석 한도를 초과했습니다."}
         combined = []
         completed = 0
+        any_reviewed = False
         for batch in pending:
             findings, info = run_ai(batch, found, protocol_summary, db, user, entity_id)
             completed += info["status"] == "done"
+            any_reviewed |= info["status"] in ("done", "partial")
             for finding in findings:
                 if finding not in combined:
                     combined.append(finding)
         excluded = sum(len(d.text) > MAX_TOTAL_CHARS for d in readable)
-        return combined, {"status": "done" if completed else "failed",
+        status = "done" if completed == len(pending) and not excluded else "partial" if any_reviewed else "failed"
+        return combined, {"status": status,
                           "message": f"분할 분석 {completed}/{len(pending)}건 완료 · 개별 한도 초과 {excluded}문서"}
+    general, general_info = _analyze(readable, found, protocol_summary, db, user, entity_id)
+    focus_docs = [doc for doc in readable if doc.doc_type in _FOCUS_TYPES]
+    types = {doc.doc_type for doc in focus_docs}
+    endpoint = any(doc.doc_type == "protocol" and _ENDPOINT_ANCHOR.search(doc.text) for doc in focus_docs)
+    has_crf = "crf" in types and bool(types & {"protocol", "consent_form"})
+    if tier.provider() != "anthropic" or not (endpoint or has_crf):
+        return general, general_info
+    focused, focus_info = _analyze(focus_docs, [], protocol_summary, db, user, entity_id, focused=True)
+    completed = sum(info["status"] == "done" for info in (general_info, focus_info))
+    status = "done" if completed == 2 else "partial" if completed else "failed"
+    message = f"일반 분석: {general_info['message']} · 집중 점검: {focus_info['message']}"
+    return focused + merge_ai_evidence([i for i in focused if i["confidence"] == "ai_verified"], general), {
+        "status": status, "message": message[:1000],
+        "masked": general_info.get("masked", 0) + focus_info.get("masked", 0),
+    }
+
+
+def _analyze(readable: list[QCDoc], found: list[dict], protocol_summary: str, db, user,
+             entity_id: int | None, *, focused: bool = False) -> tuple[list[dict], dict[str, Any]]:
+    from ..ai import client as ai
+    from ..ai.privacy import mask_text, record_transmission
+
     masked_total = 0
     blocks: list[dict] = []
     masked_texts: dict[str, str] = {}
@@ -120,8 +158,8 @@ def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=
     cats = criteria().get("categories", {})
     known = "\n".join(f"- [{x['severity']}] {cats.get(x['category'], x['category'])}: {x['title']} ({x['doc_name']})"
                       for x in found[:80]) or "- (없음)"
-    allowed = SCHEMA["properties"]["issues"]["items"]["properties"]["rule_id"]["enum"]
-    table = "\n".join(f"- {rid} {rule.get('label', '')}: {' | '.join(rule.get('flags', {}))}"
+    allowed = _FOCUS_TAGS if focused else SCHEMA["properties"]["issues"]["items"]["properties"]["rule_id"]["enum"]
+    table = "\n".join(f"- {rid} {rule.get('label', '')}: {_FOCUS_TAGS[rid] if focused else ' | '.join(rule.get('flags', {}))}"
                       for rid, rule in rules()["rules"].items() if rid in allowed)
     intro = (f"과제 정보 요약:\n{protocol_summary or '(없음)'}\n\n분류표(rule_id 이름: flag 목록):\n{table}\n\n"
              f"이미 찾은 이슈:\n{known}\n\n"
@@ -130,14 +168,16 @@ def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=
     intro = masked_intro.text
     masked_total += masked_intro.masked
     payload = intro + "\n".join(masked_texts.values())
+    purpose = _FOCUS_PURPOSE if focused else "서류 품질 점검"
     try:
-        data = ai.structured_call(system=SYSTEM, content=[*blocks, {"type": "text", "text": intro}], schema=SCHEMA,
-                                  effort="high", max_tokens=32000, purpose="서류 품질 점검")
+        data = ai.structured_call(system=f"{SYSTEM}\n\n{FOCUS_SYSTEM}" if focused else SYSTEM,
+                                  content=[*blocks, {"type": "text", "text": intro}], schema=SCHEMA,
+                                  effort="high", max_tokens=12000 if focused else 32000, purpose=purpose)
     except ai.AIError as e:
         log.info("qc ai phase failed: %s", e)
         return [], {"status": "failed", "message": f"AI 심층 분석 실패: {e} (규칙 기반 결과는 유효)"}
     if db is not None:
-        record_transmission(db, user, "서류 품질 점검", "qc_run", entity_id, payload, "text", masked_total)
+        record_transmission(db, user, purpose, "qc_run", entity_id, payload, "text", masked_total)
     squashed = {key: "".join(text.split()) for key, text in masked_texts.items()}
 
     def locate(index: int, quote: str) -> QCDoc | None:
@@ -170,6 +210,8 @@ def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=
         if locations and (doc is None or doc.key not in {loc["doc"] for loc in locations}):
             doc = next(d for d in readable if d.key == locations[0]["doc"])
         rule_id, flag = it.get("rule_id", "M10"), it.get("flag", "서술 모순")
+        if focused and (rule_id not in _FOCUS_TAGS or _FOCUS_TAGS[rule_id] != flag):
+            continue
         meta = flag_meta(rule_id, flag)
         if not meta or rule_id not in allowed:
             # 분류가 어긋나도 인용 검증 결과는 유지한다(분류만 일반 항목으로 되돌림).
@@ -177,11 +219,19 @@ def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=
             meta = flag_meta(rule_id, flag)
         category = it["category"]
         cited_docs = {loc["doc"] for loc in locations}
-        if category == "cross" and len(locations) == len(cited) and len(cited_docs) == 1:
+        if focused:
+            category = "cross" if rule_id == "E06" else "context"
+        elif category == "cross" and len(locations) == len(cited) and len(cited_docs) == 1:
             # 한 문서 안의 지적에 '문서 간' 범주를 붙이는 모델이 있다. 규칙 번호에 맞는 범주로 옮긴다.
             category = _SINGLE_DOC_CATEGORY.get(rule_id, "context")
         minimum = 2 if category == "cross" else 1
         verified = len(locations) == len(cited) and len(cited_docs) >= minimum
+        if focused and category == "context":
+            distinct = {"".join(loc["quote"].split()) for loc in locations}
+            verified = verified and len(distinct) >= 2 and len(cited_docs) == 1 and doc is not None and doc.doc_type == "protocol"
+        if focused and category == "cross":
+            cited_types = {entry.doc_type for entry in readable if entry.key in cited_docs}
+            verified = verified and "crf" in cited_types and bool(cited_types & {"protocol", "consent_form"})
         advice = meta.get("severity") is None and flag not in ("적용 기준 불충족", "사실값 변경 가능 오기")
         out.append({
             "severity": meta.get("severity") or ("minor" if advice else it["severity"]), "category": category,
@@ -194,4 +244,4 @@ def run_ai(docs: list[QCDoc], found: list[dict], protocol_summary: str = "", db=
             "doc_name": doc.name if doc else "", "evidence": it.get("evidence", "")[:300],
             "suggestion": it.get("suggestion", "")[:500], "fixes": [], "phase": 2, "source": "ai", "code": "AI",
         })
-    return out, {"status": "done", "message": data.get("summary", "")[:1000], "masked": masked_total}
+    return out, {"status": "done", "message": data.get("summary", "")[:1000] or "완료", "masked": masked_total}

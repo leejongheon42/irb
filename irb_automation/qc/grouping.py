@@ -34,11 +34,19 @@ def merge_ai_evidence(rule_issues: list[dict], ai_issues: list[dict]) -> list[di
                 if all(any(doc == d and (q in quote or quote in q) for d, q in quotes) for doc, quote in cited):
                     duplicate = known
                     break
-            duplicate = duplicate or next((known for known in rule_issues if _restates(known, issue)), None)
+            duplicate = duplicate or next((known for known in rule_issues
+                                           if not known.get("code", "").startswith("SEMANTIC_") and _restates(known, issue)), None)
         if duplicate is None:
             remaining.append(issue)
         else:
-            duplicate["ai_evidence"] = [*duplicate.get("ai_evidence", []), *issue["locations"]]
+            evidence = duplicate.setdefault("ai_evidence", [])
+            evidence.extend(location for location in issue["locations"] if location not in evidence)
+            if (duplicate.get("code") in ("SEMANTIC_ENDPOINT", "SEMANTIC_CRF_FIELDS")
+                    and issue.get("result") == "mismatch"
+                    and duplicate.get("category") == issue.get("category")
+                    and duplicate.get("rule_id") == issue.get("rule_id")
+                    and {loc["doc"] for loc in duplicate["locations"]} <= {doc for doc, _ in cited}):
+                duplicate.update(result="mismatch", confidence="ai_verified", reason="", question="")
     return remaining
 
 

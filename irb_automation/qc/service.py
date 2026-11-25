@@ -76,10 +76,10 @@ def _header_footer_text(raw: bytes) -> str:
     return "\n".join(lines)
 
 
-def _guess(name: str, raw: bytes, patterns: ClassificationPatterns) -> str:
+def _guess(name: str, text: str, patterns: ClassificationPatterns) -> str:
     from ..submission.guess import guess_doc_type
 
-    g = guess_doc_type(name, raw, patterns=patterns)
+    g = guess_doc_type(name, extracted_text=text, patterns=patterns)
     return g.doc_type if g.confidence >= 0.5 else "other"
 
 
@@ -167,7 +167,7 @@ def run(db: Session, user: User, docs: list[QCDoc], *, protocol: Protocol | None
         qr.issues = issues
         group_issues(issues)
         qr.checks = observed_units(docs, issues, bundle_units)
-        qr.ai_used = ai_info.get("status") == "done"
+        qr.ai_used = ai_info.get("status") in ("done", "partial")
         qr.phases = {
             "1": {"label": "규칙 기반 스캔", "status": "done", "issues": len(p1)},
             "verify": {"label": "원문 근거 최종 AI 재검토", **verify_info, "issues": verify_info.get("dismissed", 0)},
@@ -220,7 +220,10 @@ def run_uploads(db: Session, user: User, files: list[tuple[str, bytes, str | Non
         path.write_bytes(raw)
         key = f"d{i}"
         store[key] = str(path)
-        qdocs.append(_read_doc(key, Path(name).name, raw, doc_type or _guess(name, raw, patterns)))
+        doc = _read_doc(key, Path(name).name, raw, doc_type or "other")
+        if not doc_type:
+            doc.doc_type = _guess(doc.name, doc.text, patterns)
+        qdocs.append(doc)
     if not qdocs:
         raise QCError("점검할 수 있는 파일이 없습니다. " + " / ".join(rejected))
     qr = run(db, user, qdocs, protocol=protocol, use_ai=use_ai, ip=ip, store=store, profile=profile,

@@ -347,7 +347,9 @@ def _zip_xml(fmt: str, raw: bytes) -> ExtractedText:
         )
         lines = []
         for name in sections:
-            lines.extend(xml_lines(z.read(name)))
+            # Some Word-to-HWPX converters keep empty Word paragraph markup as literal text.
+            lines.extend(line for source_line in xml_lines(z.read(name))
+                         if (line := re.sub(r"<o:p>\s*</o:p>", "", source_line).strip()))
         return ExtractedText("\n".join(lines), len(sections) or None, "hwpx")
     return _xlsx(z)
 

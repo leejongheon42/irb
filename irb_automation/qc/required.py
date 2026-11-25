@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, TypedDict
 
+from .consent_disclosures import disclosure_evidence, has_committee_contact, has_injury_coverage
 from .patterns import Expression
 from .structure import Section, matches, split_sections, substantive
 
@@ -75,7 +76,9 @@ def check_required(doc: QCDoc, conds: set[str], units: list[dict] | None = None,
         must_groups = [group for (kind, _), group in groups.items() if kind == "must"]
         candidates_patterns = alternatives_any + [pattern for group in all_groups for pattern in group]
         candidates = [s for s in sections if any(matches(s.title + "\n" + s.body, p) for p in candidates_patterns)]
-        if item.get("structured") and candidates:
+        disclosure = ({"irb_contact": has_committee_contact, "compensation": has_injury_coverage}.get(item["id"])
+                      if doc.doc_type == "consent_form" else None)
+        if item.get("structured") and candidates and disclosure is None:
             candidates = [Section("", "\n".join(s.title + "\n" + s.body for s in candidates),
                                   candidates[0].start, candidates[-1].end)]
         titles = groups.get(("equivalent_title", ""), [])
@@ -101,6 +104,9 @@ def check_required(doc: QCDoc, conds: set[str], units: list[dict] | None = None,
             if all_ok and any_ok and must_ok and enough and not forbidden:
                 valid = True
                 break
+        if disclosure is not None:
+            has_patterns = all(groups.get(key) for key in defaults if key[0] in ("any", "all", "must"))
+            valid = bool(has_patterns and disclosure(doc.text))
         denied = any(
             matches(s.title + "\n" + s.body, pattern) for s in sections
             for pattern in groups.get(("deny", ""), [])
@@ -115,20 +121,21 @@ def check_required(doc: QCDoc, conds: set[str], units: list[dict] | None = None,
         # 근거로 보여 줄 섹션: 제목이 항목과 맞는 것을 우선한다(본문에 단어만 스친 섹션 제외).
         titled = [s for s in candidates if any(matches(s.title, p) for p in candidates_patterns)]
         candidate = next(iter(alternatives or titled or candidates), None)
+        evidence = disclosure_evidence(item["id"], doc.text) if disclosure is not None else ""
         label = item["label"]
         flags = []
         if item["id"] == "voluntary":
             flags = ["권리 설명 모순" if denied else "철회 권리 누락"]
         out.append({
             "severity": item.get("severity", "major"), "category": "required",
-            "title": f"필수 기재사항 {'내용 미흡' if candidate else '누락'}: {label}",
+            "title": f"필수 기재사항 {'내용 미흡' if candidate or evidence else '누락'}: {label}",
             "detail": f"{doc.label}의 '{label}' 내용을 확인하십시오.",
             "doc": doc.key, "doc_name": doc.name,
-            "evidence": (candidate.title + "\n" + candidate.body).strip()[:300] if candidate else "",
+            "evidence": (evidence or ((candidate.title + "\n" + candidate.body).strip() if candidate else ""))[:300],
             "suggestion": item.get("rubric") or f"'{label}' 항목에 구체적인 내용을 작성하십시오.",
             "fixes": [], "phase": 1, "source": "rule",
             "code": code,
-            "status": "partial" if candidate else "missing", "confidence": "rule",
+            "status": "partial" if candidate or evidence else "missing", "confidence": "rule",
             "basis": item.get("basis", ""), "section": candidate.title if candidate else "", "flags": flags,
         })
     return out

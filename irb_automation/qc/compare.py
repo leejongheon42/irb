@@ -87,6 +87,6 @@ def comparisons(docs: Iterable["QCDoc"]) -> Iterable[Comparison]:
                 locations.append(location)
         different = len({frozenset(v) for v in values.values()}) > 1
         uncertain |= len(units) > 1 or (mixed and key != "dosage")
-        uncertain |= key == "dosage" and different and any(len(v) > 1 for v in values.values())
+        uncertain |= key in ("dosage", "sample_volume", "expense") and different and any(len(v) > 1 for v in values.values())
         yield Comparison(key=key, field=field, scope=scope, locations=locations, different=different,
                          uncertain=uncertain, reference_blocked=mixed or len(units) > 1)

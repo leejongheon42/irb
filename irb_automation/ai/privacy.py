@@ -23,7 +23,7 @@ from ..deid import patterns as P
 # 이름·도로명 주소는 아래 검증을 한 번 더 거친다.
 _SCRUB = [(k, rx, tag) for k, rx, tag in P.TEXT_SCRUB_PATTERNS if k != "date"]
 _DISEASE_SUFFIX = re.compile(r"(병|증|염|암|종|질환|장애|천식|당뇨|결핵|손상|골절|감염|중독|증후군|대상|입원|외래|소아|성인|노인|여성|남성|임산부|투석|수술|중증|경증|말기|초기|신규|기존|해당|일반|전체|모든|대조군|실험군|군)$")
-_UNIT_AFTER = re.compile(r"^\s?\d+(?:-\d+)?\s*(년|개월|월|일|세|명|례|회|차|%|주|시간|분|mg|kg|cm|배|건|개|종|기)")
+_UNIT_AFTER = re.compile(r"^\s?\d+(?:(?:,\d{3})+|-\d+)?\s*(년|개월|월|일|세|명|례|회|차|%|주|시간|분|mg|kg|cm|배|건|개|종|기|(?:만\s*)?원)")
 
 
 def _valid(kind: str, m: re.Match[str]) -> bool:

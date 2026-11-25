@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .checks import QCDoc, criteria
+from .consent_disclosures import has_committee_contact, has_injury_coverage
 from .facts import extract
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ SYSTEM = """당신은 한국 병원 IRB 제출 서류의 자동 점검 결과를
 - 인용은 locations에 문서 번호(doc_index)와 그 문서의 연속된 원문(quote, 최대 200자)을 넣으십시오. 숫자나 정해진 문구만 일치하는 인용은 충분하지 않습니다.
 - 문서 간 비교는 비교 대상 문서마다 근거를 인용하십시오. 전체·하위집단, 모집·분석 인원, 전체 일정·개별 방문을 구분하십시오.
 - 기재사항의 누락을 확인할 때는 지정된 문서 전체를 확인하십시오. 제목만 있거나 비어 있는 입력란은 충족한 근거가 아닙니다.
+- IRB 문의처에는 독립된 위원회의 연락 방법이 있어야 합니다. 손상 보상에는 손상 시 치료비 부담 또는 보상 방침이 있어야 합니다.
+  연구진 연락처, 단순한 의료진 대응 안내 및 참여 사례비를 각각의 대체 근거로 삼지 마십시오.
 - 과제 입력값, e-IRB 제출 여부, 적용 법령처럼 원문만으로 판정할 수 없는 사실은 uncertain입니다.
 - reason은 판정 이유를 한 문장으로 쓰십시오.
 - 모든 지적에 대해 index별로 하나씩 답하십시오."""
@@ -107,6 +110,23 @@ def _cites_same_total_conflict(issue: Mapping[str, Any], locations: list[dict[st
     return len({value for _, value in observed}) >= 2 and cited == observed
 
 
+def _unsupported_disclosure_rebuttal(issue: Mapping[str, Any], locations: list[dict[str, str]]) -> bool:
+    check = {"REQ_CONSENT_FORM_IRB_CONTACT": has_committee_contact,
+             "REQ_CONSENT_FORM_COMPENSATION": has_injury_coverage}.get(issue.get("code"))
+    return check is not None and not any(check(loc["quote"]) for loc in locations)
+
+
+def _cites_conflicting_collection_or_payment(issue: Mapping[str, Any], locations: list[dict[str, str]]) -> bool:
+    key = issue.get("fact_key")
+    if key not in ("sample_volume", "expense") or issue.get("result") != "mismatch":
+        return False
+    citations = {(loc["doc"], "".join(loc["quote"].split())) for loc in locations}
+    matched = {(observed["doc"], observed["norm"]) for observed in issue.get("locations", [])
+               if observed["value"] and any(doc == observed["doc"] and "".join(observed["value"].split()) in quote
+                                             for doc, quote in citations)}
+    return len({doc for doc, _ in matched}) > 1 and len({value for _, value in matched}) > 1
+
+
 def verify_rule_findings(docs: list[QCDoc], issues: list[dict], db=None, user=None,
                          entity_id: int | None = None) -> dict[str, Any]:
     """Apply scoped decisions to the findings and report actual review coverage."""
@@ -177,6 +197,12 @@ def verify_rule_findings(docs: list[QCDoc], issues: list[dict], db=None, user=No
             elif verdict == "false_positive" and _cites_same_total_conflict(issue, locations):
                 verdict = "uncertain"
                 reason = "재검토 인용에서도 문서별 전체 모집 인원이 서로 다르게 확인됩니다."
+            elif verdict == "false_positive" and _cites_conflicting_collection_or_payment(issue, locations):
+                verdict = "uncertain"
+                reason = "재검토 인용에서도 문서에 기재된 채취량 또는 지급액이 서로 다르게 확인됩니다."
+            elif verdict == "false_positive" and _unsupported_disclosure_rebuttal(issue, locations):
+                verdict = "uncertain"
+                reason = "재검토 인용에서 해당 연락처 또는 손상 보상 안내를 확인하지 못했습니다."
             issue["ai_review"] = {"verdict": verdict, "reason": reason, "locations": locations,
                                   "quote": locations[0]["quote"] if locations else ""}
             reviewed += 1
