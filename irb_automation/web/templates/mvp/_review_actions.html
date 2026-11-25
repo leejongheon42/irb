@@ -1,0 +1,4 @@
+{% if run.status in ('done', 'failed') %}
+<form method="post" action="/mvp/review/{{ run.id }}/retry">{{ csrf_input }}<button class="btn" type="submit">같은 서류로 다시 심사</button></form>
+{% endif %}
+<a class="btn{% if step == 3 %} btn-primary{% endif %}" href="/mvp">새 서류 심사하기</a>

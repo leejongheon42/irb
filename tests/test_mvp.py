@@ -75,6 +75,8 @@ def test_five_uploads_persist_and_review_with_consistent_scorecard(client):
     assert result == {"status": "done", "stage": "채점 완료", "score": int(re.search(r'<strong>(\d+)</strong>', review.text)[1]),
                       "verdict": "FAIL"}
     assert review.text.count("<meter ") == 5 and "AI 심층 분석 없이 채점됨" in review.text
+    assert f'action="{review_url}/retry"' in review.text and "같은 서류로 다시 심사" in review.text
+    assert 'href="/mvp">새 서류 심사하기</a>' in review.text
     scorecard = client.get(f"{review_url}/scores")
     assert scorecard.status_code == 200 and re.search(rf'<td>{result["score"]}</td>\s*<td data-severity="critical"', scorecard.text)
     assert 'data-view-panel="chart"' in scorecard.text and 'id="finding-doc"' in scorecard.text
@@ -285,13 +287,18 @@ def test_stalled_review_becomes_failed_and_can_retry_same_files(client, db, user
     token = _login(client)
     upload, = _upload(client, token, ("report.txt", b"Research report"))
     run = QCRun(created_by=users["researcher"].id, status="running", mvp_attempt="prior-attempt",
-                stage_updated_at=now() - timedelta(minutes=11))
+                stage_updated_at=now())
     db.add(run)
     db.flush()
     db.get(MvpUpload, upload["id"]).run_id = run.id
     db.commit()
     url = f"/mvp/review/{run.id}"
+    active = client.get(url).text
+    assert "새 서류 심사하기" in active and f'action="{url}/retry"' not in active
+    run.stage_updated_at = now() - timedelta(minutes=11)
+    db.commit()
     assert client.get(f"/api{url}").json()["status"] == "failed"
+    assert f'action="{url}/retry"' in client.get(url).text
 
     retry = client.post(f"{url}/retry", data={"csrf_token": token}, follow_redirects=False)
     assert retry.headers["location"] == url

@@ -12,14 +12,14 @@
   <noscript><p><a href="/mvp/review/{{ run.id }}">진행 상태 확인</a></p></noscript>
   <h3>대상 서류</h3>
   <ul>{% for file in files %}<li>{{ file.name }}</li>{% endfor %}</ul>
+  <div class="mvp-actions">{% include "mvp/_review_actions.html" %}</div>
 </section>
 {% elif run.status == 'failed' %}
 <section class="card mvp-panel">
   <h2>심사를 완료하지 못했습니다</h2>
   <p role="alert">{{ run.error }}</p>
   <div class="mvp-actions">
-    <a class="btn" href="/mvp">업로드 화면</a>
-    <form action="/mvp/review/{{ run.id }}/retry" method="post">{{ csrf_input }}<button class="btn-primary" type="submit">다시 심사</button></form>
+    {% include "mvp/_review_actions.html" %}
   </div>
 </section>
 {% else %}
@@ -56,6 +56,7 @@
     {% endfor %}
   </ul>
   <div class="mvp-actions">
+    {% include "mvp/_review_actions.html" %}
     {% if run.counts.notes %}<a class="btn" href="/mvp/review/{{ run.id }}/scores#notes-heading">확인 필요 {{ run.counts.notes|length }}건</a>{% endif %}
     <a class="btn btn-primary" href="/mvp/review/{{ run.id }}/scores#score-summary">채점 점수표 보기</a>
   </div>

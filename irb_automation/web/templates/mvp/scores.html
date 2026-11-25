@@ -237,7 +237,6 @@
 {% endif %}
 <div class="mvp-actions">
   <a class="btn" href="/mvp/review/{{ run.id }}">심사 결과</a>
-  <form method="post" action="/mvp/review/{{ run.id }}/retry">{{ csrf_input }}<button class="btn" type="submit">같은 서류로 다시 심사</button></form>
-  <a class="btn btn-primary" href="/mvp">새 서류 심사하기</a>
+  {% include "mvp/_review_actions.html" %}
 </div>
 {% endblock %}
