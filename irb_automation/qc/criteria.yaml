@@ -31,7 +31,6 @@ record_reference: true
 required_unverified: candidate
 review:
   auto_confirm: []
-  ai_dismiss: [major, minor]   # AI 재검토에서 오탐으로 확인되면 자동 철회할 등급(그 외 등급은 사람 확인)
 
 categories:
   required: "필수 기재사항"

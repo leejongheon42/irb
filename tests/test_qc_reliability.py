@@ -256,14 +256,22 @@ def test_ai_recheck_withdraws_rule_finding_only_with_a_quote_from_the_document(m
     assert assess([quoted])["projected"] == 100 and assess([invented])["projected"] == 93
 
 
-def test_ai_recheck_sends_critical_findings_to_a_person_instead_of_withdrawing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ai_recheck_passes_cited_critical_finding_without_manual_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    from irb_automation.qc.category_scores import score_run
+    from irb_automation.qc.models import QCRun
+
     issue = _rule_issue("critical")
+    issue.update(id=1, result="needs_check", reason="basis_unverified", question="원문을 확인해 주세요.")
     info = _verify(monkeypatch, [issue], [
         {"index": 0, "verdict": "false_positive", "reason": "적혀 있음", "quote": "총 1,500명, 검정력 85%"}],
         "목표 연구대상자 수: 총 1,500명, 검정력 85%")
 
-    assert (info["dismissed"], info["held"]) == (0, 1)
-    assert (issue["review"], issue["result"], issue["reason"]) == ("candidate", "needs_check", "review_pending")
+    assert (info["dismissed"], info["held"]) == (1, 0)
+    assert (issue["review"], issue["result"]) == ("dismissed", "match")
+    assert not issue.get("question")
+    run = QCRun(issues=[issue], docs=[{"key": "p", "chars": 32}])
+    score_run(run)
+    assert (run.verdict, run.score, run.counts["notes"]) == ("PASS", 100, [])
 
 
 def test_ai_recheck_failure_leaves_rule_findings_untouched(monkeypatch: pytest.MonkeyPatch) -> None:

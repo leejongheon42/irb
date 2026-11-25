@@ -1,8 +1,7 @@
 """최종 채점 전에 규칙 지적을 해당 서류의 원문에 대조한다.
 
 규칙은 표·명사형 문장처럼 서술 형태가 다른 내용을 놓쳐 '누락·미흡'으로 잘못 판정할 수 있다.
-AI가 오탐이라고 답하고 그 근거 인용이 원문에 실제로 있으면 감점에서 제외한다.
-Critical 지적은 자동으로 철회하지 않고 사람의 확인 항목으로 돌린다.
+AI가 오탐으로 판정하고 근거 인용이 해당 원문에서 검증되면 등급에 관계없이 통과 처리한다.
 """
 from __future__ import annotations
 
@@ -135,9 +134,7 @@ def verify_rule_findings(docs: list[QCDoc], issues: list[dict], db=None, user=No
         masked_texts[d.key] = g.text
         blocks.append(ai.text_document_block(g.text, title.text))
     squashed = {key: "".join(text.split()) for key, text in masked_texts.items()}
-    config = criteria()
-    cats = config.get("categories", {})
-    auto = set(config.get("review", {}).get("ai_dismiss", ["major", "minor"]))
+    cats = criteria().get("categories", {})
     doc_indices = {doc.key: n for n, doc in enumerate(readable)}
     reviewed = dismissed = held = 0
     for start in range(0, len(targets), MAX_FINDINGS):
@@ -183,17 +180,19 @@ def verify_rule_findings(docs: list[QCDoc], issues: list[dict], db=None, user=No
             issue["ai_review"] = {"verdict": verdict, "reason": reason, "locations": locations,
                                   "quote": locations[0]["quote"] if locations else ""}
             reviewed += 1
-            if verdict == "false_positive" and issue["severity"] in auto:
-                issue.update(review="dismissed", review_note=f"AI 재검토: {reason}", fixes=[])
+            if verdict == "false_positive":
+                issue.setdefault("original_result", issue.get("result", "mismatch"))
+                issue.update(review="dismissed", result="match", reason="", question="",
+                             review_note=f"AI 재검토 통과: {reason}", fixes=[])
                 dismissed += 1
-            elif verdict == "false_positive" or (explicit_uncertainty and reason and scope
+            elif (explicit_uncertainty and reason and scope
                     and scope.issubset(doc_indices) and (issue.get("category") in ("required", "cross")
                                                         or issue.get("confidence") == "ai_verified")
                     and issue.get("result") != "needs_check"):
                 _hold_for_review(issue, reason)
                 held += 1
     status = "done" if reviewed == len(targets) else "partial" if reviewed else "failed"
-    message = f"점검 지적 {reviewed}/{len(targets)}건 재검토 · 오탐 철회 {dismissed}건"
+    message = f"점검 지적 {reviewed}/{len(targets)}건 재검토 · 통과 {dismissed}건"
     if held:
         message += f" · 사람 확인 필요 {held}건"
     if status != "done":
