@@ -41,6 +41,20 @@ def test_consent_disclosures_require_the_right_contact_and_type_of_compensation(
         assert '필요한 진료를 제공합니다' in issues['COMPENSATION']['evidence']
 
 
+@pytest.mark.parametrize('rights_contact', ['', '대상자 권리 문의: 독립 IRB, rights@example.invalid\n'])
+def test_research_inquiries_are_separate_from_independent_irb_contact(rights_contact: str) -> None:
+    research_contact = '연구 관련 문의: 담당자, research@example.invalid (가상 연락처).'
+    text = ('9. 연구 문의\n' + research_contact + '\n' + rights_contact + '10. 동의 확인\n')
+
+    issues = {issue['code']: issue for issue in check_required(QCDoc('c', '동의서.pdf', 'consent_form', text), set())}
+
+    assert 'REQ_CONSENT_FORM_RESEARCHER_CONTACT' not in issues
+    if rights_contact:
+        assert 'REQ_CONSENT_FORM_IRB_CONTACT' not in issues
+    else:
+        assert issues['REQ_CONSENT_FORM_IRB_CONTACT']['evidence'] == research_contact
+
+
 @pytest.mark.parametrize(('changed', 'expected'), [(False, {}), (True, {
     ('CROSS_SAMPLE_VOLUME', '채혈'): {'10mL', '15mL'},
     ('CROSS_SAMPLE_VOLUME', '전체 채혈'): {'1000mL', '1500mL'},

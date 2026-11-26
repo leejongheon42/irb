@@ -7,7 +7,7 @@ from collections.abc import Iterator
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?。])\s+|\n(?=\s*(?:#|\d+[.)]\s))")
 _COMMITTEE = re.compile(r"기관\s*생명\s*윤리\s*위원회|연구\s*윤리\s*위원회|\bIRB\b|권리\s*문의", re.I)
 _CONTACT = re.compile(r"\d{2,4}\s*[-)]\s*\d{3,4}\s*-\s*\d{4}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\[(?:전화번호|이메일)\]")
-_INVESTIGATOR = re.compile(r"연구\s*책임자|담당\s*(?:연구자|연구원)|연구\s*담당자")
+_INVESTIGATOR = re.compile(r"연구\s*책임자|담당\s*(?:연구자|연구원)|연구\s*담당자|연구\s*(?:관련\s*)?문의\s*[:：]")
 _INJURY = re.compile(r"손상|상해|연구(?:로|에)?\s*(?:인한|관련)\s*피해|부작용|이상\s*(?:증상|반응)")
 _CARE = re.compile(r"필요한\s*진료|의료진|치료")
 _COVERAGE = re.compile(r"치료\s*비(?:용)?[^.!?\n]{0,35}(?:부담|지원|지급)|(?:보상|배상)[^.!?\n]{0,35}(?:신청|청구|절차|규정|제공|지급|받|없)|(?:보험|배상\s*책임)\s*(?:가입|적용|범위)")

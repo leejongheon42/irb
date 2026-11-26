@@ -19,7 +19,7 @@ from . import facts as F
 from .pattern_store import current_settings, database_settings
 from .profile import Profile
 from .required import RequiredAliases, RequiredPatterns, check_required
-from .study_consistency import study_findings
+from .study_consistency import combine_study_findings
 
 CRITERIA_PATH = Path(__file__).with_name("criteria.yaml")
 
@@ -98,7 +98,12 @@ def conditions(protocol: Any | None) -> set[str]:
 def check_version(doc: QCDoc) -> list[dict]:
     out = []
     fv = F.version_from_filename(doc.name)
-    body = F.versions_in_body(doc.text)
+    text = doc.text
+    if doc.doc_type == "amendment_table":
+        main, marker, footer = text.partition("\n[QC: 머리글·바닥글]")
+        cover = re.split(r"(?m)^(?:#\s*)?\d+[.)]?[ \t]+\D|^변경\s*항목[ \t]*\|", main, maxsplit=1)[0]
+        text = cover + marker + footer
+    body = F.versions_in_body(text)
     body_vals = sorted({b.value for b in body})
     if fv and body_vals and fv not in body_vals:
         wrong = next(b for b in body if b.value != fv)
@@ -387,6 +392,6 @@ def run_rules(docs: list[QCDoc], protocol: Any | None, extra: set[str] | None = 
                                   "result": "match" if applies else "na",
                                   "reason": "" if applies else "점검할 표기가 없습니다."})
     readable = [d for d in docs if d.text.strip()]
-    p1.extend(study_findings(readable))
+    p1 = combine_study_findings(readable, p1)
     p1 += check_terminology(readable) + cross_check(readable, protocol, profile)
     return p1, p3

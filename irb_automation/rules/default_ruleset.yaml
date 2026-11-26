@@ -179,6 +179,7 @@ catalogs:
     external_irb_approval: "타기관(대표) IRB 승인서"
     site_list: "참여기관 목록 및 기관별 승인 현황"
     amendment_table: "변경 대비표"
+    recording_choice: "녹음 추가설명·선택서"
     revision_response: "보완 답변서(보완 대비표)"
     destruction_certificate: "자료 파기 확인서"
     other: "기타"
@@ -191,6 +192,7 @@ catalogs:
   agreement_types:
     data_provision: "자료 제공 계약(본원 → 외부)"
     data_use: "자료 이용 계약(외부 → 본원)"
+    records_access_evidence: "의무기록 이용 허가·확인 증빙"
     collaboration: "공동연구 협약"
     linkage: "가명정보 결합 신청·계약"
     consignment: "개인정보 처리 위탁 계약"

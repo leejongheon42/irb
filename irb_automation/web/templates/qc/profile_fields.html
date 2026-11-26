@@ -3,7 +3,7 @@
         <div class="form-row">
           {% for key, label, options in (
             ("study_type", "연구 유형", {"human":"인간대상", "specimen":"인체유래물", "both":"둘 다"}),
-            ("application", "심의 신청", {"new":"신규심의", "exemption":"심의면제 신청"}),
+            ("application", "심의 신청", {"new":"신규심의", "exemption":"심의면제 신청", "amendment":"변경심의 신청"}),
             ("committee", "위원회 기준", {"public_irb":"공용 IRB", "institution":"기관 IRB"}),
             ("multicenter", "다기관 연구", {"yes":"예", "no":"아니요"}),
             ("student_pi", "박사학위 학생 연구책임자", {"yes":"예", "no":"아니요"}),

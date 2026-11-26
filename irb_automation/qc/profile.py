@@ -39,9 +39,22 @@ def build_profile(answers: Answers | None, protocol: "Protocol | None", docs: It
     result = Profile(committee="institution" if protocol else "public_irb", study_type="unknown",
                      application="unknown", source=dict.fromkeys(("committee", "study_type", "application"), "default"),
                      evidence={})
-    if "exemption_request" in roles:
+    amendment = next((hit[0] for doc in documents if doc.doc_type == "application"
+                      if (hit := re.search(r"변경[\s_]*(?:심의[\s_]*)?(?:신청|의뢰)서", doc.name + "\n" + doc.text[:300]))), "")
+    if amendment:
+        result.update(application="amendment")
+        result["source"]["application"] = "doc"
+        result["evidence"]["application"] = amendment
+    elif "exemption_request" in roles:
         result.update(application="exemption")
         result["source"]["application"] = "doc"
+    else:
+        new_review = next((match[0] for doc in documents if doc.doc_type == "application"
+                           if (match := re.search(r"신규[\s_]*심의", doc.name + "\n" + doc.text[:800]))), "")
+        if new_review:
+            result.update(application="new")
+            result["source"]["application"] = "doc"
+            result["evidence"]["application"] = new_review
     consent = [value for role, value in (("consent_form", "obtain"), ("waiver_request", "waiver_request"))
                if role in roles]
     if consent:
@@ -50,6 +63,14 @@ def build_profile(answers: Answers | None, protocol: "Protocol | None", docs: It
     if any(doc.doc_type == "questionnaire" and doc.text.strip() for doc in documents):
         result.update(method=["survey"])
         result["source"]["method"] = "doc"
+    else:
+        records = next((line for doc in documents if doc.doc_type in ("application", "protocol")
+                        for line in doc.text.splitlines() if re.search(r"기존\s*의무\s*기록", line)
+                        and re.search(r"원내|기관\s*(?:내부|내)|단일\s*기관|본원", line)), "")
+        if records:
+            result.update(method=["records"], data_source=["existing_internal"])
+            result["source"].update(method="doc", data_source="doc")
+            result["evidence"].update(method=records, data_source=records)
     sentences = re.split(r"\n|[.!?](?:\s|$)", body)
     relevant = [s for s in sentences if not re.search(r"제외|미포함|포함하지|해당하지 않", s)]
     vulnerable = []

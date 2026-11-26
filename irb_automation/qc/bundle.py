@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
-from ..public_irb.requirements import applicable, compute
+from ..public_irb.requirements import applicable, compute, report_catalog
 from ..public_irb.requirements import catalog as public_catalog
 from .profile import Profile, profile_conditions
 
@@ -44,8 +44,15 @@ def inspect_bundle(docs: list["QCDoc"], profile: Profile, protocol: "Protocol | 
         facts = (wf.build_facts(db, protocol, wf.preview_kind(protocol)) if db is not None
                  else ProtocolFacts.from_protocol(protocol))
         catalog = compute(facts)
+    elif profile.get("application") == "amendment":
+        catalog = list(report_catalog("amendment"))
+        if re.search(r"(?:면담\s*전|아직\s*면담)[^.\n]{0,70}추가\s*선택서", body):
+            catalog.append({"doc": "recording_choice", "label": "기존 참여자용 녹음 추가설명·선택서", "level": "required"})
     else:
         catalog = public_catalog()
+        if {"new", "records", "existing_internal"} <= conds:
+            catalog = [*catalog, {"doc": "records_access_evidence", "label": "의무기록 이용 허가·확인 증빙 (기관 요구 시)",
+                                  "level": "conditional", "pattern": r"(?:기관|관리부서)\s*(?:자료\s*)?이용\s*(?:허가|승인)"}]
     for item in catalog:
         role, label = item["doc"], item["label"]
         present = roles.get(role, [])
@@ -66,7 +73,9 @@ def inspect_bundle(docs: list["QCDoc"], profile: Profile, protocol: "Protocol | 
                 result, reason = "needs_check", "applicability_unknown"
             else:
                 result, reason = "na", "신청 경로의 적용 조건에 해당하지 않습니다."
-        elif level in ("evidence", "eirb_input"):
+        elif role == "coi" and level == "eirb_input" and not present:
+            result, reason = "needs_check", "submission_unverified"
+        elif level in ("evidence", "eirb_input") and not present:
             result, reason = "na", "관련 증빙 또는 e-IRB 입력을 확인하십시오."
         elif not present and answer == "eirb" and item.get("channel") == "eirb_or_file":
             result, reason = "na", "제출자가 해당 없음 또는 e-IRB 입력으로 표시했습니다."
@@ -82,11 +91,13 @@ def inspect_bundle(docs: list["QCDoc"], profile: Profile, protocol: "Protocol | 
                        "channel": item.get("channel", ""),
                        "forms": item.get("forms") or [form for cond, form in item.get("form", {}).items() if cond in conds]})
         if result == "needs_check" and reason != "unreadable":
+            question = (f"{label}의 적용 여부와 제출 방식(파일 또는 해당하는 경우 e-IRB)을 확인해 주세요."
+                        if role != "coi" else "연구자별 이해상충공개가 e-IRB에 입력됐는지 확인해 주세요.")
             issues.append({**_issue("major", "required", f"{label} 제출 여부 확인", code="BUNDLE_REQUIRED"),
                            "rule_id": "E10", "flags": ["제출 묶음 구성"], "result": result,
                            "reason": reason, "field": role, "basis": item.get("basis", ""),
                            "bundle_answer": answer if answer == "later" else "",
-                           "question": f"{label}의 적용 여부와 제출 방식(파일 또는 해당하는 경우 e-IRB)을 확인해 주세요."})
+                           "question": question})
     for role, same_role in roles.items():
         if role != "other" and len(same_role) == 1:
             continue

@@ -59,7 +59,7 @@ required:
     - {id: no_penalty, label: "참여 거부·철회 시 불이익 없음", severity: major, any: ["불이익"], must: ["re:불이익.{0,10}(?:없|않)"]}
     - {id: compensation, label: "연구 관련 손상 시 보상", severity: major, any: ["보상", "배상"]}
     - {id: cost, label: "비용 부담·사례비", severity: minor, any: ["비용", "사례", "부담"]}
-    - {id: researcher_contact, label: "연구자 연락처", severity: major, any: ["re:연구책임자|담당 연구자|연구자 연락처"], structured: true, must: ["re:\\d{2,4}-\\d{3,4}-\\d{4}|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"]}
+    - {id: researcher_contact, label: "연구자 연락처", severity: major, any: ['re:연구책임자|담당 연구자|연구자 연락처|연구\s*(?:관련\s*)?문의\s*[:：]'], structured: true, must: ["re:\\d{2,4}-\\d{3,4}-\\d{4}|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"]}
     - {id: irb_contact, label: "IRB 연락처", severity: major, any: ["기관생명윤리위원회", "IRB", "생명윤리위원회"], must: ["re:\\d{2,4}-\\d{3,4}-\\d{4}|[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"], structured: true, min_chars: 10}
     - {id: records_access, label: "기록 열람(모니터링·점검) 허용", severity: minor, any: ["열람", "모니터링", "점검", "실태조사"]}
     - {id: retention, label: "자료 보관 기간·폐기", severity: major, any: ["보관", "폐기", "파기"]}

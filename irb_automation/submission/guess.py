@@ -15,6 +15,10 @@ from ..qc.pattern_store import ClassificationPatterns, default_classification
 
 log = logging.getLogger(__name__)
 _SPECIMEN_FORM_HEADER = re.compile(r"별지\s*제?\s*34\s*호\s*서식")
+_RECORDS_PLAN_TITLE = re.compile(r"(?:연구)?자료(?:접근(?:권한)?(?:및)?(?:보관(?:및)?)?(?:폐기|파기)|관리)계획서")
+_ETHICS_PLEDGE_TITLE = re.compile(r"생명윤리(?:(?:및)?자료이용)?준수서약(?:서)?")
+_RECORDS_PERMISSION_TITLE = re.compile(r"(?:의무기록(?:내부)?(?:이용|열람|접근)|(?:기관|관리부서)자료이용)(?:허가|승인|확인)(?:서|증빙)")
+_RECORDING_CHOICE_TITLE = re.compile(r"(?:기존(?:연구)?참여자용)?(?:음성)?녹음(?:추가설명(?:및)?)?(?:추가)?선택서")
 
 
 @dataclass
@@ -69,6 +73,16 @@ def guess_doc_type(filename: str, raw: bytes | None = None, *, allowed: set[str]
     if (g.doc_type in ("other", "consent_form") and (allowed is None or "specimen_consent" in allowed)
             and _SPECIMEN_FORM_HEADER.search((extracted_text or "")[:500])):
         return Guess("specimen_consent", 0.97, "본문의 별지 제34호서식 표시", "classifier")
+    stem = re.sub(r"^\d+", "", _normalize(normalize("NFC", Path(filename).stem)))
+    heading = next((line.lstrip("# ").strip() for line in (extracted_text or "")[:500].splitlines()
+                    if line.startswith("#")), "")
+    for generic, role, pattern in (("protocol", "deid_plan", _RECORDS_PLAN_TITLE),
+                                   ("security_pledge", "pledge", _ETHICS_PLEDGE_TITLE),
+                                   ("consent_form", "recording_choice", _RECORDING_CHOICE_TITLE),
+                                   ("transfer_agreement", "records_access_evidence", _RECORDS_PERMISSION_TITLE)):
+        if (g.doc_type in (generic, "other") and (allowed is None or role in allowed)
+                and (pattern.fullmatch(stem) or pattern.fullmatch(_normalize(heading)))):
+            return Guess(role, 0.95, "제출 서류의 명시적 제목", "classifier")
     if g.confidence >= 0.75 or (raw is None and extracted_text is None):
         return g
     try:  # 문서 인식 모듈(선택): 텍스트 추출 + 분류

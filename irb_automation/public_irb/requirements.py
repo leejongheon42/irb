@@ -35,6 +35,11 @@ def catalog(content: str | None = None) -> list[DocumentRule]:
     return _pack(content)["documents"]
 
 
+def report_catalog(kind: str, content: str | None = None) -> list[DocumentRule]:
+    """Return the requirements specific to a submission report."""
+    return _pack(content).get("reports", {}).get(kind, [])
+
+
 def _pack(content: str | None) -> dict:
     return _load_catalog(content if content is not None else CATALOG.read_text(encoding="utf-8"))
 

@@ -1,5 +1,6 @@
 """Extract explicitly labeled facts used for additional QC comparisons."""
 import re
+from collections.abc import Iterator
 from decimal import Decimal
 
 from .facts import Fact
@@ -10,7 +11,9 @@ _LABELS = (
     ("age_range", r"(?:선정\s*연령|대상\s*연령|연령)\s*[:：]\s*((?:만\s*)?\d+\s*세\s*(?:이상|초과)\s*(?:[~∼,·]\s*)?\d+\s*세\s*(?:이하|미만))"),
     ("deid_level", r"(?:처리\s*수준|비식별\s*방식)\s*[:：]\s*(가명|익명)"),
 )
-_VOLUME = r"(?P<amount>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*(?:mL|㎖)(?![A-Za-z/])"
+_VOLUME_AMOUNT = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+_VOLUME_UNIT = r"\s*(?:mL|㎖)(?![A-Za-z/])"
+_VOLUME = rf"(?P<amount>{_VOLUME_AMOUNT}){_VOLUME_UNIT}"
 _BLOOD = r"(?:정맥혈|전혈|혈액|채혈)"
 _BLOOD_VOLUME = re.compile(
     rf"{_BLOOD}\s*(?:(?:채취|채혈)(?:량)?\s*|량\s*)?(?:은|는|[:：(|])?\s*"
@@ -22,20 +25,64 @@ _TOTAL_VOLUME = re.compile(
     rf"[\d,]+\s*명(?:으로)?부터)\s*(?:은|는|[:：])?\s*"
     rf"(?:[\d,.]+\s*(?:mL|㎖)\s*[×xX*]\s*[\d,]+\s*명\s*=\s*)?{_VOLUME}", re.I,
 )
-_QUALIFIED_VOLUME = re.compile(r"최대|최소|필요\s*시|이내|미만|이하|이상|추가|잔여|분주|재채혈|(?:시험|대조|실험|치료)군|(?:첫|두\s*번째|\d+\s*차)\s*방문")
+_ARMS = r"(?:시험|대조|실험|치료)군"
+_VOLUME_QUALIFIER = rf"최소|필요\s*시|이내|미만|이하|이상|추가|잔여|분주|재채혈|{_ARMS}|(?:첫|두\s*번째|\d+\s*차)\s*방문"
+_QUALIFIED_VOLUME = re.compile(rf"최대|{_VOLUME_QUALIFIER}")
+_BLOOD_LIMITS = re.compile(
+    rf"{_BLOOD}[^.!?;|\n]{{0,70}}?(?P<draw>(?:1\s*)?회당\s*최대\s*{_VOLUME})"
+    rf"(?:\s*[,，]\s*(?P<participant>(?:1\s*인당\s*)?(?:총|전체|합계)\s*(?:최대\s*)?"
+    rf"(?P<total>{_VOLUME_AMOUNT}){_VOLUME_UNIT}))?", re.I,
+)
+_CURRENCY = r"(?P<amount>\d{1,3}(?:,\d{3})+|\d+)\s*(?P<unit>만\s*)?원"
 _PAYMENT = re.compile(
     r"(?P<label>교통비|사례비|손상\s*보상|참여\s*(?:비용|보상))"
     r"(?:\s*명목으로|\s*지급\s*\|\s*[^|.]{0,20}|[^.!?|\d]{0,20})"
-    r".{0,35}?(?<![\d.,])(?P<amount>\d{1,3}(?:,\d{3})+|\d+)\s*(?P<unit>만\s*)?원"
+    rf".{{0,35}}?(?<![\d.,]){_CURRENCY}"
 )
 _PARTICIPATION = re.compile(r"방문|1인당|참여\s*(?:보상|사례비)")
-_QUALIFIED_PAYMENT = re.compile(r"최대|최소|회당|1회당|실비|이내|(?:시험|대조|실험|치료)군")
+_QUALIFIED_PAYMENT = re.compile(rf"최대|최소|회당|1회당|실비|이내|{_ARMS}")
+_VISIT_PAYMENT = re.compile(rf"(?:방문\s*(?:1\s*회\s*)?당|방문\s*마다|매\s*방문)\s*{_CURRENCY}")
+_PAYMENT_CAP = re.compile(rf"\s*[,，]\s*(?:(?:총|정규|계획된)\s*)?(?:\d+\s*회\s*)?(?:방문\s*)?최대\s*{_CURRENCY}")
+_NON_ROUTINE_PAYMENT = re.compile(
+    rf"손상|피해|배상|치료비|진료비|본인\s*부담|실비|{_ARMS}|(?:선별\s*탈락|중도\s*철회|필요|발생)\s*시"
+)
+_QUALIFIED_VISIT_PAYMENT = re.compile(r"\s*(?:을|를)?\s*(?:이상|이하|이내|미만|초과|청구|납부|부담)")
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?。])\s+(?=[^\d])")
+_AMOUNT_CONTEXT_BREAK = re.compile(r"(?<=[.!?。])\s+(?=[^\d])|(?<!,)(?<!，)\r?\n")
+
+
+def _scoped_volume(sentence: str) -> Iterator[Fact]:
+    for hit in _BLOOD_LIMITS.finditer(sentence):
+        if re.search(_VOLUME_QUALIFIER, sentence[:hit.end()]):
+            continue
+        per_draw = Decimal(hit["amount"].replace(",", "")).normalize()
+        yield Fact("sample_volume", f"{per_draw:f}mL", hit["draw"], hit[0], scope="회당 최대 채혈")
+        if hit["total"]:
+            total = Decimal(hit["total"].replace(",", "")).normalize()
+            yield Fact("sample_volume", f"{total:f}mL", hit["participant"], hit[0], scope="참여자별 총 채혈")
+
+
+def _visit_payments(sentence: str) -> Iterator[Fact]:
+    for hit in _VISIT_PAYMENT.finditer(sentence):
+        preceding = sentence[:hit.start()].rsplit(";", 1)[-1]
+        following = sentence[hit.end():]
+        if _NON_ROUTINE_PAYMENT.search(preceding) or _QUALIFIED_VISIT_PAYMENT.match(following):
+            continue
+        cap = _PAYMENT_CAP.match(sentence, hit.end())
+        quote = sentence[hit.start():cap.end() if cap else hit.end()]
+        for amount, scope in ((hit, "방문당 참여 지급액"), (cap, "참여 지급액 상한")):
+            if amount is None:
+                continue
+            value = int(amount["amount"].replace(",", "")) * (10_000 if amount["unit"] else 1)
+            yield Fact("expense", str(value), amount[0].strip(" ,，\n\r"), quote, scope=scope)
 
 
 def _collection_and_payment(text: str) -> list[Fact]:
     facts: list[Fact] = []
     blood_document = bool(_BLOOD_VOLUME.search(text))
+    for context in _AMOUNT_CONTEXT_BREAK.split(text):
+        facts.extend(_scoped_volume(context))
+        facts.extend(_visit_payments(context))
     for line in text.splitlines():
         for sentence in _SENTENCE_BREAK.split(line):
             totals = list(_TOTAL_VOLUME.finditer(sentence)) if blood_document else []
@@ -55,7 +102,11 @@ def _collection_and_payment(text: str) -> list[Fact]:
                 facts.append(Fact("sample_volume", f"{amount:f}mL", raw, evidence, scope=scope,
                                   ambiguous=bool(_QUALIFIED_VOLUME.search(sentence))))
             for hit in _PAYMENT.finditer(sentence):
+                if "예산" in hit[0]:
+                    continue
                 label = re.sub(r"\s+", "", hit["label"])
+                if label != "손상보상" and _VISIT_PAYMENT.search(hit[0]):
+                    continue
                 if label in ("교통비", "사례비", "참여보상") and _PARTICIPATION.search(sentence):
                     label = "참여 지급액"
                 amount = int(hit["amount"].replace(",", "")) * (10_000 if hit["unit"] else 1)

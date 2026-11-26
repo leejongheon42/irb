@@ -24,6 +24,8 @@ from ..deid import patterns as P
 _SCRUB = [(k, rx, tag) for k, rx, tag in P.TEXT_SCRUB_PATTERNS if k != "date"]
 _DISEASE_SUFFIX = re.compile(r"(병|증|염|암|종|질환|장애|천식|당뇨|결핵|손상|골절|감염|중독|증후군|대상|입원|외래|소아|성인|노인|여성|남성|임산부|투석|수술|중증|경증|말기|초기|신규|기존|해당|일반|전체|모든|대조군|실험군|군)$")
 _UNIT_AFTER = re.compile(r"^\s?\d+(?:(?:,\d{3})+|-\d+)?\s*(년|개월|월|일|세|명|례|회|차|%|주|시간|분|mg|kg|cm|배|건|개|종|기|(?:만\s*)?원)")
+_AGE_BEFORE = re.compile(r"\d+\s*세[ \t]*$")
+_AUXILIARY_BEFORE = re.compile(r"[가-힣]+[아어여해][ \t]+$")
 
 
 def _valid(kind: str, m: re.Match[str]) -> bool:
@@ -51,6 +53,12 @@ def _name_hits(text: str, mask: bool) -> tuple[str, int]:
     def repl(m: re.Match[str]) -> str:
         nonlocal hits
         word = m[1]
+        preceding = m.string[max(0, m.start() - 32):m.start()]
+        if m[3] == "환자" and (
+            (word in ("이상", "이하", "미만", "초과") and _AGE_BEFORE.search(preceding))
+            or (word == "주어도" and _AUXILIARY_BEFORE.search(preceding))
+        ):
+            return m[0]
         if word in _NAME_STOPWORDS or _DISEASE_SUFFIX.search(word) or not P.looks_like_korean_name(word):
             return m[0]
         hits += 1

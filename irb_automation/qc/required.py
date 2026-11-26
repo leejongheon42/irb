@@ -12,8 +12,33 @@ if TYPE_CHECKING:
     from .checks import QCDoc
 
 _DENIED_WITHDRAWAL = r"re:철회(?:는|할\s*수)?\s*(?:불가능|불가|없습니다|없다|금지)"
+_COVER_KIND = {
+    "protocol": r"(?:개정\s*)?연구\s*계획서",
+    "application": r"(?:연구\s*계획\s*변경(?:\s*심의)?|신규\s*심의|(?:IRB\s*)?심의)\s*(?:신청서|의뢰서)",
+}
+_TITLE_FIELD = re.compile(r"^\s*(연구\s*(?:제목|과제명)|연구명|과제명)\s*(?:\||[:：])\s*(.*?)\s*$")
+_EMPTY_TITLE = re.compile(r"(?:[-–—_○◯□]+|\[?\s*(?:작성|기입|입력)(?:\s*예정)?\s*\]?|미정|해당\s*없음)?")
+_COVER_AUTHOR = re.compile(r"^(?:연구\s*책임자|책임\s*연구자)(?:\s|[:：|])")
+_COVER_METADATA = re.compile(r"^(?:소속|기관명|작성일|제출일|버전|연구진|연구기관)(?:\s|[:：|])")
 RequiredAliases = dict[str, dict[tuple[str, str], list[str]]]
 RequiredPatterns = dict[str, dict[tuple[str, str], list[str | Expression]]]
+
+
+def _has_cover_title(doc: QCDoc, min_chars: int) -> bool:
+    """Recognize a standalone research title between the form name and investigator line."""
+    kind = _COVER_KIND[doc.doc_type]
+    lines = [line.strip() for line in doc.text.splitlines()[:10] if line.strip()]
+    for heading, value, author in zip(lines, lines[1:], lines[2:]):
+        if (re.fullmatch(kind, heading.lstrip("# ")) and _COVER_AUTHOR.match(author)
+                and not re.search(r"[#|]", value) and not _COVER_METADATA.match(value)
+                and not _EMPTY_TITLE.fullmatch(value) and len(value) >= min_chars):
+            return True
+    return False
+
+
+def _blank_title_row(line: str) -> bool:
+    match = _TITLE_FIELD.fullmatch(line)
+    return bool(match and _EMPTY_TITLE.fullmatch(match[2]))
 
 
 def required_groups(item: dict) -> dict[tuple[str, str], list[str]]:
@@ -75,7 +100,13 @@ def check_required(doc: QCDoc, conds: set[str], units: list[dict] | None = None,
         all_groups = [group for (kind, _), group in groups.items() if kind == "all"]
         must_groups = [group for (kind, _), group in groups.items() if kind == "must"]
         candidates_patterns = alternatives_any + [pattern for group in all_groups for pattern in group]
-        candidates = [s for s in sections if any(matches(s.title + "\n" + s.body, p) for p in candidates_patterns)]
+        title_check = item["id"] == "title" and doc.doc_type in _COVER_KIND and item.get("structured")
+        source_sections = sections if not title_check else [
+            Section(section.title, "\n".join(line for line in section.body.splitlines() if not _blank_title_row(line)),
+                    section.start, section.end)
+            for section in sections if not _blank_title_row(section.title)
+        ]
+        candidates = [s for s in source_sections if any(matches(s.title + "\n" + s.body, p) for p in candidates_patterns)]
         disclosure = ({"irb_contact": has_committee_contact, "compensation": has_injury_coverage}.get(item["id"])
                       if doc.doc_type == "consent_form" else None)
         if item.get("structured") and candidates and disclosure is None:
@@ -89,6 +120,8 @@ def check_required(doc: QCDoc, conds: set[str], units: list[dict] | None = None,
             and all(any(matches(section.body, pattern) for pattern in group) for group in equivalent_body)
             for section in alternatives
         )
+        if title_check and alternatives_any and not (all_groups or must_groups or groups.get(("reject", ""))):
+            valid = valid or _has_cover_title(doc, int(item.get("min_chars", 8)))
         for section in candidates:
             content = section.title + "\n" + section.body
             all_ok = all(any(matches(content, pattern) for pattern in group) for group in all_groups)

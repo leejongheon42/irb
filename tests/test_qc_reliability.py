@@ -214,7 +214,8 @@ def test_population_section_checks_eligibility_and_exclusion_in_prose(body: str,
 def test_visit_comparison_uses_totals_and_still_detects_a_real_mismatch() -> None:
     from irb_automation.qc.facts import extract
 
-    consent = "첫 방문 1회와 28일 후 추적 방문 1회에 각각 설문을 작성합니다."
+    consent = ("첫 방문 1회와 28일 후 추적 방문 1회에 각각 설문을 작성합니다.\n"
+               "적격성 평가에서 제외되는 경우에도 방문 1회분을 지급합니다.")
     assert not any(fact.key == "visits" for fact in extract(consent))
     docs = [checks.QCDoc("p", "계획서.txt", "protocol", "총 2회 방문하며 결과를 기록한다."),
             checks.QCDoc("c", "동의서.txt", "consent_form", f"{consent}\n전체 3회 방문합니다.")]

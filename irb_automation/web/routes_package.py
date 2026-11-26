@@ -50,7 +50,7 @@ def _qc_profile(form: FormData) -> Answers:
     method = [str(v) for v in form.getlist("method") if v in ("survey", "intervention", "records", "specimen", "stem_cell")]
     if study in ("human", "specimen", "both"):
         answers["study_type"] = study
-    if application in ("new", "exemption"):
+    if application in ("new", "exemption", "amendment"):
         answers["application"] = application
     if sources:
         answers["data_source"] = sources
